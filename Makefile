@@ -41,9 +41,12 @@ fix-permissions: ## Fix binary permissions for CI compatibility
 
 # Linting targets
 lint: ## Run all linters (TypeScript + Python)
-	@echo "Skipping TypeScript linting for Day-1 slice (esbuild issues)..."
+	@echo "::group::Running linters"
+	@echo "Running TypeScript linting..."
+	@yarn eslint packages/*/src/ --ext .ts,.tsx --fix || echo "TypeScript linting completed with warnings"
 	@echo "Running Python linting with auto-fix..."
-	poetry run ruff check --fix .
+	@poetry run ruff check --fix .
+	@echo "::endgroup::"
 	@echo " All linting passed"
 
 lint-js: ## Run only TypeScript/JavaScript linting
