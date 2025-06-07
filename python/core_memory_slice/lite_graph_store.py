@@ -6,7 +6,7 @@ Optimized for Day-1 slice with minimal dependencies.
 import sqlite3
 import json
 import os
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Tuple
 
 
 class LiteGraphStore:
@@ -54,7 +54,7 @@ class LiteGraphStore:
             
             conn.commit()
     
-    def add_node(self, node_id: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def add_node(self, node_id: str, content: str, metadata: Dict[str, Any] | None = None) -> None:
         """Add or update a node"""
         metadata_json = json.dumps(metadata or {})
         
@@ -66,7 +66,7 @@ class LiteGraphStore:
             """, (node_id, content, metadata_json))
             conn.commit()
     
-    def get_node(self, node_id: str) -> Optional[Dict[str, Any]]:
+    def get_node(self, node_id: str) -> Dict[str, Any] | None:
         """Get node by ID"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
@@ -86,7 +86,7 @@ class LiteGraphStore:
         return None
     
     def add_edge(self, source_id: str, target_id: str, relationship_type: str, 
-                 properties: Optional[Dict[str, Any]] = None) -> int:
+                 properties: Dict[str, Any] | None = None) -> int:
         """Add relationship between nodes"""
         properties_json = json.dumps(properties or {})
         
@@ -99,7 +99,7 @@ class LiteGraphStore:
             conn.commit()
             return cursor.lastrowid
     
-    def get_neighbors(self, node_id: str, relationship_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_neighbors(self, node_id: str, relationship_type: str | None = None) -> List[Dict[str, Any]]:
         """Get neighboring nodes"""
         with sqlite3.connect(self.db_file) as conn:
             cursor = conn.cursor()
