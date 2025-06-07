@@ -17,6 +17,8 @@ help: ## Show this help message
 install: ## Install all dependencies (Yarn + Poetry)
 	@echo "Installing Yarn dependencies..."
 	yarn install --immutable --mode=skip-build
+	@echo "Fixing esbuild permissions..."
+	@find .yarn/unplugged -name esbuild -type f -exec chmod +x {} \; 2>/dev/null || true
 	@echo "Installing Poetry dependencies..."
 	poetry install
 	@echo "Installing example-service dependencies..."
