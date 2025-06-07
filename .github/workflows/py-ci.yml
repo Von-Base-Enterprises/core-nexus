@@ -71,6 +71,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set Yarn Version
+        run: corepack prepare yarn@4.0.2 --activate
+
+      - name: Verify Yarn Version
+        run: yarn --version
+
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
