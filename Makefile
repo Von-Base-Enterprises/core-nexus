@@ -173,3 +173,20 @@ quick: lint-fix test ## Quick development workflow: fix linting + run tests
 # Comprehensive check
 check-all: ci type-check format-check security-check ## Run all possible checks
 	@echo " All checks completed successfully"
+
+# Day-1 Slice targets
+slice-ingest: ## Run Day-1 slice document ingestion demo
+	@echo "Running Day-1 slice ingestion..."
+	python scripts/ingest_one.py
+
+slice-query: ## Run Day-1 slice document query demo
+	@echo "Running Day-1 slice query..."
+	python scripts/query_one.py
+
+slice-demo: slice-ingest slice-query ## Run complete Day-1 slice demo
+	@echo " Day-1 slice demo completed"
+
+slice-clean: ## Clean Day-1 slice data
+	@echo "Cleaning slice data..."
+	rm -rf slice_data/
+	@echo " Slice data cleaned"
