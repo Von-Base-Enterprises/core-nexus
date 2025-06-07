@@ -1,0 +1,13 @@
+# Day-1 Vertical Slice Dependencies
+# Minimal requirements for hybrid vector + graph storage demo
+
+# Core dependencies (no external vector libraries needed for demo)
+# All storage uses built-in Python libraries (json, sqlite3)
+
+# Optional: For production scaling
+# faiss-cpu>=1.7.4        # Vector similarity search
+# openai>=1.0.0           # Embeddings API  
+# python-dotenv>=1.0.0    # Environment variables
+
+# Development
+pytest>=8.0.0           # Testing framework
