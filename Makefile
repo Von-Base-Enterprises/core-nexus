@@ -16,9 +16,11 @@ help: ## Show this help message
 # Installation targets
 install: ## Install all dependencies (Yarn + Poetry)
 	@echo "Installing Yarn dependencies..."
-	yarn install --immutable
+	yarn install --immutable --mode=skip-build
 	@echo "Installing Poetry dependencies..."
 	poetry install
+	@echo "Installing example-service dependencies..."
+	cd python/example-service && poetry install
 	@echo " All dependencies installed successfully"
 
 install-yarn: ## Install only Yarn dependencies
