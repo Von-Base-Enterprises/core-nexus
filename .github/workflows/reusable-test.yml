@@ -133,7 +133,9 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::group::Installing dependencies"
-          make install
+          # Skip build scripts to avoid esbuild compilation issues
+          yarn install --immutable --mode=skip-build
+          poetry install
           echo "::endgroup::"
       
       - name: Verify installation
