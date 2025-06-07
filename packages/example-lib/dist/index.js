@@ -1,5 +1,5 @@
 // src/index.ts
-var MemoryUserService = class {
+const MemoryUserService = class {
   users = /* @__PURE__ */ new Map();
   idCounter = 1;
   /**
@@ -107,7 +107,7 @@ var MemoryUserService = class {
     return emailRegex.test(email);
   }
 };
-var UserUtils = {
+const UserUtils = {
   /**
    * Formats a user's display name
    */
@@ -143,8 +143,8 @@ var UserUtils = {
     return errors;
   }
 };
-var userService = new MemoryUserService();
-var index_default = MemoryUserService;
+const userService = new MemoryUserService();
+const index_default = MemoryUserService;
 export {
   MemoryUserService,
   UserUtils,
