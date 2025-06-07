@@ -160,7 +160,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'yarn'
+          # Don't use built-in yarn cache since we're using Corepack
+          # cache: 'yarn'
+
+      - name: Enable Corepack and install correct Yarn version
+        run: |
+          corepack enable
+          # Install the exact Yarn version specified in package.json
+          corepack install
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -171,9 +178,6 @@ jobs:
         uses: snok/install-poetry@v1
         with:
           version: '1.8.0'
-
-      - name: Enable Corepack
-        run: corepack enable
 
       - name: Install dependencies
         run: |
