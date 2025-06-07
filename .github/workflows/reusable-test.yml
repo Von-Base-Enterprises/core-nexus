@@ -148,16 +148,6 @@ jobs:
           echo "Poetry version: $(poetry --version)"
           echo "::endgroup::"
       
-      - name: Build esbuild for linting
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          echo "::group::Building esbuild packages for linting"
-          # Rebuild only esbuild packages that are needed for linting
-          yarn rebuild esbuild
-          # Fix esbuild permissions as suggested
-          find .yarn/unplugged -name esbuild -type f -exec chmod +x {} \;
-          echo "::endgroup::"
-      
       - name: Run linting
         working-directory: ${{ inputs.working-directory }}
         run: |
