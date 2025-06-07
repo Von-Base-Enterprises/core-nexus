@@ -1,0 +1,220 @@
+name: Reusable Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        required: true
+        type: string
+      python-version:
+        description: 'Python version to use'
+        required: true
+        type: string
+      working-directory:
+        description: 'Working directory for the workflow'
+        required: false
+        type: string
+        default: '.'
+      skip-cache:
+        description: 'Skip cache restoration for debugging'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      cache-hit-yarn:
+        description: 'Whether Yarn cache was hit'
+        value: ${{ jobs.test.outputs.cache-hit-yarn }}
+      cache-hit-poetry:
+        description: 'Whether Poetry cache was hit'
+        value: ${{ jobs.test.outputs.cache-hit-poetry }}
+
+env:
+  # Force colors in CI
+  FORCE_COLOR: 1
+  CI: true
+  # Poetry configuration
+  POETRY_VENV_IN_PROJECT: 1
+  POETRY_CACHE_DIR: ~/.cache/pypoetry
+  # Node environment
+  NODE_ENV: test
+
+jobs:
+  test:
+    name: Test (Node ${{ inputs.node-version }}, Python ${{ inputs.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    outputs:
+      cache-hit-yarn: ${{ steps.cache-yarn.outputs.cache-hit }}
+      cache-hit-poetry: ${{ steps.cache-poetry.outputs.cache-hit }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history for accurate blame information
+          fetch-depth: 0
+      
+      - name: Setup Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'yarn'
+          cache-dependency-path: '${{ inputs.working-directory }}/yarn.lock'
+      
+      - name: Enable Corepack
+        run: corepack enable
+      
+      - name: Setup Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+      
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: '1.8.0'
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          virtualenvs-path: .venv
+          installer-parallel: true
+      
+      - name: Load cached Poetry dependencies
+        if: ${{ !inputs.skip-cache }}
+        id: cache-poetry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pypoetry
+            .venv
+          key: poetry-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            poetry-${{ runner.os }}-${{ inputs.python-version }}-
+            poetry-${{ runner.os }}-
+      
+      - name: Load cached Yarn dependencies
+        if: ${{ !inputs.skip-cache }}
+        id: cache-yarn
+        uses: actions/cache@v4
+        with:
+          path: |
+            .yarn/cache
+            .yarn/unplugged
+            .yarn/install-state.gz
+          key: yarn-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            yarn-${{ runner.os }}-${{ inputs.node-version }}-
+            yarn-${{ runner.os }}-
+      
+      - name: Configure Git for private dependencies
+        run: |
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global url."https://".insteadOf git://
+      
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Installing dependencies"
+          make install
+          echo "::endgroup::"
+      
+      - name: Verify installation
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Environment verification"
+          echo "Node version: $(node --version)"
+          echo "Yarn version: $(yarn --version)"
+          echo "Python version: $(python --version)"
+          echo "Poetry version: $(poetry --version)"
+          echo "::endgroup::"
+      
+      - name: Run linting
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Running linters"
+          make lint
+          echo "::endgroup::"
+      
+      - name: Run type checking
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Running type checking"
+          make type-check
+          echo "::endgroup::"
+      
+      - name: Run tests with coverage
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Running tests with coverage"
+          make test-cov
+          echo "::endgroup::"
+      
+      - name: Generate unified coverage report
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Generating coverage reports"
+          mkdir -p coverage
+          
+          # Copy JavaScript coverage if it exists
+          if [ -d "coverage-js" ]; then
+            cp -r coverage-js coverage/javascript
+            echo "✅ JavaScript coverage copied to coverage/javascript"
+          fi
+          
+          # Copy Python coverage if it exists
+          if [ -f "coverage.xml" ]; then
+            cp coverage.xml coverage/python-coverage.xml
+            echo "✅ Python coverage copied to coverage/python-coverage.xml"
+          fi
+          
+          # Generate coverage summary
+          echo "# Coverage Report" > coverage/README.md
+          echo "Generated on: $(date)" >> coverage/README.md
+          echo "" >> coverage/README.md
+          
+          if [ -f "coverage.xml" ]; then
+            echo "## Python Coverage" >> coverage/README.md
+            python -c "
+          import xml.etree.ElementTree as ET
+          try:
+              tree = ET.parse('coverage.xml')
+              root = tree.getroot()
+              coverage = root.get('line-rate')
+              if coverage:
+                  percentage = float(coverage) * 100
+                  print(f'Coverage: {percentage:.1f}%')
+              else:
+                  print('Coverage: N/A')
+          except Exception as e:
+              print(f'Error parsing coverage: {e}')
+          " >> coverage/README.md
+          fi
+          
+          echo "::endgroup::"
+      
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ inputs.node-version }}-${{ inputs.python-version }}
+          path: |
+            ${{ inputs.working-directory }}/coverage/
+            ${{ inputs.working-directory }}/coverage.xml
+            ${{ inputs.working-directory }}/coverage-js/
+          retention-days: 30
+          if-no-files-found: warn
+      
+      - name: Cache summary
+        if: ${{ !inputs.skip-cache }}
+        run: |
+          echo "::group::Cache Summary"
+          echo "Yarn cache hit: ${{ steps.cache-yarn.outputs.cache-hit }}"
+          echo "Poetry cache hit: ${{ steps.cache-poetry.outputs.cache-hit }}"
+          echo "::endgroup::"
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up any temporary files
+          find ${{ inputs.working-directory }} -name "*.tmp" -delete 2>/dev/null || true
+          find ${{ inputs.working-directory }} -name ".coverage*" -delete 2>/dev/null || true

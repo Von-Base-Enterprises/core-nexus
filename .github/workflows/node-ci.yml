@@ -1,0 +1,212 @@
+name: Node.js CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - '.yarnrc.yml'
+      - 'tsconfig*.json'
+      - 'vitest.config.*'
+      - 'eslint.config.*'
+      - '.eslintrc*'
+      - 'prettier.config.*'
+      - '.prettierrc*'
+      - 'Makefile'
+      - '.github/workflows/node-ci.yml'
+      - '.github/workflows/reusable-test.yml'
+  
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - '.yarnrc.yml'
+      - 'tsconfig*.json'
+      - 'vitest.config.*'
+      - 'eslint.config.*'
+      - '.eslintrc*'
+      - 'prettier.config.*'
+      - '.prettierrc*'
+      - 'Makefile'
+      - '.github/workflows/node-ci.yml'
+      - '.github/workflows/reusable-test.yml'
+
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      node-versions:
+        description: 'Node.js versions to test (comma-separated)'
+        required: false
+        default: '18, 20'
+      skip-cache:
+        description: 'Skip cache for debugging'
+        required: false
+        type: boolean
+        default: false
+
+# Cancel in-progress runs for same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Force colors in CI
+  FORCE_COLOR: 1
+  CI: true
+
+jobs:
+  # Job to detect changes and set up matrix
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.changes.outputs.packages }}
+      node-versions: ${{ steps.matrix.outputs.node-versions }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for package changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            packages:
+              - 'packages/**'
+              - 'package.json'
+              - 'yarn.lock'
+              - '.yarnrc.yml'
+              - 'tsconfig*.json'
+              - 'vitest.config.*'
+              - 'eslint.config.*'
+              - '.eslintrc*'
+              - 'prettier.config.*'
+              - '.prettierrc*'
+
+      - name: Set matrix versions
+        id: matrix
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use manual input for workflow_dispatch
+            VERSIONS="${{ github.event.inputs.node-versions || '18, 20' }}"
+          else
+            # Use default versions for other triggers
+            VERSIONS="18, 20"
+          fi
+          
+          # Convert comma-separated string to JSON array
+          JSON_VERSIONS=$(echo "[$VERSIONS]" | jq -c 'map(tonumber)')
+          echo "node-versions=$JSON_VERSIONS" >> $GITHUB_OUTPUT
+          echo "Node.js versions to test: $JSON_VERSIONS"
+
+  # Main test job using matrix strategy
+  test:
+    name: Test Node.js
+    needs: changes
+    if: needs.changes.outputs.packages == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ${{ fromJson(needs.changes.outputs.node-versions) }}
+        # Use stable Python version for Node.js testing
+        python-version: ['3.11']
+        include:
+          # Add additional test configurations if needed
+          - node-version: 18
+            experimental: false
+          - node-version: 20
+            experimental: false
+    
+    uses: ./.github/workflows/reusable-test.yml
+    with:
+      node-version: ${{ matrix.node-version }}
+      python-version: ${{ matrix.python-version }}
+      skip-cache: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.skip-cache == 'true' }}
+
+  # Job to collect and report test results
+  test-results:
+    name: Test Results Summary
+    runs-on: ubuntu-latest
+    needs: [changes, test]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          echo "## Node.js CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.changes.outputs.packages }}" != "true" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "🔄 **Skipped**: No relevant package changes detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Changed paths filter:" >> $GITHUB_STEP_SUMMARY
+            echo "- packages/**" >> $GITHUB_STEP_SUMMARY
+            echo "- Configuration files (package.json, yarn.lock, etc.)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          
+          if [ "${{ needs.test.result }}" = "success" ]; then
+            echo "✅ **Success**: All Node.js tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Tested Node.js versions: ${{ needs.changes.outputs.node-versions }}" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.test.result }}" = "failure" ]; then
+            echo "❌ **Failed**: One or more Node.js tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the individual job logs for details." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          elif [ "${{ needs.test.result }}" = "cancelled" ]; then
+            echo "⏹️ **Cancelled**: Tests were cancelled" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "⚠️ **Unknown**: Unexpected test result: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  # Optional: Security audit for Node.js dependencies
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (latest LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Run security audit
+        run: |
+          echo "## Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Run yarn audit and capture output
+          if yarn audit --json > audit.json 2>&1; then
+            echo "✅ No security vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            AUDIT_EXIT_CODE=$?
+            echo "⚠️ Security vulnerabilities detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+            yarn audit --summary 2>&1 || true >> $GITHUB_STEP_SUMMARY
+            echo "```" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Run \`yarn audit\` locally for detailed information." >> $GITHUB_STEP_SUMMARY
+            
+            # Don't fail the workflow for audit issues, just report them
+            echo "Security audit completed with warnings (exit code: $AUDIT_EXIT_CODE)"
+          fi

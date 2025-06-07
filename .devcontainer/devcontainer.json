@@ -1,0 +1,238 @@
+{
+  "name": "Core Nexus Development Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  
+  // Features to install
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20",
+      "nodeGypDependencies": true,
+      "installYarnUsingApt": false
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.10",
+      "installTools": true,
+      "optimize": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "ppa": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "installDirectlyFromGitHubRelease": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": true
+    },
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true,
+      "username": "vscode",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    }
+  },
+
+  // Container configuration for optimal performance
+  "runArgs": [
+    "--init",
+    "--privileged",
+    "--security-opt", "seccomp=unconfined",
+    "--security-opt", "apparmor=unconfined"
+  ],
+
+  // Mount configuration for better I/O performance
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/.vscode-server,target=/home/vscode/.vscode-server,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.devcontainer/node_modules-cache,target=/workspaces/core-nexus/node_modules,type=bind,consistency=delegated",
+    "source=${localWorkspaceFolder}/.devcontainer/poetry-cache,target=/home/vscode/.cache/pypoetry,type=bind,consistency=delegated"
+  ],
+
+  // Port forwarding for development servers
+  "forwardPorts": [3000, 5000, 8000, 8080, 9000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Frontend Dev Server",
+      "onAutoForward": "notify"
+    },
+    "5000": {
+      "label": "API Server",
+      "onAutoForward": "silent"
+    },
+    "8000": {
+      "label": "Documentation Server",
+      "onAutoForward": "silent"
+    }
+  },
+
+  // VS Code configuration
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        // TypeScript/JavaScript
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "ms-vscode.vscode-json",
+        "redhat.vscode-yaml",
+        
+        // Python
+        "ms-python.python",
+        "ms-python.flake8",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        "ms-python.pylint",
+        
+        // Testing
+        "ms-vscode.test-adapter-converter",
+        "hbenl.vscode-test-explorer",
+        "ms-python.pytest",
+        
+        // Git and collaboration
+        "github.vscode-pull-request-github",
+        "github.copilot",
+        "github.copilot-chat",
+        "gitlens.gitlens",
+        
+        // Documentation and markdown
+        "yzhang.markdown-all-in-one",
+        "davidanson.vscode-markdownlint",
+        "ms-vscode.live-server",
+        
+        // Docker and containers
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers",
+        
+        // Productivity
+        "ms-vscode.remote-explorer",
+        "ms-vsliveshare.vsliveshare",
+        "gruntfuggly.todo-tree",
+        "aaron-bond.better-comments",
+        "formulahendry.auto-rename-tag",
+        
+        // Utilities
+        "ms-vscode.hexeditor",
+        "redhat.vscode-xml",
+        "tamasfe.even-better-toml",
+        "ms-vscode.makefile-tools"
+      ],
+      
+      "settings": {
+        // General
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "terminal.integrated.profiles.linux": {
+          "zsh": {
+            "path": "/bin/zsh",
+            "args": ["-l"]
+          }
+        },
+        "files.watcherExclude": {
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/node_modules/**": true,
+          "**/.yarn/**": true,
+          "**/.venv/**": true,
+          "**/__pycache__/**": true,
+          "**/.*cache/**": true
+        },
+        
+        // TypeScript/JavaScript
+        "typescript.preferences.importModuleSpecifier": "relative",
+        "typescript.suggest.autoImports": true,
+        "typescript.updateImportsOnFileMove.enabled": "always",
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit",
+          "source.organizeImports": "explicit"
+        },
+        
+        // Python
+        "python.defaultInterpreterPath": "/home/vscode/.cache/pypoetry/virtualenvs/core-nexus-*/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "python.linting.enabled": true,
+        "python.linting.lintOnSave": true,
+        "python.formatting.provider": "black",
+        "python.sortImports.provider": "isort",
+        "python.testing.pytestEnabled": true,
+        "python.testing.unittestEnabled": false,
+        "python.testing.autoTestDiscoverOnSaveEnabled": true,
+        
+        // Ruff configuration
+        "ruff.organizeImports": true,
+        "ruff.fixAll": true,
+        
+        // Git
+        "git.autofetch": true,
+        "git.enableSmartCommit": true,
+        "git.confirmSync": false,
+        
+        // Performance optimizations
+        "search.exclude": {
+          "**/node_modules": true,
+          "**/.yarn": true,
+          "**/.venv": true,
+          "**/__pycache__": true,
+          "**/dist": true,
+          "**/build": true,
+          "**/*.pyc": true
+        },
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/*.pyc": true
+        },
+        
+        // Auto-save for better developer experience
+        "files.autoSave": "afterDelay",
+        "files.autoSaveDelay": 1000,
+        
+        // Workspace trust
+        "security.workspace.trust.untrustedFiles": "open"
+      }
+    }
+  },
+
+  // Lifecycle scripts for fast setup
+  "onCreateCommand": {
+    "setup-environment": "bash .devcontainer/setup.sh"
+  },
+  
+  "updateContentCommand": {
+    "install-dependencies": "make install",
+    "setup-git-hooks": "poetry run pre-commit install || true"
+  },
+  
+  "postCreateCommand": {
+    "welcome": "echo '=€ Core Nexus development environment ready! Run make help to see available commands.'"
+  },
+
+  // User and working directory
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/core-nexus",
+  
+  // Environment variables
+  "remoteEnv": {
+    "FORCE_COLOR": "1",
+    "CI": "false",
+    "NODE_ENV": "development",
+    "POETRY_VENV_IN_PROJECT": "1",
+    "POETRY_CACHE_DIR": "/home/vscode/.cache/pypoetry",
+    "PATH": "/home/vscode/.local/bin:${PATH}"
+  },
+
+  // Override default command to keep container running
+  "overrideCommand": false,
+  
+  // Shutdown action
+  "shutdownAction": "stopContainer",
+  
+  // Wait for command to complete
+  "waitFor": "updateContentCommand"
+}

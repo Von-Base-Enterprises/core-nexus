@@ -1,0 +1,192 @@
+version: 2
+
+updates:
+  # NPM dependencies in root directory
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "04:00"
+      timezone: "UTC"
+    # Group related updates together
+    groups:
+      typescript:
+        patterns:
+          - "typescript*"
+          - "@typescript-eslint/*"
+          - "ts-*"
+      eslint:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+          - "eslint-*"
+      testing:
+        patterns:
+          - "vitest*"
+          - "@vitest/*"
+          - "jest*"
+          - "@jest/*"
+          - "*test*"
+          - "*mock*"
+      build-tools:
+        patterns:
+          - "rollup*"
+          - "vite*"
+          - "webpack*"
+          - "babel*"
+          - "@babel/*"
+          - "esbuild*"
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # Auto-merge configuration
+    open-pull-requests-limit: 10
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Reviewers and assignees
+    reviewers:
+      - "tyvonne-boykin"
+    assignees:
+      - "tyvonne-boykin"
+    # Labels for categorization
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "npm"
+    # Only create PRs for security updates on weekends
+    schedule:
+      interval: "daily"
+      time: "04:00"
+      timezone: "UTC"
+
+  # Python dependencies via pip (Poetry)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "04:30"
+      timezone: "UTC"
+    # Group related updates together
+    groups:
+      linting:
+        patterns:
+          - "ruff*"
+          - "black*"
+          - "isort*"
+          - "mypy*"
+          - "flake8*"
+          - "pylint*"
+      testing:
+        patterns:
+          - "pytest*"
+          - "coverage*"
+          - "mock*"
+          - "factory*"
+          - "faker*"
+      documentation:
+        patterns:
+          - "mkdocs*"
+          - "sphinx*"
+          - "pydantic*"
+      security:
+        patterns:
+          - "safety*"
+          - "bandit*"
+          - "semgrep*"
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # Auto-merge configuration
+    open-pull-requests-limit: 10
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Reviewers and assignees
+    reviewers:
+      - "tyvonne-boykin"
+    assignees:
+      - "tyvonne-boykin"
+    # Labels for categorization
+    labels:
+      - "dependencies"
+      - "python"
+      - "pip"
+
+  # Docker base images and dependencies
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:00"
+      timezone: "UTC"
+    # Auto-merge configuration
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Reviewers and assignees
+    reviewers:
+      - "tyvonne-boykin"
+    assignees:
+      - "tyvonne-boykin"
+    # Labels for categorization
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "05:30"
+      timezone: "UTC"
+    # Group related updates
+    groups:
+      actions-core:
+        patterns:
+          - "actions/*"
+      setup-actions:
+        patterns:
+          - "*/setup-*"
+      security-actions:
+        patterns:
+          - "sigstore/*"
+          - "slsa-framework/*"
+          - "*/security-*"
+      docker-actions:
+        patterns:
+          - "docker/*"
+    # Auto-merge configuration
+    open-pull-requests-limit: 5
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Reviewers and assignees
+    reviewers:
+      - "tyvonne-boykin"
+    assignees:
+      - "tyvonne-boykin"
+    # Labels for categorization
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci-cd"
+
+# Global configuration for auto-merge
+# Note: Auto-merge is handled via GitHub branch protection rules
+# and additional workflows, not directly in dependabot.yml
