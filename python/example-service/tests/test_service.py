@@ -87,7 +87,7 @@ class TestUserService:
 
     async def test_update_user_duplicate_email(self, service: UserService):
         """Test updating a user with duplicate email raises error."""
-        user1 = await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
+        await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
         user2 = await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
 
         update_request = UpdateUserRequest(email="user1@example.com")
