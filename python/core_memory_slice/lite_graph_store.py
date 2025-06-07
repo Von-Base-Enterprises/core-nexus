@@ -137,7 +137,7 @@ class LiteGraphStore:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT id, content, metadata, created_at
-                FROM nodes 
+                FROM nodes
                 WHERE content LIKE ?
             """, (f"%{content_pattern}%",))
             
