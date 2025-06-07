@@ -29,6 +29,12 @@ install-poetry: ## Install only Poetry dependencies
 	@echo "Installing Poetry dependencies..."
 	poetry install
 
+fix-permissions: ## Fix binary permissions for CI compatibility
+	@echo "Fixing binary permissions..."
+	@find .yarn/unplugged -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+	@find .yarn/unplugged -path "*/bin/*" -type f -exec chmod +x {} \; 2>/dev/null || true
+	@echo " Binary permissions fixed"
+
 # Linting targets
 lint: ## Run all linters (TypeScript + Python)
 	@echo "Running TypeScript linting..."
