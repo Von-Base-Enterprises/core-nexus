@@ -119,6 +119,11 @@ jobs:
             yarn-v4-${{ runner.os }}-${{ inputs.node-version }}-
             yarn-v4-${{ runner.os }}-
       
+      - name: Setup Go for esbuild compilation
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      
       - name: Configure Git for private dependencies
         run: |
           git config --global url."https://github.com/".insteadOf ssh://git@github.com/
@@ -129,23 +134,6 @@ jobs:
         run: |
           echo "::group::Installing dependencies"
           make install
-          echo "::endgroup::"
-      
-      - name: Fix permissions for esbuild
-        working-directory: ${{ inputs.working-directory }}
-        run: |
-          echo "::group::Fixing esbuild permissions"
-          
-          # Get the actual yarn cache directory and fix esbuild permissions
-          CACHE_DIR=$(yarn cache dir)
-          echo "Yarn cache directory: $CACHE_DIR"
-          
-          # Fix permissions for esbuild binary using the correct cache path
-          chmod +x $CACHE_DIR/unplugged/@esbuild-linux-x64-npm-*/node_modules/@esbuild/linux-x64/bin/esbuild 2>/dev/null || echo "esbuild binary not found in expected location"
-          
-          # Fallback: also check .yarn directory structure
-          find .yarn/unplugged -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
-          
           echo "::endgroup::"
       
       - name: Verify installation
