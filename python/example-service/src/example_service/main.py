@@ -84,6 +84,23 @@ async def create_user(request: CreateUserRequest) -> User:
         raise HTTPException(status_code=409, detail=str(e)) from None
 
 
+@app.get("/users/count", response_model=dict[str, int])
+async def get_user_count(
+    active_only: bool = Query(False, description="Count only active users")
+) -> dict[str, int]:
+    """
+    Get the total number of users.
+
+    Args:
+        active_only: Whether to count only active users
+
+    Returns:
+        User count
+    """
+    count = await user_service.get_user_count(active_only=active_only)
+    return {"count": count}
+
+
 @app.get("/users/{user_id}", response_model=User)
 async def get_user(user_id: UUID) -> User:
     """
@@ -141,23 +158,6 @@ async def delete_user(user_id: UUID) -> None:
     deleted = await user_service.delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-
-
-@app.get("/users/count", response_model=dict[str, int])
-async def get_user_count(
-    active_only: bool = Query(False, description="Count only active users")
-) -> dict[str, int]:
-    """
-    Get the total number of users.
-
-    Args:
-        active_only: Whether to count only active users
-
-    Returns:
-        User count
-    """
-    count = await user_service.get_user_count(active_only=active_only)
-    return {"count": count}
 
 
 @app.get("/users", response_model=UserListResponse)
