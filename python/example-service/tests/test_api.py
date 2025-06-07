@@ -276,7 +276,7 @@ class TestUserEndpoints:
         user1_data = {"name": "User 1", "email": "user1@example.com"}
         user2_data = {"name": "User 2", "email": "user2@example.com"}
 
-        response1 = client.post("/users", json=user1_data)
+        client.post("/users", json=user1_data)
         response2 = client.post("/users", json=user2_data)
         user2 = response2.json()
 
