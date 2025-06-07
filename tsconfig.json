@@ -22,6 +22,9 @@
     "dist",
     "build",
     "coverage",
-    ".yarn"
+    ".yarn",
+    "**/tests/**",
+    "**/*.test.ts",
+    "**/vitest.config.ts"
   ]
 }

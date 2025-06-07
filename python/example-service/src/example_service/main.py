@@ -81,7 +81,24 @@ async def create_user(request: CreateUserRequest) -> User:
     try:
         return await user_service.create_user(request)
     except DuplicateEmailError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from None
+
+
+@app.get("/users/count", response_model=dict[str, int])
+async def get_user_count(
+    active_only: bool = Query(False, description="Count only active users")
+) -> dict[str, int]:
+    """
+    Get the total number of users.
+
+    Args:
+        active_only: Whether to count only active users
+
+    Returns:
+        User count
+    """
+    count = await user_service.get_user_count(active_only=active_only)
+    return {"count": count}
 
 
 @app.get("/users/{user_id}", response_model=User)
@@ -101,7 +118,7 @@ async def get_user(user_id: UUID) -> User:
     try:
         return await user_service.get_user(user_id)
     except UserNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @app.put("/users/{user_id}", response_model=User)
@@ -122,9 +139,9 @@ async def update_user(user_id: UUID, request: UpdateUserRequest) -> User:
     try:
         return await user_service.update_user(user_id, request)
     except UserNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from None
     except DuplicateEmailError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise HTTPException(status_code=409, detail=str(e)) from None
 
 
 @app.delete("/users/{user_id}", status_code=204)
@@ -141,23 +158,6 @@ async def delete_user(user_id: UUID) -> None:
     deleted = await user_service.delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found")
-
-
-@app.get("/users/count", response_model=dict[str, int])
-async def get_user_count(
-    active_only: bool = Query(False, description="Count only active users")
-) -> dict[str, int]:
-    """
-    Get the total number of users.
-
-    Args:
-        active_only: Whether to count only active users
-
-    Returns:
-        User count
-    """
-    count = await user_service.get_user_count(active_only=active_only)
-    return {"count": count}
 
 
 @app.get("/users", response_model=UserListResponse)

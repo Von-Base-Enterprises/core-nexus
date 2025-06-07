@@ -87,7 +87,7 @@ class TestUserService:
 
     async def test_update_user_duplicate_email(self, service: UserService):
         """Test updating a user with duplicate email raises error."""
-        user1 = await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
+        await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
         user2 = await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
 
         update_request = UpdateUserRequest(email="user1@example.com")
@@ -121,9 +121,9 @@ class TestUserService:
     async def test_list_users(self, service: UserService):
         """Test listing users."""
         # Create multiple users
-        user1 = await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
-        user2 = await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
-        user3 = await service.create_user(CreateUserRequest(name="User 3", email="user3@example.com"))
+        await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
+        await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
+        await service.create_user(CreateUserRequest(name="User 3", email="user3@example.com"))
 
         users, total = await service.list_users()
 
@@ -174,7 +174,7 @@ class TestUserService:
 
     async def test_get_user_count_active_only(self, service: UserService):
         """Test getting count of active users only."""
-        user1 = await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
+        await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
         user2 = await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
 
         assert await service.get_user_count() == 2

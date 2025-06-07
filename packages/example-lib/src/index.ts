@@ -17,11 +17,11 @@ export interface CreateUserInput {
 }
 
 export interface UserService {
-  createUser(input: CreateUserInput): Promise<User>;
-  getUser(id: string): Promise<User | null>;
-  updateUser(id: string, updates: Partial<Omit<User, 'id' | 'createdAt'>>): Promise<User>;
-  deleteUser(id: string): Promise<boolean>;
-  listUsers(limit?: number): Promise<User[]>;
+  createUser(_input: CreateUserInput): Promise<User>;
+  getUser(_id: string): Promise<User | null>;
+  updateUser(_id: string, _updates: Partial<Omit<User, 'id' | 'createdAt'>>): Promise<User>;
+  deleteUser(_id: string): Promise<boolean>;
+  listUsers(_limit?: number): Promise<User[]>;
 }
 
 /**
