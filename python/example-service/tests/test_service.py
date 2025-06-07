@@ -175,7 +175,7 @@ class TestUserService:
     async def test_get_user_count_active_only(self, service: UserService):
         """Test getting count of active users only."""
         await service.create_user(CreateUserRequest(name="User 1", email="user1@example.com"))
-        await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
+        user2 = await service.create_user(CreateUserRequest(name="User 2", email="user2@example.com"))
 
         assert await service.get_user_count() == 2
         assert await service.get_user_count(active_only=True) == 2
