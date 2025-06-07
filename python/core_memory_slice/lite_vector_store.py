@@ -6,7 +6,7 @@ Optimized for Day-1 slice with minimal dependencies.
 import json
 import os
 import math
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 
 
 class LiteVectorStore:
@@ -21,9 +21,9 @@ class LiteVectorStore:
         """Load existing store or create new one"""
         if os.path.exists(self.store_file):
             try:
-                with open(self.store_file, 'r') as f:
+                with open(self.store_file) as f:
                     self.data = json.load(f)
-            except Exception:
+            except Exception as e:
                 self.data = {"vectors": {}, "metadata": {}}
     
     def _save_store(self):
@@ -53,7 +53,7 @@ class LiteVectorStore:
         similarities.sort(key=lambda x: x[1], reverse=True)
         return similarities[:k]
     
-    def get(self, doc_id: str) -> Optional[Tuple[List[float], Dict[str, Any]]]:
+    def get(self, doc_id: str) -> Tuple[List[float], Dict[str, Any]] | None:
         """Get vector and metadata by ID"""
         if doc_id in self.data["vectors"]:
             return self.data["vectors"][doc_id], self.data["metadata"].get(doc_id, {})
