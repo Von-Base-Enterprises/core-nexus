@@ -64,18 +64,29 @@ env:
   POETRY_VENV_IN_PROJECT: 1
 
 jobs:
-  # Job to detect changes and set up matrix
-  changes:
-    name: Detect Changes
+  build:
     runs-on: ubuntu-latest
-    outputs:
-      python: ${{ steps.changes.outputs.python }}
-      python-versions: ${{ steps.matrix.outputs.python-versions }}
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          fetch-depth: 0
+          node-version: '16.x' # Ensure Node.js version is 16.9+ or 14.19+
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Use specified Yarn version
+        run: corepack prepare yarn@4.0.2 --activate
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Run tests
+        run: yarn test
 
       - name: Check for Python changes
         uses: dorny/paths-filter@v3
