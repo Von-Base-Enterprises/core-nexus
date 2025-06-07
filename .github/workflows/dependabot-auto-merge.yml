@@ -181,8 +181,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          yarn install --immutable
-          poetry install
+          echo "::group::Installing dependencies"
+          make install
+          echo "::endgroup::"
 
       - name: Run security audits
         run: |

@@ -191,7 +191,10 @@ jobs:
           corepack install
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: |
+          echo "::group::Installing dependencies"
+          make install
+          echo "::endgroup::"
 
       - name: Run security audit
         run: |
