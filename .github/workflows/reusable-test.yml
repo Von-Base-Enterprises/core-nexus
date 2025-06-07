@@ -131,15 +131,45 @@ jobs:
           make install
           echo "::endgroup::"
       
-      - name: Fix binary permissions
+      - name: Comprehensive esbuild permission fix
         working-directory: ${{ inputs.working-directory }}
         run: |
-          echo "::group::Fixing binary permissions for CI"
-          make fix-permissions
+          echo "::group::Comprehensive esbuild binary permission fix"
           
-          # Verify esbuild is now executable
-          echo "Verifying esbuild permissions:"
-          find .yarn -name "esbuild" -type f -ls 2>/dev/null | head -3 || echo "No esbuild found"
+          # Clear any cached data that might have bad permissions
+          echo "Clearing problematic cache entries..."
+          rm -rf .yarn/unplugged/@esbuild* 2>/dev/null || true
+          rm -rf .yarn/install-state.gz 2>/dev/null || true
+          
+          # Force clean reinstall of dependencies
+          echo "Force reinstalling dependencies..."
+          yarn install --immutable --force
+          
+          # Apply comprehensive permission fixes
+          echo "Applying comprehensive permission fixes..."
+          
+          # Fix all esbuild binaries with multiple patterns
+          find .yarn/unplugged -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          find .yarn/unplugged -path "*/@esbuild/*/bin/esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          find .yarn/unplugged -path "*/node_modules/@esbuild/*/bin/esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          find .yarn/unplugged -path "*esbuild*" -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          
+          # Fix all binary directories
+          find .yarn/unplugged -type d -name "bin" -exec chmod -R +x {} \; 2>/dev/null || true
+          
+          # Additional comprehensive binary fix
+          find .yarn -type f -executable -exec chmod +x {} \; 2>/dev/null || true
+          
+          echo "::endgroup::"
+          
+          echo "::group::Verification and debugging"
+          echo "esbuild binary locations after fix:"
+          find .yarn -name "esbuild" -type f -ls 2>/dev/null || echo "No esbuild binaries found"
+          
+          echo ""
+          echo "Testing yarn commands that use esbuild:"
+          # Test with timeout to avoid hanging
+          timeout 30s yarn tsup --version 2>&1 || echo "tsup test failed or timed out"
           echo "::endgroup::"
       
       - name: Verify installation
@@ -156,10 +186,14 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::group::Running linters"
+          # Apply permission fix immediately before linting
+          find .yarn/unplugged -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          
           # Try to run linting, with fallback if esbuild still has issues
           if ! make lint; then
-            echo "Linting failed, attempting to fix permissions and retry..."
+            echo "Linting failed, attempting comprehensive permission fix and retry..."
             make fix-permissions
+            find .yarn -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
             sleep 2
             make lint || echo "Linting failed after permission fix - check build configuration"
           fi
@@ -169,7 +203,10 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           echo "::group::Running type checking"
-          make type-check || (echo "Type checking failed - attempting permission fix and retry..." && make fix-permissions && sleep 1 && make type-check)
+          # Apply permission fix immediately before type checking
+          find .yarn/unplugged -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null || true
+          
+          make type-check || (echo "Type checking failed - attempting permission fix and retry..." && make fix-permissions && find .yarn -name "esbuild" -type f -exec chmod +x {} \; 2>/dev/null && sleep 1 && make type-check)
           echo "::endgroup::"
       
       - name: Run tests with coverage
