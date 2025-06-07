@@ -85,10 +85,12 @@ test-cov: ## Run tests with coverage reporting
 
 # Type checking
 type-check: ## Run type checking for all languages
-	@echo "Skipping TypeScript type checking for Day-1 slice (esbuild issues)..."
+	@echo "::group::Running type checking"
+	@echo "Running TypeScript type checking..."
+	@yarn tsc --noEmit
 	@echo "Running Python type checking..."
 	poetry run mypy .
-	@echo " All type checking passed"
+	@echo "::endgroup::"
 
 # Formatting
 format: ## Format all code (TypeScript + Python)
