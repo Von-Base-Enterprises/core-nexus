@@ -191,10 +191,7 @@ jobs:
           corepack install
 
       - name: Install dependencies
-        run: |
-          echo "::group::Installing dependencies"
-          make install
-          echo "::endgroup::"
+        run: make install-yarn
 
       - name: Run security audit
         run: |

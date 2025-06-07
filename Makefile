@@ -26,8 +26,12 @@ install: ## Install all dependencies (Yarn + Poetry)
 	@echo " All dependencies installed successfully"
 
 install-yarn: ## Install only Yarn dependencies
+	@echo "::group::Installing Yarn dependencies"
 	@echo "Installing Yarn dependencies..."
-	yarn install --immutable
+	@yarn install --immutable --mode=skip-build
+	@echo "Fixing esbuild permissions..."
+	@find .yarn/unplugged -name esbuild -type f -exec chmod +x {} \; 2>/dev/null || true
+	@echo "::endgroup::"
 
 install-poetry: ## Install only Poetry dependencies
 	@echo "Installing Poetry dependencies..."
