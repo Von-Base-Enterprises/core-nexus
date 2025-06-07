@@ -124,7 +124,7 @@ jobs:
       matrix:
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
         # Use stable Node.js version for Python testing
-        node-version: ['20']
+        node-version: ['18']
         include:
           # Add specific configurations for different Python versions
           - python-version: '3.9'
