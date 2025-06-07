@@ -131,6 +131,45 @@ jobs:
           make install
           echo "::endgroup::"
       
+      - name: Fix permissions for esbuild and other binaries
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "::group::Fixing binary permissions after cache restoration"
+          
+          # Check if .yarn/unplugged exists
+          if [ -d ".yarn/unplugged" ]; then
+            echo "Found .yarn/unplugged directory, fixing permissions..."
+            
+            # Fix esbuild permissions specifically (most common issue)
+            find .yarn/unplugged -name "esbuild" -type f 2>/dev/null | while read -r file; do
+              echo "Making executable: $file"
+              chmod +x "$file"
+            done
+            
+            # Fix all binaries in bin directories
+            find .yarn/unplugged -path "*/bin/*" -type f 2>/dev/null | while read -r file; do
+              chmod +x "$file"
+            done
+            
+            # Fix platform-specific esbuild binaries
+            find .yarn/unplugged -name "@esbuild" -type d 2>/dev/null | while read -r dir; do
+              find "$dir" -name "esbuild*" -type f | while read -r file; do
+                echo "Making executable: $file"
+                chmod +x "$file"
+              done
+            done
+            
+            echo "✅ Binary permissions fixed"
+          else
+            echo "No .yarn/unplugged directory found, skipping permission fix"
+          fi
+          
+          # List some key binaries for debugging
+          echo "Key binaries status:"
+          find .yarn/unplugged -name "esbuild" -type f -ls 2>/dev/null | head -5 || echo "No esbuild binaries found"
+          
+          echo "::endgroup::"
+      
       - name: Verify installation
         working-directory: ${{ inputs.working-directory }}
         run: |
