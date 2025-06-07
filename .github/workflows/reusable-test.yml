@@ -60,11 +60,22 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: 'yarn'
-          cache-dependency-path: '${{ inputs.working-directory }}/yarn.lock'
+          # Don't use built-in yarn cache since we're using Corepack
+          # cache: 'yarn'
+          # cache-dependency-path: '${{ inputs.working-directory }}/yarn.lock'
       
-      - name: Enable Corepack
-        run: corepack enable
+      - name: Enable Corepack and install correct Yarn version
+        run: |
+          corepack enable
+          # Install the exact Yarn version specified in package.json
+          corepack install
+      
+      - name: Verify Yarn version
+        run: |
+          echo "Node version: $(node --version)"
+          echo "Yarn version after Corepack: $(yarn --version)"
+          echo "Expected packageManager from package.json:"
+          cat package.json | grep packageManager || echo "No packageManager field found"
       
       - name: Setup Python ${{ inputs.python-version }}
         uses: actions/setup-python@v5
@@ -102,10 +113,11 @@ jobs:
             .yarn/cache
             .yarn/unplugged
             .yarn/install-state.gz
-          key: yarn-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/yarn.lock') }}
+            ~/.yarn/berry/cache
+          key: yarn-v4-${{ runner.os }}-${{ inputs.node-version }}-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            yarn-${{ runner.os }}-${{ inputs.node-version }}-
-            yarn-${{ runner.os }}-
+            yarn-v4-${{ runner.os }}-${{ inputs.node-version }}-
+            yarn-v4-${{ runner.os }}-
       
       - name: Configure Git for private dependencies
         run: |
