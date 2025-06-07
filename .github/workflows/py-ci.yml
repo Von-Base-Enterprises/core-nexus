@@ -80,7 +80,7 @@ jobs:
         run: corepack enable
 
       - name: Use specified Yarn version
-        run: corepack prepare yarn@4.0.2 --activate
+        run: corepack prepare yarn@1.22.22 --activate
 
       - name: Install dependencies
         run: yarn install
