@@ -23,7 +23,7 @@ from .models import (
     HealthCheckResponse, MemoryStats, ProviderConfig
 )
 from .unified_store import UnifiedVectorStore
-from .providers import PineconeProvider, ChromaProvider, PgVectorProvider, GraphProvider
+from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
 from .metrics import (
     metrics_collector, get_metrics, record_request, time_request,
     record_memory_operation, set_service_info
@@ -108,39 +108,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"ChromaDB provider failed to initialize: {e}")
     
-    # Add Graph Provider for knowledge graph functionality
-    if os.getenv("GRAPH_ENABLED", "true").lower() == "true":
-        try:
-            # Build connection string from pgvector config if available
-            pg_config = pgvector_config.config if 'pgvector_provider' in locals() else {
-                "host": os.getenv("DB_HOST", "localhost"),
-                "port": int(os.getenv("DB_PORT", 5432)),
-                "database": os.getenv("DB_NAME", "core_nexus"),
-                "user": os.getenv("DB_USER", "postgres"),
-                "password": os.getenv("DB_PASSWORD", "secure_password_change_me")
-            }
-            
-            connection_string = (
-                f"postgresql://{pg_config['user']}:{pg_config['password']}@"
-                f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
-            )
-            
-            graph_config = ProviderConfig(
-                name="graph",  # This must match the lookup in API endpoints
-                enabled=True,
-                primary=False,
-                config={
-                    "connection_string": connection_string,
-                    "table_prefix": "graph",
-                    "spacy_model": os.getenv("SPACY_MODEL", "en_core_web_sm")
-                }
-            )
-            graph_provider = GraphProvider(graph_config)
-            providers.append(graph_provider)
-            logger.info("Graph provider initialized")
-        except Exception as e:
-            logger.warning(f"Graph provider failed to initialize: {e}")
-            # Non-critical - system works without graph
+    # Add Graph Provider for knowledge graph functionality - TEMPORARILY DISABLED
+    # TODO: Re-enable once deployment is stable
+    logger.info("Graph provider temporarily disabled for stable deployment")
     
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
