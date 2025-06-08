@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Any
 
@@ -412,6 +413,141 @@ def create_memory_app() -> FastAPI:
             "api_key_starts_with": api_key[:7] if api_key != "NOT_SET" else "NOT_SET",
             "embedding_model_type": unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else "None"
         }
+    
+    @app.get("/debug/logs")
+    async def get_recent_logs(lines: int = 100):
+        """
+        Get recent application logs for debugging.
+        
+        Returns last N lines of logs with timestamps and levels.
+        """
+        try:
+            import os
+            from collections import deque
+            from datetime import datetime
+            
+            # Create in-memory log buffer if not exists
+            if not hasattr(app.state, 'log_buffer'):
+                app.state.log_buffer = deque(maxlen=1000)
+                
+                # Set up log capture handler
+                import logging
+                
+                class BufferHandler(logging.Handler):
+                    def emit(self, record):
+                        try:
+                            log_entry = {
+                                'timestamp': datetime.fromtimestamp(record.created).isoformat(),
+                                'level': record.levelname,
+                                'logger': record.name,
+                                'message': self.format(record),
+                                'module': record.module,
+                                'function': record.funcName,
+                                'line': record.lineno
+                            }
+                            app.state.log_buffer.append(log_entry)
+                        except Exception:
+                            pass
+                
+                # Add handler to root logger
+                buffer_handler = BufferHandler()
+                buffer_handler.setLevel(logging.DEBUG)
+                buffer_handler.setFormatter(logging.Formatter(
+                    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                ))
+                logging.getLogger().addHandler(buffer_handler)
+                
+                # Also add to our logger
+                logger.addHandler(buffer_handler)
+                
+                # Log that we started capturing
+                logger.info("Log capture initialized for debug endpoint")
+            
+            # Get requested number of recent logs
+            recent_logs = list(app.state.log_buffer)[-lines:]
+            
+            # Add some system info
+            system_info = {
+                'python_version': sys.version,
+                'service_uptime_seconds': time.time() - app.state.start_time if hasattr(app.state, 'start_time') else 0,
+                'log_buffer_size': len(app.state.log_buffer),
+                'providers_status': {
+                    name: {
+                        'enabled': provider.enabled,
+                        'primary': provider == unified_store.primary_provider
+                    }
+                    for name, provider in unified_store.providers.items()
+                } if unified_store else {},
+                'embedding_model': unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else None
+            }
+            
+            return {
+                'logs': recent_logs,
+                'total_logs_captured': len(app.state.log_buffer),
+                'logs_returned': len(recent_logs),
+                'system_info': system_info
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get logs: {e}")
+            return {
+                'error': str(e),
+                'logs': [],
+                'message': 'Log capture may not be initialized yet'
+            }
+    
+    @app.get("/debug/startup-logs")
+    async def get_startup_logs():
+        """
+        Get startup and initialization logs.
+        
+        Shows what happened during service initialization.
+        """
+        # Create a summary of startup state
+        startup_info = {
+            'service_status': 'running',
+            'uptime_seconds': time.time() - app.state.start_time if hasattr(app.state, 'start_time') else 0,
+            'providers': {},
+            'embedding_model': None,
+            'initialization_errors': []
+        }
+        
+        # Check providers
+        if unified_store:
+            for name, provider in unified_store.providers.items():
+                startup_info['providers'][name] = {
+                    'enabled': provider.enabled,
+                    'primary': provider == unified_store.primary_provider,
+                    'status': 'active' if provider.enabled else 'disabled'
+                }
+            
+            # Check embedding model
+            if unified_store.embedding_model:
+                startup_info['embedding_model'] = {
+                    'type': unified_store.embedding_model.__class__.__name__,
+                    'dimension': unified_store.embedding_model.dimension
+                }
+                
+                # Check if it's OpenAI and why it might have failed
+                if startup_info['embedding_model']['type'] == 'MockEmbeddingModel':
+                    import os
+                    api_key = os.getenv("OPENAI_API_KEY", "")
+                    if not api_key:
+                        startup_info['initialization_errors'].append(
+                            "OPENAI_API_KEY environment variable not found"
+                        )
+                    elif api_key == "mock_key_for_demo":
+                        startup_info['initialization_errors'].append(
+                            "OPENAI_API_KEY is set to mock value from render.yaml"
+                        )
+        
+        # Check for common issues
+        if 'pgvector' in startup_info['providers'] and not startup_info['providers']['pgvector']['enabled']:
+            startup_info['initialization_errors'].append(
+                "PgVector provider failed to initialize - PostgreSQL connection refused"
+            )
+        
+        return startup_info
     
     @app.get("/providers")
     async def list_providers(store: UnifiedVectorStore = Depends(get_store)):
