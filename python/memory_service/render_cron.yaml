@@ -1,0 +1,21 @@
+# Render Cron Job Configuration
+# Keeps the memory service warm by pinging health endpoint every 5 minutes
+
+services:
+  - type: cron_job
+    name: core-nexus-keepalive
+    env: docker
+    dockerfilePath: ./Dockerfile.keepalive
+    schedule: "*/5 * * * *"
+    repo: https://github.com/Von-Base-Enterprises/core-nexus.git
+    branch: feat/day1-vertical-slice
+    rootDir: python/memory_service
+    envVars:
+      - key: SERVICE_URL
+        value: https://core-nexus-memory-service.onrender.com
+      - key: HEALTH_ENDPOINT
+        value: /health
+      - key: EXPECTED_KEYWORD
+        value: healthy
+      - key: TIMEOUT_SECONDS
+        value: 30
