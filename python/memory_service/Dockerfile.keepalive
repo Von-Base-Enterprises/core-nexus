@@ -1,0 +1,12 @@
+# Lightweight container for Render Cron Job
+FROM python:3.11-alpine
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Create keep-alive script
+COPY keepalive.py /app/keepalive.py
+WORKDIR /app
+
+# Default command runs the keep-alive check
+CMD ["python", "keepalive.py"]

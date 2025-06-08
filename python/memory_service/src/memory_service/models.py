@@ -6,7 +6,11 @@ Unified data models for the Core Nexus Long Term Memory Module.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
-from uuid import UUID, uuid4
+from uuid import uuid4
+try:
+    from typing import UUID
+except ImportError:
+    from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -108,3 +112,108 @@ class ImportanceScoring(BaseModel):
     semantic_weight: float = Field(0.2, description="Weight for semantic uniqueness")
     min_score: float = Field(0.1, description="Minimum importance score")
     max_score: float = Field(1.0, description="Maximum importance score")
+
+
+# =====================================================
+# KNOWLEDGE GRAPH MODELS (Added by Agent 2)
+# =====================================================
+
+class EntityType(str):
+    """Valid entity types for knowledge graph."""
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    LOCATION = "location"
+    CONCEPT = "concept"
+    EVENT = "event"
+    PRODUCT = "product"
+    TECHNOLOGY = "technology"
+    OTHER = "other"
+
+
+class RelationshipType(str):
+    """Valid relationship types for knowledge graph."""
+    RELATES_TO = "relates_to"
+    MENTIONS = "mentions"
+    CAUSED_BY = "caused_by"
+    PART_OF = "part_of"
+    WORKS_WITH = "works_with"
+    LOCATED_IN = "located_in"
+    CREATED_BY = "created_by"
+    USED_BY = "used_by"
+    SIMILAR_TO = "similar_to"
+    PRECEDES = "precedes"
+    FOLLOWS = "follows"
+
+
+class GraphNode(BaseModel):
+    """Model for knowledge graph nodes (entities)."""
+    
+    id: UUID = Field(..., description="Same UUID as memory ID for correlation")
+    entity_type: str = Field(..., description="Type of entity")
+    entity_name: str = Field(..., description="Normalized name of entity")
+    properties: Dict[str, Any] = Field(default_factory=dict, description="Additional properties")
+    embedding: Optional[List[float]] = Field(None, description="Entity embedding vector")
+    importance_score: float = Field(0.5, description="ADM-scored importance")
+    mention_count: int = Field(1, description="Number of mentions across memories")
+    first_seen: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GraphRelationship(BaseModel):
+    """Model for relationships between entities."""
+    
+    id: UUID = Field(default_factory=uuid4)
+    from_node_id: UUID = Field(..., description="Source entity ID")
+    to_node_id: UUID = Field(..., description="Target entity ID")
+    relationship_type: str = Field(..., description="Type of relationship")
+    strength: float = Field(0.5, description="ADM-scored relationship strength")
+    confidence: float = Field(0.5, description="Extraction confidence")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context")
+    occurrence_count: int = Field(1, description="How often this relationship appears")
+    first_seen: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EntityExtraction(BaseModel):
+    """Model for extracted entities from memory content."""
+    
+    entity_name: str = Field(..., description="Extracted entity name")
+    entity_type: str = Field(..., description="Detected entity type")
+    position_start: int = Field(..., description="Character position start in content")
+    position_end: int = Field(..., description="Character position end in content")
+    confidence: float = Field(..., description="Extraction confidence score")
+    context: Optional[str] = Field(None, description="Surrounding context")
+
+
+class GraphQuery(BaseModel):
+    """Request model for graph queries."""
+    
+    entity_name: Optional[str] = Field(None, description="Query by entity name")
+    entity_type: Optional[str] = Field(None, description="Filter by entity type")
+    relationship_type: Optional[str] = Field(None, description="Filter by relationship type")
+    max_depth: int = Field(3, ge=1, le=5, description="Maximum traversal depth")
+    limit: int = Field(20, ge=1, le=100, description="Maximum results")
+    min_strength: float = Field(0.3, ge=0.0, le=1.0, description="Minimum relationship strength")
+    include_properties: bool = Field(True, description="Include entity properties")
+
+
+class GraphResponse(BaseModel):
+    """Response model for graph queries."""
+    
+    nodes: List[GraphNode] = Field(default_factory=list, description="Graph nodes")
+    relationships: List[GraphRelationship] = Field(default_factory=list, description="Graph relationships")
+    query_time_ms: float = Field(0.0, description="Query execution time")
+    total_nodes: int = Field(0, description="Total nodes found")
+    total_relationships: int = Field(0, description="Total relationships found")
+
+
+class EntityInsights(BaseModel):
+    """Insights about an entity from the knowledge graph."""
+    
+    entity: GraphNode = Field(..., description="The entity")
+    memory_count: int = Field(0, description="Number of memories mentioning this entity")
+    relationship_count: int = Field(0, description="Number of relationships")
+    top_relationships: List[GraphRelationship] = Field(default_factory=list, description="Most important relationships")
+    co_occurring_entities: List[GraphNode] = Field(default_factory=list, description="Frequently co-occurring entities")
+    temporal_pattern: Optional[Dict[str, Any]] = Field(None, description="When entity appears over time")
+    importance_trend: Optional[List[float]] = Field(None, description="Importance score over time")

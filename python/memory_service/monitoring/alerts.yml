@@ -1,0 +1,113 @@
+# Prometheus alerting rules for Core Nexus Memory Service
+groups:
+  - name: core_nexus_alerts
+    rules:
+      # High latency alert
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(core_nexus_request_latency_seconds_bucket[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "Core Nexus high latency detected"
+          description: "95th percentile latency is {{ $value }}s for 5 minutes"
+
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(core_nexus_requests_total{status_code!~"2.."}[5m]) / rate(core_nexus_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service: core_nexus
+        annotations:
+          summary: "Core Nexus high error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} for 5 minutes"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="core-nexus-production"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: core_nexus
+        annotations:
+          summary: "Core Nexus service is down"
+          description: "Core Nexus Memory Service has been down for more than 2 minutes"
+
+      # Memory operations failing
+      - alert: MemoryOperationsFailing
+        expr: rate(core_nexus_memory_operations_total{status="error"}[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "Memory operations failing"
+          description: "{{ $value }} memory operations per second are failing"
+
+      # Database connection pool exhaustion
+      - alert: DatabasePoolExhaustion
+        expr: core_nexus_db_pool_used / core_nexus_db_pool_size > 0.9
+        for: 2m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "Database pool nearly exhausted"
+          description: "Database connection pool is {{ $value | humanizePercentage }} full"
+
+      # Slow database queries
+      - alert: SlowDatabaseQueries
+        expr: histogram_quantile(0.95, rate(core_nexus_db_query_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile DB query time is {{ $value }}s"
+
+      # Provider unhealthy
+      - alert: ProviderUnhealthy
+        expr: core_nexus_provider_health == 0
+        for: 1m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "Vector provider unhealthy"
+          description: "Provider {{ $labels.provider_name }} is unhealthy"
+
+      # Memory count anomaly (sudden drop)
+      - alert: MemoryCountDrop
+        expr: decrease(core_nexus_memories_stored_total[10m]) > 100
+        for: 1m
+        labels:
+          severity: critical
+          service: core_nexus
+        annotations:
+          summary: "Memory count dropped significantly"
+          description: "Memory count dropped by {{ $value }} in 10 minutes"
+
+      # Cold start detection (for Render.com)
+      - alert: ColdStartDetected
+        expr: resets(core_nexus_service_start_time_seconds[1h]) > 0
+        for: 0m
+        labels:
+          severity: info
+          service: core_nexus
+        annotations:
+          summary: "Service cold start detected"
+          description: "Service restarted {{ $value }} times in the last hour"
+
+      # High ADM score concentration (potential issue)
+      - alert: ADMScoreAnomaly
+        expr: histogram_quantile(0.95, rate(core_nexus_adm_scores_bucket[30m])) < 0.3
+        for: 10m
+        labels:
+          severity: warning
+          service: core_nexus
+        annotations:
+          summary: "ADM scoring anomaly detected"
+          description: "95% of ADM scores are below 0.3, indicating potential scoring issues"

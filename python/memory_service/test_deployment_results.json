@@ -1,0 +1,71 @@
+{
+  "timestamp": "2025-06-08T04:19:38.588782",
+  "tests": [
+    {
+      "name": "Core imports",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    },
+    {
+      "name": "GraphProvider initialization",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    },
+    {
+      "name": "Lazy pool initialization",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    },
+    {
+      "name": "Environment variable parsing",
+      "status": "PASSED",
+      "details": "GRAPH_ENABLED=true parsed correctly",
+      "error": ""
+    },
+    {
+      "name": "Environment variable disabled",
+      "status": "PASSED",
+      "details": "GRAPH_ENABLED=false parsed correctly",
+      "error": ""
+    },
+    {
+      "name": "Environment variable default",
+      "status": "PASSED",
+      "details": "Defaults to enabled when not set",
+      "error": ""
+    },
+    {
+      "name": "Provider methods",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    },
+    {
+      "name": "Entity extraction",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    },
+    {
+      "name": "SQL query safety",
+      "status": "WARNING",
+      "details": "Potential SQL injection patterns found: ['f\"DELETE']",
+      "error": ""
+    },
+    {
+      "name": "Error handling",
+      "status": "FAILED",
+      "details": "",
+      "error": "No module named 'pydantic'"
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "passed": 3,
+    "failed": 6,
+    "warnings": 1
+  }
+}
