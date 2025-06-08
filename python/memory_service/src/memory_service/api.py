@@ -57,16 +57,18 @@ async def lifespan(app: FastAPI):
     providers = []
     
     # Add pgvector if PostgreSQL is available
+    # Use Render PostgreSQL internal hostname for better performance
+    pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
     pgvector_config = ProviderConfig(
         name="pgvector",
         enabled=True,
         primary=False,  # Don't make primary unless it initializes successfully
         config={
-            "host": "localhost",
-            "port": 5432,
-            "database": "core_nexus",
-            "user": "postgres",
-            "password": "secure_password_change_me",
+            "host": pgvector_host,
+            "port": int(os.getenv("PGVECTOR_PORT", "5432")),
+            "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
+            "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
+            "password": os.getenv("PGVECTOR_PASSWORD", "2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V"),
             "table_name": "vector_memories",
             "embedding_dim": 1536,
             "distance_metric": "cosine"
