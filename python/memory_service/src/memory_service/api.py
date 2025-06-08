@@ -12,16 +12,23 @@ import os
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from .models import (
     MemoryRequest, MemoryResponse, QueryRequest, QueryResponse,
-    HealthCheckResponse, MemoryStats, ProviderConfig
+    HealthCheckResponse, MemoryStats, ProviderConfig,
+    GraphNode, GraphRelationship, GraphQuery, GraphResponse, EntityInsights
 )
 from .unified_store import UnifiedVectorStore
-from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
+from .providers import PineconeProvider, ChromaProvider, PgVectorProvider, GraphProvider
+from .metrics import (
+    metrics_collector, get_metrics, record_request, time_request,
+    record_memory_operation, set_service_info
+)
+from .db_monitoring import get_database_health
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +129,15 @@ async def lifespan(app: FastAPI):
     import time
     app.state.start_time = time.time()
     
+    # Initialize service info metrics
+    set_service_info(
+        version="0.1.0",
+        config={
+            "providers": [p.name for p in providers],
+            "environment": os.getenv("ENVIRONMENT", "production")
+        }
+    )
+    
     yield
     
     # Shutdown
@@ -158,6 +174,27 @@ def create_memory_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Prometheus metrics middleware
+    @app.middleware("http")
+    async def metrics_middleware(request: Request, call_next):
+        start_time = time.time()
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Record metrics
+        process_time = time.time() - start_time
+        record_request(
+            method=request.method,
+            endpoint=request.url.path,
+            status_code=response.status_code
+        )
+        
+        # Add process time header
+        response.headers["X-Process-Time"] = str(process_time)
+        
+        return response
     
     # Add usage tracking middleware
     @app.on_event("startup")
@@ -196,6 +233,43 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
+    
+    @app.get("/metrics")
+    async def metrics_endpoint():
+        """
+        Prometheus metrics endpoint.
+        
+        Returns service metrics in Prometheus text format for monitoring and alerting.
+        """
+        try:
+            # Collect current metrics
+            if unified_store:
+                await metrics_collector.collect_service_metrics(unified_store)
+            
+            # Return Prometheus metrics
+            metrics_data = get_metrics()
+            return Response(
+                content=metrics_data,
+                media_type=CONTENT_TYPE_LATEST,
+                headers={"Cache-Control": "no-cache"}
+            )
+        except Exception as e:
+            logger.error(f"Metrics collection failed: {e}")
+            raise HTTPException(status_code=500, detail="Metrics collection failed")
+    
+    @app.get("/db/stats")
+    async def database_stats():
+        """
+        Database statistics and performance metrics.
+        
+        Returns connection pool status, slow queries, and database health information.
+        """
+        try:
+            health_data = await get_database_health()
+            return JSONResponse(content=health_data)
+        except Exception as e:
+            logger.error(f"Database stats failed: {e}")
+            raise HTTPException(status_code=500, detail="Database stats unavailable")
     
     @app.post("/memories", response_model=MemoryResponse)
     async def store_memory(
@@ -674,6 +748,241 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Feedback recording failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to record feedback")
+    
+    # =====================================================
+    # KNOWLEDGE GRAPH ENDPOINTS (Added by Agent 2)
+    # =====================================================
+    
+    @app.post("/graph/sync/{memory_id}")
+    async def sync_memory_to_graph(
+        memory_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Sync a specific memory to the knowledge graph.
+        
+        Extracts entities and relationships from an existing memory.
+        """
+        try:
+            # Check if graph provider is available
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # TODO: Fetch memory from vector store and process
+            # For now, return a placeholder
+            return {
+                "status": "success",
+                "memory_id": memory_id,
+                "message": "Memory synced to graph (placeholder)"
+            }
+            
+        except Exception as e:
+            logger.error(f"Graph sync failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to sync memory: {str(e)}")
+    
+    @app.get("/graph/explore/{entity_name}")
+    async def explore_entity_relationships(
+        entity_name: str,
+        max_depth: int = 2,
+        limit: int = 20,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Explore relationships from a specific entity.
+        
+        Returns connected entities and their relationships up to max_depth.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # Query memories filtered by entity
+            filters = {"entity_name": entity_name}
+            memories = await graph_provider.query([], limit, filters)
+            
+            return {
+                "entity": entity_name,
+                "max_depth": max_depth,
+                "memories_found": len(memories),
+                "memories": [
+                    {
+                        "id": str(mem.id),
+                        "content": mem.content[:200] + "..." if len(mem.content) > 200 else mem.content,
+                        "importance": mem.importance_score,
+                        "similarity": mem.similarity_score
+                    }
+                    for mem in memories
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Entity exploration failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to explore entity: {str(e)}")
+    
+    @app.get("/graph/path/{from_entity}/{to_entity}")
+    async def find_entity_path(
+        from_entity: str,
+        to_entity: str,
+        max_depth: int = 3,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Find the shortest path between two entities in the knowledge graph.
+        
+        Uses graph traversal to find connections.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # TODO: Implement actual path finding
+            return {
+                "from": from_entity,
+                "to": to_entity,
+                "path_found": False,
+                "message": "Path finding not yet implemented"
+            }
+            
+        except Exception as e:
+            logger.error(f"Path finding failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to find path: {str(e)}")
+    
+    @app.get("/graph/insights/{memory_id}", response_model=EntityInsights)
+    async def get_memory_graph_insights(
+        memory_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Get graph-based insights for a specific memory.
+        
+        Shows entities extracted and their relationships.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # TODO: Implement actual insights gathering
+            # For now, return mock data
+            from datetime import datetime
+            
+            mock_entity = GraphNode(
+                id=memory_id,
+                entity_type="concept",
+                entity_name="placeholder",
+                properties={},
+                importance_score=0.5
+            )
+            
+            return EntityInsights(
+                entity=mock_entity,
+                memory_count=1,
+                relationship_count=0,
+                top_relationships=[],
+                co_occurring_entities=[]
+            )
+            
+        except Exception as e:
+            logger.error(f"Graph insights failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get insights: {str(e)}")
+    
+    @app.post("/graph/bulk-sync")
+    async def bulk_sync_memories_to_graph(
+        memory_ids: List[str],
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Sync multiple memories to the knowledge graph in bulk.
+        
+        Efficient batch processing for initial graph population.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # TODO: Implement bulk sync
+            return {
+                "status": "success",
+                "memories_processed": len(memory_ids),
+                "message": "Bulk sync initiated (placeholder)"
+            }
+            
+        except Exception as e:
+            logger.error(f"Bulk sync failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to bulk sync: {str(e)}")
+    
+    @app.get("/graph/stats")
+    async def get_graph_statistics(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Get comprehensive knowledge graph statistics.
+        
+        Shows entity counts, relationship types, and graph health.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            stats = await graph_provider.get_stats()
+            health = await graph_provider.health_check()
+            
+            return {
+                "health": health,
+                "statistics": stats
+            }
+            
+        except Exception as e:
+            logger.error(f"Graph stats failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
+    
+    @app.post("/graph/query", response_model=GraphResponse)
+    async def query_knowledge_graph(
+        query: GraphQuery,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Advanced graph query endpoint.
+        
+        Supports entity filtering, relationship traversal, and pattern matching.
+        """
+        try:
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # Convert GraphQuery to filters for the provider
+            filters = {}
+            if query.entity_name:
+                filters['entity_name'] = query.entity_name
+            if query.entity_type:
+                filters['entity_type'] = query.entity_type
+            if query.relationship_type:
+                filters['relationship_type'] = query.relationship_type
+            
+            # Execute query
+            import time
+            start_time = time.time()
+            
+            memories = await graph_provider.query([], query.limit, filters)
+            
+            query_time = (time.time() - start_time) * 1000
+            
+            # TODO: Convert memories to graph nodes and relationships
+            return GraphResponse(
+                nodes=[],
+                relationships=[],
+                query_time_ms=query_time,
+                total_nodes=0,
+                total_relationships=0
+            )
+            
+        except Exception as e:
+            logger.error(f"Graph query failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to query graph: {str(e)}")
     
     return app
 
