@@ -8,7 +8,7 @@ services:
     branch: feat/day1-vertical-slice
     rootDir: python/memory_service
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.memory_service.api:create_memory_app --host 0.0.0.0 --port $PORT --workers 3 --factory
+    startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
       - key: SERVICE_NAME
@@ -31,8 +31,8 @@ services:
         value: "true"
       - key: PINECONE_API_KEY
         value: ""
-      - key: OPENAI_API_KEY
-        value: "mock_key_for_demo"
+      # OPENAI_API_KEY should be set in Render.com dashboard for security
+      # Do not hardcode API keys in render.yaml
 
   # Keep-alive Background Worker
   - type: worker
