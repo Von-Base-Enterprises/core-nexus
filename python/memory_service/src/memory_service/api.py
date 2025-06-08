@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI):
     chroma_config = ProviderConfig(
         name="chromadb",
         enabled=True,
-        primary=True,  # Make primary by default, will be overridden if pgvector works
+        primary=True,  # Make primary by default
         config={
             "collection_name": "core_nexus_memories",
             "persist_directory": "./memory_service_chroma"
@@ -113,7 +113,12 @@ async def lifespan(app: FastAPI):
     try:
         chroma_provider = ChromaProvider(chroma_config)
         providers.append(chroma_provider)
-        logger.info("ChromaDB provider initialized")
+        # If pgvector was successfully initialized, make it primary instead
+        if any(p.name == "pgvector" and p.enabled for p in providers):
+            chroma_config.primary = False
+            logger.info("ChromaDB provider initialized as secondary (pgvector is primary)")
+        else:
+            logger.info("ChromaDB provider initialized as primary")
     except Exception as e:
         logger.error(f"ChromaDB provider failed to initialize: {e}")
     
@@ -123,6 +128,17 @@ async def lifespan(app: FastAPI):
     
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
+    
+    # Ensure we have at least one enabled primary provider
+    enabled_providers = [p for p in providers if p.enabled]
+    if not enabled_providers:
+        raise RuntimeError("No enabled vector providers available")
+    
+    # If no primary provider is enabled, make the first enabled one primary
+    has_enabled_primary = any(p.enabled and p.config.primary for p in providers)
+    if not has_enabled_primary:
+        enabled_providers[0].config.primary = True
+        logger.warning(f"No enabled primary provider found, setting {enabled_providers[0].name} as primary")
     
     # Initialize OpenAI embedding model
     embedding_model = None
