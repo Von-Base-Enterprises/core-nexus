@@ -116,9 +116,36 @@ async def lifespan(app: FastAPI):
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
     
-    # Initialize unified store with ADM enabled
-    unified_store = UnifiedVectorStore(providers, adm_enabled=True)
-    logger.info(f"Memory service started with {len(providers)} providers")
+    # Initialize OpenAI embedding model
+    embedding_model = None
+    try:
+        from .embedding_models import create_embedding_model
+        
+        # Check if OpenAI API key is available
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key and openai_api_key.strip():
+            embedding_model = create_embedding_model(
+                provider="openai",
+                model="text-embedding-3-small",
+                api_key=openai_api_key,
+                max_retries=3,
+                timeout=30.0
+            )
+            logger.info("Initialized OpenAI embedding model: text-embedding-3-small")
+        else:
+            embedding_model = create_embedding_model(provider="mock", dimension=1536)
+            logger.warning("No OpenAI API key found, using mock embeddings")
+            
+    except Exception as e:
+        logger.error(f"Failed to initialize embedding model: {e}")
+        # Fallback to mock model
+        from .embedding_models import MockEmbeddingModel
+        embedding_model = MockEmbeddingModel(dimension=1536)
+        logger.warning("Using mock embedding model as fallback")
+    
+    # Initialize unified store with ADM enabled and embedding model
+    unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
+    logger.info(f"Memory service started with {len(providers)} providers and {embedding_model.__class__.__name__}")
     
     # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
     # from .tracking import UsageCollector
@@ -395,15 +422,61 @@ def create_memory_app() -> FastAPI:
                     'stats': provider_stats
                 })
             
+            # Add embedding model info
+            embedding_info = {
+                'model_type': store.embedding_model.__class__.__name__ if store.embedding_model else None,
+                'dimension': store.embedding_model.dimension if store.embedding_model else None
+            }
+            
+            # Add health check for embedding model if it's OpenAI
+            if hasattr(store.embedding_model, 'health_check'):
+                try:
+                    embedding_health = await store.embedding_model.health_check()
+                    embedding_info['health'] = embedding_health
+                except Exception as e:
+                    embedding_info['health'] = {'status': 'error', 'error': str(e)}
+            
             return {
                 'providers': provider_info,
                 'primary_provider': store.primary_provider.name,
-                'total_providers': len(store.providers)
+                'total_providers': len(store.providers),
+                'embedding_model': embedding_info
             }
             
         except Exception as e:
             logger.error(f"Failed to list providers: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
+    
+    @app.post("/embeddings/test")
+    async def test_embedding(
+        text: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Test the embedding functionality with provided text.
+        
+        Useful for verifying OpenAI integration and debugging embedding issues.
+        """
+        try:
+            if not store.embedding_model:
+                raise HTTPException(status_code=503, detail="No embedding model configured")
+            
+            start_time = time.time()
+            embedding = await store.embedding_model.embed_text(text)
+            duration = (time.time() - start_time) * 1000
+            
+            return {
+                'text': text,
+                'embedding_dimension': len(embedding),
+                'embedding_sample': embedding[:5],  # First 5 values for verification
+                'model_type': store.embedding_model.__class__.__name__,
+                'generation_time_ms': round(duration, 2),
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Embedding test failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Embedding test failed: {str(e)}")
     
     @app.post("/memories/batch", response_model=List[MemoryResponse])
     async def store_memories_batch(
