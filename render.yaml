@@ -33,6 +33,13 @@ services:
         value: ""
       # OPENAI_API_KEY should be set in Render.com dashboard for security
       # Do not hardcode API keys in render.yaml
+      - key: PGVECTOR_HOST
+        value: dpg-d12n0np5pdvs73ctmm40-a
+      - key: PGVECTOR_DATABASE
+        value: nexus_memory_db
+      - key: PGVECTOR_USER
+        value: nexus_memory_db_user
+      # PGVECTOR_PASSWORD should be set in dashboard for security
 
   # Keep-alive Background Worker
   - type: worker
