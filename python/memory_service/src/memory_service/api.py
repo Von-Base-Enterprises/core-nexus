@@ -120,15 +120,17 @@ async def lifespan(app: FastAPI):
     unified_store = UnifiedVectorStore(providers, adm_enabled=True)
     logger.info(f"Memory service started with {len(providers)} providers")
     
-    # Initialize usage tracking
-    from .tracking import UsageCollector
-    usage_collector = UsageCollector(unified_store=unified_store)
-    logger.info("Usage tracking initialized")
+    # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
+    # from .tracking import UsageCollector
+    # usage_collector = UsageCollector(unified_store=unified_store)
+    # logger.info("Usage tracking initialized")
+    usage_collector = None
     
-    # Initialize dashboard
-    from .dashboard import MemoryDashboard
-    memory_dashboard = MemoryDashboard(unified_store)
-    logger.info("Memory dashboard initialized")
+    # Initialize dashboard - DISABLED FOR STABLE DEPLOYMENT
+    # from .dashboard import MemoryDashboard
+    # memory_dashboard = MemoryDashboard(unified_store)
+    # logger.info("Memory dashboard initialized")
+    memory_dashboard = None
     
     # Set startup time for uptime tracking
     import time
@@ -211,12 +213,12 @@ def create_memory_app() -> FastAPI:
         
         return response
     
-    # Add usage tracking middleware
-    @app.on_event("startup")
-    async def add_usage_tracking():
-        if usage_collector:
-            from .tracking import UsageTrackingMiddleware
-            app.add_middleware(UsageTrackingMiddleware, usage_collector=usage_collector)
+    # Add usage tracking middleware - DISABLED FOR STABLE DEPLOYMENT
+    # @app.on_event("startup")
+    # async def add_usage_tracking():
+    #     if usage_collector:
+    #         from .tracking import UsageTrackingMiddleware
+    #         app.add_middleware(UsageTrackingMiddleware, usage_collector=usage_collector)
     
     def get_store() -> UnifiedVectorStore:
         """Dependency to get the unified store instance."""
