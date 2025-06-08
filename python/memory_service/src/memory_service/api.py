@@ -16,11 +16,11 @@ from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from .models import (
     MemoryRequest, MemoryResponse, QueryRequest, QueryResponse,
-    HealthCheckResponse, MemoryStats, ProviderConfig,
-    GraphNode, GraphRelationship, GraphQuery, GraphResponse, EntityInsights
+    HealthCheckResponse, MemoryStats, ProviderConfig
 )
 from .unified_store import UnifiedVectorStore
 from .providers import PineconeProvider, ChromaProvider, PgVectorProvider, GraphProvider
@@ -108,6 +108,40 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"ChromaDB provider failed to initialize: {e}")
     
+    # Add Graph Provider for knowledge graph functionality
+    if os.getenv("GRAPH_ENABLED", "true").lower() == "true":
+        try:
+            # Build connection string from pgvector config if available
+            pg_config = pgvector_config.config if 'pgvector_provider' in locals() else {
+                "host": os.getenv("DB_HOST", "localhost"),
+                "port": int(os.getenv("DB_PORT", 5432)),
+                "database": os.getenv("DB_NAME", "core_nexus"),
+                "user": os.getenv("DB_USER", "postgres"),
+                "password": os.getenv("DB_PASSWORD", "secure_password_change_me")
+            }
+            
+            connection_string = (
+                f"postgresql://{pg_config['user']}:{pg_config['password']}@"
+                f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
+            )
+            
+            graph_config = ProviderConfig(
+                name="graph",  # This must match the lookup in API endpoints
+                enabled=True,
+                primary=False,
+                config={
+                    "connection_string": connection_string,
+                    "table_prefix": "graph",
+                    "spacy_model": os.getenv("SPACY_MODEL", "en_core_web_sm")
+                }
+            )
+            graph_provider = GraphProvider(graph_config)
+            providers.append(graph_provider)
+            logger.info("Graph provider initialized")
+        except Exception as e:
+            logger.warning(f"Graph provider failed to initialize: {e}")
+            # Non-critical - system works without graph
+    
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
     
@@ -175,7 +209,21 @@ def create_memory_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Prometheus metrics middleware
+    # FastAPI Prometheus Instrumentator for enhanced metrics
+    instrumentator = Instrumentator(
+        metric_namespace="core_nexus",
+        metric_subsystem="fastapi",
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        should_round_latency_decimals=True,
+        excluded_handlers=["/metrics"],  # Don't track metrics endpoint itself
+        inprogress_name="fastapi_inprogress",
+        inprogress_labels=True,
+    )
+    instrumentator.instrument(app)
+    instrumentator.expose(app, endpoint="/metrics/fastapi")
+    
+    # Custom Prometheus metrics middleware
     @app.middleware("http")
     async def metrics_middleware(request: Request, call_next):
         start_time = time.time()
@@ -850,7 +898,7 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Path finding failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to find path: {str(e)}")
     
-    @app.get("/graph/insights/{memory_id}", response_model=EntityInsights)
+    @app.get("/graph/insights/{memory_id}")
     async def get_memory_graph_insights(
         memory_id: str,
         store: UnifiedVectorStore = Depends(get_store)
@@ -867,23 +915,20 @@ def create_memory_app() -> FastAPI:
             
             # TODO: Implement actual insights gathering
             # For now, return mock data
-            from datetime import datetime
-            
-            mock_entity = GraphNode(
-                id=memory_id,
-                entity_type="concept",
-                entity_name="placeholder",
-                properties={},
-                importance_score=0.5
-            )
-            
-            return EntityInsights(
-                entity=mock_entity,
-                memory_count=1,
-                relationship_count=0,
-                top_relationships=[],
-                co_occurring_entities=[]
-            )
+            return {
+                "memory_id": memory_id,
+                "entity": {
+                    "id": memory_id,
+                    "entity_type": "concept",
+                    "entity_name": "placeholder",
+                    "properties": {},
+                    "importance_score": 0.5
+                },
+                "memory_count": 1,
+                "relationship_count": 0,
+                "top_relationships": [],
+                "co_occurring_entities": []
+            }
             
         except Exception as e:
             logger.error(f"Graph insights failed: {e}")
@@ -939,9 +984,9 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Graph stats failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
     
-    @app.post("/graph/query", response_model=GraphResponse)
+    @app.post("/graph/query")
     async def query_knowledge_graph(
-        query: GraphQuery,
+        query: dict,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
@@ -954,31 +999,32 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
             
-            # Convert GraphQuery to filters for the provider
+            # Convert query dict to filters for the provider
             filters = {}
-            if query.entity_name:
-                filters['entity_name'] = query.entity_name
-            if query.entity_type:
-                filters['entity_type'] = query.entity_type
-            if query.relationship_type:
-                filters['relationship_type'] = query.relationship_type
+            if query.get('entity_name'):
+                filters['entity_name'] = query['entity_name']
+            if query.get('entity_type'):
+                filters['entity_type'] = query['entity_type']
+            if query.get('relationship_type'):
+                filters['relationship_type'] = query['relationship_type']
             
             # Execute query
             import time
             start_time = time.time()
             
-            memories = await graph_provider.query([], query.limit, filters)
+            limit = query.get('limit', 10)
+            memories = await graph_provider.query([], limit, filters)
             
             query_time = (time.time() - start_time) * 1000
             
             # TODO: Convert memories to graph nodes and relationships
-            return GraphResponse(
-                nodes=[],
-                relationships=[],
-                query_time_ms=query_time,
-                total_nodes=0,
-                total_relationships=0
-            )
+            return {
+                "nodes": [],
+                "relationships": [],
+                "query_time_ms": query_time,
+                "total_nodes": 0,
+                "total_relationships": 0
+            }
             
         except Exception as e:
             logger.error(f"Graph query failed: {e}")

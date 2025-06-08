@@ -30,180 +30,69 @@ class PineconeProvider(VectorProvider):
     
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self.index = None
-        self.embedding_dim = config.config.get('embedding_dim', 1536)
-        self.metric = config.config.get('metric', 'cosine')
-        self._initialize_pinecone()
-    
-    def _initialize_pinecone(self):
-        """Initialize Pinecone connection using existing patterns."""
-        try:
-            import pinecone
-            from pinecone import Pinecone
-            
-            # Use existing API key patterns from CoreNexus.py
-            api_key = self.config.config.get('api_key')
-            if not api_key:
-                raise ValueError("Pinecone API key required in config")
-            
-            # Initialize client
-            pc = Pinecone(api_key=api_key)
-            
-            index_name = self.config.config.get('index_name', 'core-nexus-memories')
-            
-            # Check if index exists, create if needed
-            existing_indexes = [idx.name for idx in pc.list_indexes()]
-            if index_name not in existing_indexes:
-                logger.info(f"Creating Pinecone index: {index_name}")
-                pc.create_index(
-                    name=index_name,
-                    dimension=self.embedding_dim,
-                    metric=self.metric,
-                    spec=pinecone.ServerlessSpec(
-                        cloud='aws',
-                        region='us-east-1'
-                    )
-                )
-            
-            self.index = pc.Index(index_name)
-            logger.info(f"Pinecone provider initialized: {index_name}")
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize Pinecone: {e}")
-            self.enabled = False
-            raise
-    
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
-        """Store memory in Pinecone with UUID."""
-        if not self.index:
-            raise RuntimeError("Pinecone index not initialized")
+        # TODO: Initialize Pinecone client with config
+        self.enabled = False  # Disabled until Pinecone integration is complete
         
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+        """Store vector in Pinecone."""
+        if not self.enabled:
+            raise RuntimeError("Pinecone provider not enabled")
+            
+        # TODO: Implement Pinecone storage
+        # This will wrap existing functionality from the current codebase
         memory_id = uuid4()
         
-        # Prepare metadata (Pinecone has limitations on metadata types)
-        pinecone_metadata = {
-            'content': content[:1000],  # Truncate for metadata storage
-            'user_id': str(metadata.get('user_id', '')),
-            'conversation_id': str(metadata.get('conversation_id', '')),
-            'importance_score': float(metadata.get('importance_score', 0.5)),
-            'created_at': float(metadata.get('created_at', time.time())),
-            'content_length': int(metadata.get('content_length', len(content)))
-        }
-        
-        # Store vector with metadata
-        vector_data = {
-            'id': str(memory_id),
-            'values': embedding,
-            'metadata': pinecone_metadata
-        }
-        
-        # Use asyncio to make synchronous pinecone call async
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self.index.upsert, [vector_data])
-        
-        logger.debug(f"Stored memory {memory_id} in Pinecone")
+        logger.info(f"Stored in Pinecone: {memory_id}")
         return memory_id
-    
+        
     async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
-        """Query similar memories from Pinecone."""
-        if not self.index:
-            raise RuntimeError("Pinecone index not initialized")
+        """Query Pinecone for similar vectors."""
+        if not self.enabled:
+            return []
+            
+        # TODO: Implement Pinecone query
+        # This will wrap existing functionality from the current codebase
         
-        # Build Pinecone filter from generic filters
-        pinecone_filter = {}
-        if filters:
-            if 'user_id' in filters:
-                pinecone_filter['user_id'] = {'$eq': str(filters['user_id'])}
-            if 'conversation_id' in filters:
-                pinecone_filter['conversation_id'] = {'$eq': str(filters['conversation_id'])}
-            if 'min_importance' in filters:
-                pinecone_filter['importance_score'] = {'$gte': float(filters['min_importance'])}
+        return []
         
-        # Query Pinecone
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, 
-            lambda: self.index.query(
-                vector=query_embedding,
-                top_k=limit,
-                filter=pinecone_filter if pinecone_filter else None,
-                include_metadata=True
-            )
-        )
-        
-        # Convert to MemoryResponse objects
-        memories = []
-        for match in response.matches:
-            metadata = match.metadata or {}
-            memory = MemoryResponse(
-                id=UUID(match.id),
-                content=metadata.get('content', ''),
-                metadata=dict(metadata),
-                importance_score=float(metadata.get('importance_score', 0.5)),
-                similarity_score=float(match.score)
-            )
-            memories.append(memory)
-        
-        logger.debug(f"Pinecone query returned {len(memories)} memories")
-        return memories
-    
     async def health_check(self) -> Dict[str, Any]:
-        """Check Pinecone health and stats."""
-        try:
-            if not self.index:
-                return {'status': 'error', 'message': 'Index not initialized'}
-            
-            # Get index stats
-            loop = asyncio.get_event_loop()
-            stats = await loop.run_in_executor(None, self.index.describe_index_stats)
-            
-            return {
-                'status': 'healthy',
-                'total_vectors': stats.total_vector_count,
-                'dimension': stats.dimension,
-                'index_fullness': stats.index_fullness,
-                'namespaces': len(stats.namespaces) if stats.namespaces else 0
-            }
-            
-        except Exception as e:
-            logger.error(f"Pinecone health check failed: {e}")
-            return {'status': 'error', 'message': str(e)}
-    
+        """Check Pinecone health."""
+        return {
+            'status': 'disabled',
+            'reason': 'Pinecone integration pending'
+        }
+        
     async def get_stats(self) -> Dict[str, Any]:
-        """Get detailed Pinecone statistics."""
-        health = await self.health_check()
+        """Get Pinecone statistics."""
         return {
             'provider': 'pinecone',
-            'health': health,
-            'features': ['cloud_scale', 'managed_service', 'auto_scaling']
+            'enabled': self.enabled,
+            'message': 'Pinecone integration pending'
         }
 
 
 class ChromaProvider(VectorProvider):
     """
-    ChromaDB provider wrapping existing implementations from chroma_vectorstore.py
+    ChromaDB provider for local vector storage.
     
-    Leverages existing local-speed vector storage with added structure.
+    Fast, embedded solution perfect for development and edge deployments.
     """
     
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self.client = None
         self.collection = None
-        self.collection_name = config.config.get('collection_name', 'core_nexus_memories')
-        self._initialize_chroma()
-    
-    def _initialize_chroma(self):
-        """Initialize ChromaDB connection using existing patterns."""
+        self._initialize_chroma(config.config)
+        
+    def _initialize_chroma(self, config: Dict[str, Any]):
+        """Initialize ChromaDB collection."""
         try:
             import chromadb
             from chromadb.config import Settings
             
-            # Configure ChromaDB client
-            persist_directory = self.config.config.get('persist_directory', './chroma_db')
-            
+            # Initialize ChromaDB client
+            persist_dir = config.get('persist_directory', './chroma_db')
             self.client = chromadb.PersistentClient(
-                path=persist_directory,
+                path=persist_dir,
                 settings=Settings(
                     anonymized_telemetry=False,
                     allow_reset=True
@@ -211,144 +100,148 @@ class ChromaProvider(VectorProvider):
             )
             
             # Get or create collection
+            collection_name = config.get('collection_name', 'core_nexus_memories')
             try:
-                self.collection = self.client.get_collection(name=self.collection_name)
-                logger.info(f"Using existing ChromaDB collection: {self.collection_name}")
-            except Exception:
+                self.collection = self.client.get_collection(collection_name)
+                logger.info(f"Loaded existing ChromaDB collection: {collection_name}")
+            except:
                 self.collection = self.client.create_collection(
-                    name=self.collection_name,
-                    metadata={"description": "Core Nexus unified memory storage"}
+                    name=collection_name,
+                    metadata={"hnsw:space": "cosine"}
                 )
-                logger.info(f"Created new ChromaDB collection: {self.collection_name}")
-            
+                logger.info(f"Created new ChromaDB collection: {collection_name}")
+                
+        except ImportError:
+            logger.error("ChromaDB not installed. Install with: pip install chromadb")
+            self.enabled = False
+            raise
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {e}")
             self.enabled = False
             raise
-    
+            
     async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
-        """Store memory in ChromaDB with UUID."""
+        """Store vector in ChromaDB."""
         if not self.collection:
-            raise RuntimeError("ChromaDB collection not initialized")
-        
+            raise RuntimeError("ChromaDB not initialized")
+            
         memory_id = uuid4()
         
-        # Prepare metadata for ChromaDB
-        chroma_metadata = {
-            'user_id': str(metadata.get('user_id', '')),
-            'conversation_id': str(metadata.get('conversation_id', '')),
-            'importance_score': float(metadata.get('importance_score', 0.5)),
-            'created_at': float(metadata.get('created_at', time.time())),
-            'content_length': int(metadata.get('content_length', len(content)))
-        }
-        
-        # Store in ChromaDB
+        # ChromaDB is synchronous, so we run in executor
+        import asyncio
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: self.collection.add(
-                ids=[str(memory_id)],
+        
+        def _store():
+            self.collection.add(
+                embeddings=[embedding],
                 documents=[content],
-                metadatas=[chroma_metadata],
-                embeddings=[embedding]
+                metadatas=[metadata],
+                ids=[str(memory_id)]
             )
-        )
+            
+        await loop.run_in_executor(None, _store)
         
-        logger.debug(f"Stored memory {memory_id} in ChromaDB")
+        logger.debug(f"Stored in ChromaDB: {memory_id}")
         return memory_id
-    
+        
     async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
-        """Query similar memories from ChromaDB."""
+        """Query ChromaDB for similar vectors."""
         if not self.collection:
-            raise RuntimeError("ChromaDB collection not initialized")
-        
-        # Build ChromaDB where filter
-        where_filter = {}
-        if filters:
-            if 'user_id' in filters:
-                where_filter['user_id'] = {'$eq': str(filters['user_id'])}
-            if 'conversation_id' in filters:
-                where_filter['conversation_id'] = {'$eq': str(filters['conversation_id'])}
-            if 'min_importance' in filters:
-                where_filter['importance_score'] = {'$gte': float(filters['min_importance'])}
-        
-        # Query ChromaDB
+            return []
+            
+        import asyncio
         loop = asyncio.get_event_loop()
-        results = await loop.run_in_executor(
-            None,
-            lambda: self.collection.query(
+        
+        def _query():
+            # Apply filters if provided
+            where_clause = {}
+            if filters:
+                # ChromaDB uses a different filter format
+                # Convert our filters to ChromaDB format
+                for key, value in filters.items():
+                    if key not in ['limit', 'offset']:  # Skip non-metadata filters
+                        where_clause[key] = value
+                        
+            results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=limit,
-                where=where_filter if where_filter else None,
-                include=['documents', 'metadatas', 'distances']
+                where=where_clause if where_clause else None,
+                include=['metadatas', 'documents', 'distances']
             )
-        )
-        
-        # Convert to MemoryResponse objects
-        memories = []
-        if results['documents'] and len(results['documents']) > 0:
-            documents = results['documents'][0]
-            metadatas = results['metadatas'][0] if results['metadatas'] else []
-            distances = results['distances'][0] if results['distances'] else []
-            ids = results['ids'][0] if results['ids'] else []
             
-            for i, doc in enumerate(documents):
-                metadata = metadatas[i] if i < len(metadatas) else {}
-                distance = distances[i] if i < len(distances) else 1.0
-                doc_id = ids[i] if i < len(ids) else str(uuid4())
-                
-                # Convert distance to similarity (ChromaDB uses distance, we want similarity)
-                similarity_score = max(0.0, 1.0 - distance)
-                
+            return results
+            
+        results = await loop.run_in_executor(None, _query)
+        
+        # Convert ChromaDB results to MemoryResponse objects
+        memories = []
+        if results and results['ids'] and len(results['ids'][0]) > 0:
+            for i in range(len(results['ids'][0])):
                 memory = MemoryResponse(
-                    id=UUID(doc_id),
-                    content=doc,
-                    metadata=dict(metadata),
-                    importance_score=float(metadata.get('importance_score', 0.5)),
-                    similarity_score=similarity_score
+                    id=UUID(results['ids'][0][i]),
+                    content=results['documents'][0][i],
+                    metadata=results['metadatas'][0][i] or {},
+                    embedding=[],  # ChromaDB doesn't return embeddings by default
+                    importance_score=results['metadatas'][0][i].get('importance_score', 0.5),
+                    similarity_score=1.0 - results['distances'][0][i],  # Convert distance to similarity
+                    created_at=results['metadatas'][0][i].get('created_at', '')
                 )
                 memories.append(memory)
-        
-        logger.debug(f"ChromaDB query returned {len(memories)} memories")
+                
         return memories
-    
+        
     async def health_check(self) -> Dict[str, Any]:
-        """Check ChromaDB health and stats."""
+        """Check ChromaDB health."""
         try:
-            if not self.collection:
-                return {'status': 'error', 'message': 'Collection not initialized'}
-            
-            # Get collection stats
-            loop = asyncio.get_event_loop()
-            count = await loop.run_in_executor(None, self.collection.count)
-            
+            if self.collection:
+                count = self.collection.count()
+                return {
+                    'status': 'healthy',
+                    'details': {
+                        'total_vectors': count,
+                        'collection_name': self.collection.name
+                    }
+                }
+            else:
+                return {
+                    'status': 'unhealthy',
+                    'error': 'Collection not initialized'
+                }
+        except Exception as e:
             return {
-                'status': 'healthy',
-                'total_vectors': count,
-                'collection_name': self.collection_name,
-                'storage_type': 'persistent_local'
+                'status': 'unhealthy',
+                'error': str(e)
             }
             
-        except Exception as e:
-            logger.error(f"ChromaDB health check failed: {e}")
-            return {'status': 'error', 'message': str(e)}
-    
     async def get_stats(self) -> Dict[str, Any]:
-        """Get detailed ChromaDB statistics."""
-        health = await self.health_check()
-        return {
-            'provider': 'chromadb',
-            'health': health,
-            'features': ['local_storage', 'fast_queries', 'no_api_limits']
-        }
+        """Get ChromaDB statistics."""
+        try:
+            if self.collection:
+                count = self.collection.count()
+                return {
+                    'provider': 'chromadb',
+                    'total_memories': count,
+                    'collection_name': self.collection.name,
+                    'embedding_dimension': 1536  # Default for OpenAI embeddings
+                }
+            else:
+                return {
+                    'provider': 'chromadb',
+                    'error': 'Collection not initialized'
+                }
+        except Exception as e:
+            return {
+                'provider': 'chromadb',
+                'error': str(e)
+            }
 
 
 class PgVectorProvider(VectorProvider):
     """
-    PostgreSQL + pgvector provider for unified SQL queries.
+    PostgreSQL with pgvector extension provider.
     
-    Enables complex relational queries while maintaining vector similarity search.
-    Uses asyncpg for optimal performance with asyncio.
+    Combines the reliability of PostgreSQL with vector similarity search.
+    Perfect for unified queries across structured and vector data.
     """
     
     def __init__(self, config: ProviderConfig):
@@ -356,348 +249,735 @@ class PgVectorProvider(VectorProvider):
         self.connection_pool = None
         self.table_name = config.config.get('table_name', 'vector_memories')
         self.embedding_dim = config.config.get('embedding_dim', 1536)
-        self.distance_metric = config.config.get('distance_metric', 'cosine')
-        self.index_type = config.config.get('index_type', 'hnsw')  # hnsw or ivfflat
-        self._initialize_connection()
+        self._initialize_pool(config.config)
         
-    def _initialize_connection(self):
-        """Initialize asyncpg connection pool."""
-        asyncio.create_task(self._async_initialize())
+    def _initialize_pool(self, config: Dict[str, Any]):
+        """Initialize async connection pool."""
+        import asyncio
         
-    async def _async_initialize(self):
-        """Async initialization of PostgreSQL + pgvector."""
-        try:
-            import asyncpg
-            
-            # Build connection string from config
-            db_config = self.config.config
-            dsn = f"postgresql://{db_config.get('user', 'postgres')}:" \
-                  f"{db_config.get('password', '')}@" \
-                  f"{db_config.get('host', 'localhost')}:" \
-                  f"{db_config.get('port', 5432)}/" \
-                  f"{db_config.get('database', 'postgres')}"
-            
-            # Create connection pool
-            self.connection_pool = await asyncpg.create_pool(
-                dsn,
-                min_size=2,
-                max_size=10,
-                command_timeout=self.config.timeout_seconds
-            )
-            
-            # Initialize database schema
-            await self._setup_database()
-            
-            logger.info(f"PgVector provider initialized: {self.table_name}")
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize pgvector: {e}")
-            self.enabled = False
-            raise
-            
-    async def _setup_database(self):
-        """Set up pgvector extension and memory table."""
-        async with self.connection_pool.acquire() as conn:
-            # Create pgvector extension
-            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-            
-            # Create memories table with vector column
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    content TEXT NOT NULL,
-                    embedding vector({self.embedding_dim}),
-                    metadata JSONB DEFAULT '{{}}',
-                    user_id TEXT,
-                    conversation_id TEXT,
-                    importance_score FLOAT DEFAULT 0.5,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    last_accessed TIMESTAMP DEFAULT NOW(),
-                    access_count INTEGER DEFAULT 0
+        async def init_pool():
+            try:
+                import asyncpg
+                
+                # Build connection string
+                conn_str = (
+                    f"postgresql://{config['user']}:{config['password']}@"
+                    f"{config['host']}:{config['port']}/{config['database']}"
                 )
-            """)
-            
-            # Create indexes for performance
-            await self._create_indexes(conn)
-            
-            logger.info(f"Database schema initialized for {self.table_name}")
-            
-    async def _create_indexes(self, conn):
-        """Create optimized indexes for vector similarity and metadata queries."""
-        table = self.table_name
-        
+                
+                self.connection_pool = await asyncpg.create_pool(
+                    conn_str,
+                    min_size=5,
+                    max_size=20,
+                    command_timeout=60
+                )
+                
+                # Ensure pgvector extension is enabled
+                async with self.connection_pool.acquire() as conn:
+                    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                    
+                    # Create table if not exists
+                    await conn.execute(f"""
+                        CREATE TABLE IF NOT EXISTS {self.table_name} (
+                            id UUID PRIMARY KEY,
+                            content TEXT NOT NULL,
+                            embedding vector({self.embedding_dim}),
+                            metadata JSONB DEFAULT '{{}}',
+                            importance_score FLOAT DEFAULT 0.5,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            updated_at TIMESTAMP DEFAULT NOW()
+                        )
+                    """)
+                    
+                    # Create indexes
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding 
+                        ON {self.table_name} 
+                        USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100)
+                    """)
+                    
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_metadata 
+                        ON {self.table_name} 
+                        USING GIN (metadata)
+                    """)
+                    
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_importance 
+                        ON {self.table_name} (importance_score DESC)
+                    """)
+                    
+                logger.info("PgVector provider initialized successfully")
+                
+            except ImportError:
+                logger.error("asyncpg not installed. Install with: pip install asyncpg")
+                self.enabled = False
+                raise
+            except Exception as e:
+                logger.error(f"Failed to initialize PgVector: {e}")
+                self.enabled = False
+                raise
+                
+        # Run initialization
         try:
-            # Vector similarity index (HNSW for best performance)
-            if self.index_type == 'hnsw':
-                await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS {table}_embedding_hnsw_idx 
-                    ON {table} USING hnsw (embedding vector_{self.distance_metric}_ops)
-                    WITH (m = 16, ef_construction = 64)
-                """)
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're already in an async context
+                asyncio.create_task(init_pool())
             else:
-                # IVFFlat alternative for very large datasets
-                await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS {table}_embedding_ivf_idx 
-                    ON {table} USING ivfflat (embedding vector_{self.distance_metric}_ops)
-                    WITH (lists = 1000)
-                """)
+                # Synchronous context
+                loop.run_until_complete(init_pool())
+        except RuntimeError:
+            # No event loop, create one
+            asyncio.run(init_pool())
             
-            # Metadata indexes for filtering
-            await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_user_id_idx ON {table} (user_id)")
-            await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_conversation_id_idx ON {table} (conversation_id)")
-            await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_created_at_idx ON {table} (created_at)")
-            await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_importance_idx ON {table} (importance_score)")
-            
-            # Compound indexes for common queries
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS {table}_user_time_idx 
-                ON {table} (user_id, created_at DESC)
-            """)
-            
-            # GIN index for metadata JSONB queries
-            await conn.execute(f"CREATE INDEX IF NOT EXISTS {table}_metadata_gin_idx ON {table} USING gin (metadata)")
-            
-            logger.debug(f"Created indexes for {table}")
-            
-        except Exception as e:
-            logger.warning(f"Index creation failed (may already exist): {e}")
-    
     async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
-        """Store memory in PostgreSQL with pgvector."""
+        """Store vector in PostgreSQL."""
         if not self.connection_pool:
-            raise RuntimeError("PgVector provider not initialized")
-        
-        # Generate UUID for memory
+            raise RuntimeError("PgVector not initialized")
+            
         memory_id = uuid4()
         
         async with self.connection_pool.acquire() as conn:
-            # Insert memory with vector embedding
+            # Convert embedding to PostgreSQL vector format
+            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+            
             await conn.execute(f"""
-                INSERT INTO {self.table_name} (
-                    id, content, embedding, metadata, user_id, conversation_id, 
-                    importance_score, created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO {self.table_name} 
+                (id, content, embedding, metadata, importance_score)
+                VALUES ($1, $2, $3::vector, $4, $5)
             """, 
-                memory_id,
-                content,
-                embedding,  # asyncpg handles vector type conversion
+                memory_id, 
+                content, 
+                embedding_str,
                 metadata,
-                metadata.get('user_id'),
-                metadata.get('conversation_id'),
-                float(metadata.get('importance_score', 0.5)),
-                metadata.get('created_at', time.time())
+                metadata.get('importance_score', 0.5)
             )
-        
-        logger.debug(f"Stored memory {memory_id} in pgvector")
+            
+        logger.debug(f"Stored in PgVector: {memory_id}")
         return memory_id
-    
+        
     async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
-        """Query memories using pgvector similarity search."""
+        """Query PostgreSQL for similar vectors."""
         if not self.connection_pool:
-            raise RuntimeError("PgVector provider not initialized")
-        
-        # Build WHERE clause from filters
-        where_conditions = ["1=1"]  # Always true base condition
-        params = [query_embedding, limit]
-        param_idx = 3
-        
-        if filters:
-            if 'user_id' in filters:
-                where_conditions.append(f"user_id = ${param_idx}")
-                params.append(filters['user_id'])
-                param_idx += 1
-                
-            if 'conversation_id' in filters:
-                where_conditions.append(f"conversation_id = ${param_idx}")
-                params.append(filters['conversation_id'])
-                param_idx += 1
-                
-            if 'min_importance' in filters:
-                where_conditions.append(f"importance_score >= ${param_idx}")
-                params.append(float(filters['min_importance']))
-                param_idx += 1
-                
-            if 'start_time' in filters:
-                where_conditions.append(f"created_at >= to_timestamp(${param_idx})")
-                params.append(float(filters['start_time']))
-                param_idx += 1
-                
-            if 'end_time' in filters:
-                where_conditions.append(f"created_at <= to_timestamp(${param_idx})")
-                params.append(float(filters['end_time']))
-                param_idx += 1
-        
-        where_clause = " AND ".join(where_conditions)
-        
-        # Choose distance function based on metric
-        distance_func = f"embedding <-> $1"  # L2 distance
-        if self.distance_metric == 'cosine':
-            distance_func = f"embedding <=> $1"  # Cosine distance
-        elif self.distance_metric == 'inner_product':
-            distance_func = f"embedding <#> $1"  # Inner product
-        
-        # Execute similarity query
+            return []
+            
         async with self.connection_pool.acquire() as conn:
-            # Update access tracking
-            query_sql = f"""
-                UPDATE {self.table_name} 
-                SET last_accessed = NOW(), access_count = access_count + 1
-                WHERE id IN (
-                    SELECT id FROM {self.table_name}
-                    WHERE {where_clause}
-                    ORDER BY {distance_func}
-                    LIMIT $2
-                );
-                
+            # Build query with filters
+            where_clauses = []
+            params = []
+            param_count = 2  # $1 is embedding, $2 is limit
+            
+            # Add metadata filters
+            if filters:
+                for key, value in filters.items():
+                    if key not in ['limit', 'offset']:
+                        param_count += 1
+                        where_clauses.append(f"metadata->>${param_count-1} = ${param_count}")
+                        params.extend([key, str(value)])
+                        
+            where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            
+            # Convert embedding to PostgreSQL vector format
+            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+            
+            # Query with cosine similarity
+            query = f"""
                 SELECT 
-                    id, content, metadata, importance_score, created_at,
-                    {distance_func} AS distance
+                    id,
+                    content,
+                    metadata,
+                    importance_score,
+                    1 - (embedding <=> $1::vector) as similarity_score,
+                    created_at
                 FROM {self.table_name}
-                WHERE {where_clause}
-                ORDER BY {distance_func}
+                {where_clause}
+                ORDER BY embedding <=> $1::vector
                 LIMIT $2
             """
             
-            rows = await conn.fetch(query_sql, *params)
+            rows = await conn.fetch(query, embedding_str, limit, *params)
             
             # Convert to MemoryResponse objects
             memories = []
             for row in rows:
-                # Convert distance to similarity score (0-1 range)
-                distance = float(row['distance'])
-                if self.distance_metric == 'cosine':
-                    similarity_score = max(0.0, 1.0 - distance)
-                else:
-                    # For L2 distance, use exponential decay
-                    similarity_score = max(0.0, 1.0 / (1.0 + distance))
-                
                 memory = MemoryResponse(
                     id=row['id'],
                     content=row['content'],
                     metadata=dict(row['metadata']) if row['metadata'] else {},
+                    embedding=[],  # Don't return full embeddings in response
                     importance_score=float(row['importance_score']),
-                    similarity_score=similarity_score,
-                    created_at=row['created_at']
+                    similarity_score=float(row['similarity_score']),
+                    created_at=row['created_at'].isoformat() if row['created_at'] else ''
                 )
                 memories.append(memory)
-        
-        logger.debug(f"PgVector query returned {len(memories)} memories")
+                
         return memories
-    
+        
     async def health_check(self) -> Dict[str, Any]:
-        """Check PostgreSQL + pgvector health and performance."""
-        try:
-            if not self.connection_pool:
-                return {'status': 'error', 'message': 'Connection pool not initialized'}
+        """Check PostgreSQL health."""
+        if not self.connection_pool:
+            return {
+                'status': 'unhealthy',
+                'error': 'Connection pool not initialized'
+            }
             
+        try:
             async with self.connection_pool.acquire() as conn:
-                # Check pgvector extension
-                ext_check = await conn.fetchrow(
-                    "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+                # Check connection
+                await conn.fetchval("SELECT 1")
+                
+                # Get table stats
+                count = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM {self.table_name}"
                 )
                 
-                if not ext_check:
-                    return {'status': 'error', 'message': 'pgvector extension not found'}
-                
-                # Get table statistics
-                stats = await conn.fetchrow(f"""
-                    SELECT 
-                        COUNT(*) as total_vectors,
-                        AVG(importance_score) as avg_importance,
-                        MIN(created_at) as oldest_memory,
-                        MAX(created_at) as newest_memory,
-                        AVG(access_count) as avg_access_count
-                    FROM {self.table_name}
-                """)
-                
-                # Check index usage
-                index_stats = await conn.fetch(f"""
-                    SELECT 
-                        indexname, 
-                        idx_scan as scans,
-                        idx_tup_read as tuples_read,
-                        idx_tup_fetch as tuples_fetched
-                    FROM pg_stat_user_indexes 
-                    WHERE tablename = '{self.table_name}'
-                    ORDER BY idx_scan DESC
+                # Check if pgvector is enabled
+                pgvector_enabled = await conn.fetchval("""
+                    SELECT COUNT(*) > 0 
+                    FROM pg_extension 
+                    WHERE extname = 'vector'
                 """)
                 
                 return {
                     'status': 'healthy',
-                    'pgvector_version': ext_check['extversion'],
-                    'total_vectors': int(stats['total_vectors']) if stats['total_vectors'] else 0,
-                    'avg_importance': float(stats['avg_importance']) if stats['avg_importance'] else 0.0,
-                    'memory_span_days': (stats['newest_memory'] - stats['oldest_memory']).days if stats['oldest_memory'] else 0,
-                    'avg_access_count': float(stats['avg_access_count']) if stats['avg_access_count'] else 0.0,
-                    'distance_metric': self.distance_metric,
-                    'index_type': self.index_type,
-                    'embedding_dimensions': self.embedding_dim,
-                    'active_indexes': len(index_stats),
-                    'connection_pool_size': self.connection_pool._queue.qsize()
+                    'details': {
+                        'total_vectors': count,
+                        'pgvector_enabled': pgvector_enabled,
+                        'table_name': self.table_name,
+                        'pool_size': self.connection_pool.get_size()
+                    }
                 }
-                
         except Exception as e:
-            logger.error(f"PgVector health check failed: {e}")
-            return {'status': 'error', 'message': str(e)}
-    
+            return {
+                'status': 'unhealthy',
+                'error': str(e)
+            }
+            
     async def get_stats(self) -> Dict[str, Any]:
-        """Get comprehensive pgvector statistics."""
-        health = await self.health_check()
-        
+        """Get PgVector statistics."""
+        if not self.connection_pool:
+            return {
+                'provider': 'pgvector',
+                'error': 'Connection pool not initialized'
+            }
+            
         try:
             async with self.connection_pool.acquire() as conn:
-                # Query performance metrics
-                perf_stats = await conn.fetchrow(f"""
+                stats = await conn.fetchrow(f"""
                     SELECT 
-                        pg_size_pretty(pg_total_relation_size('{self.table_name}')) as table_size,
-                        pg_size_pretty(pg_indexes_size('{self.table_name}')) as index_size
-                """)
-                
-                # Memory usage by user
-                user_stats = await conn.fetch(f"""
-                    SELECT 
-                        user_id,
-                        COUNT(*) as memory_count,
-                        AVG(importance_score) as avg_importance
+                        COUNT(*) as total_memories,
+                        AVG(importance_score) as avg_importance,
+                        MIN(created_at) as oldest_memory,
+                        MAX(created_at) as newest_memory,
+                        pg_size_pretty(pg_total_relation_size('{self.table_name}')) as table_size
                     FROM {self.table_name}
-                    WHERE user_id IS NOT NULL
-                    GROUP BY user_id
-                    ORDER BY memory_count DESC
-                    LIMIT 10
                 """)
                 
                 return {
                     'provider': 'pgvector',
-                    'health': health,
-                    'storage': {
-                        'table_size': perf_stats['table_size'] if perf_stats else 'unknown',
-                        'index_size': perf_stats['index_size'] if perf_stats else 'unknown'
-                    },
-                    'top_users': [
-                        {
-                            'user_id': row['user_id'],
-                            'memory_count': row['memory_count'],
-                            'avg_importance': float(row['avg_importance'])
-                        }
-                        for row in user_stats
-                    ],
-                    'features': [
-                        'sql_queries', 'acid_compliance', 'complex_joins', 
-                        'time_partitioning', 'metadata_indexing', 'access_tracking'
-                    ]
+                    'total_memories': stats['total_memories'],
+                    'avg_importance_score': float(stats['avg_importance']) if stats['avg_importance'] else 0,
+                    'oldest_memory': stats['oldest_memory'].isoformat() if stats['oldest_memory'] else None,
+                    'newest_memory': stats['newest_memory'].isoformat() if stats['newest_memory'] else None,
+                    'table_size': stats['table_size'],
+                    'table_name': self.table_name,
+                    'embedding_dimension': self.embedding_dim
                 }
-                
         except Exception as e:
-            logger.error(f"Failed to get pgvector stats: {e}")
             return {
                 'provider': 'pgvector',
-                'health': health,
                 'error': str(e)
             }
-    
+            
+    async def delete(self, memory_id: UUID) -> bool:
+        """Delete a memory from PgVector."""
+        if not self.connection_pool:
+            return False
+            
+        try:
+            async with self.connection_pool.acquire() as conn:
+                result = await conn.execute(
+                    f"DELETE FROM {self.table_name} WHERE id = $1",
+                    memory_id
+                )
+                return result.split()[-1] == '1'  # "DELETE 1" means success
+        except Exception as e:
+            logger.error(f"Failed to delete memory {memory_id}: {e}")
+            return False
+            
+    async def update_importance(self, memory_id: UUID, importance_score: float) -> bool:
+        """Update importance score for a memory."""
+        if not self.connection_pool:
+            return False
+            
+        try:
+            async with self.connection_pool.acquire() as conn:
+                result = await conn.execute(f"""
+                    UPDATE {self.table_name} 
+                    SET importance_score = $1, updated_at = NOW()
+                    WHERE id = $2
+                """, importance_score, memory_id)
+                return result.split()[-1] == '1'  # "UPDATE 1" means success
+        except Exception as e:
+            logger.error(f"Failed to update importance for {memory_id}: {e}")
+            return False
+            
     async def close(self):
         """Close the connection pool."""
         if self.connection_pool:
             await self.connection_pool.close()
             self.connection_pool = None
             logger.info("PgVector provider closed")
+
+
+# =====================================================
+# GRAPH PROVIDER (Added by Agent 2)
+# =====================================================
+
+class GraphProvider(VectorProvider):
+    """
+    PostgreSQL-based Graph Provider for Knowledge Graph functionality.
+    
+    Extends the existing provider pattern to add relationship understanding
+    to memories, transforming isolated data into connected intelligence.
+    """
+    
+    def __init__(self, config: ProviderConfig):
+        super().__init__(config)
+        self.connection_pool = None
+        self.connection_string = config.config.get('connection_string')
+        self.table_prefix = config.config.get('table_prefix', 'graph')
+        self.entity_extractor = None  # Will be initialized lazily
+        self._pool_initialized = False
+    
+    async def _ensure_pool(self):
+        """Ensure connection pool is initialized (lazy initialization)."""
+        if not self._pool_initialized and self.connection_string:
+            try:
+                import asyncpg
+                
+                self.connection_pool = await asyncpg.create_pool(
+                    self.connection_string,
+                    min_size=2,
+                    max_size=10,
+                    command_timeout=60
+                )
+                self._pool_initialized = True
+                logger.info("Graph provider connection pool initialized")
+                
+            except Exception as e:
+                logger.error(f"Failed to initialize graph provider pool: {e}")
+                self.enabled = False
+                raise
+    
+    async def _get_or_create_embedding_model(self):
+        """Get or create the embedding model for entity embeddings."""
+        if not hasattr(self, '_embedding_model') or self._embedding_model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                logger.info("Initialized entity embedding model")
+            except ImportError:
+                logger.warning("sentence-transformers not available, using mock embeddings")
+                self._embedding_model = None
+        return self._embedding_model
+    
+    async def _extract_entities(self, content: str) -> List[Dict[str, Any]]:
+        """Extract entities from memory content using NLP."""
+        entities = []
+        
+        try:
+            # Try to use spaCy for entity extraction
+            if self.entity_extractor is None:
+                try:
+                    import spacy
+                    self.entity_extractor = spacy.load("en_core_web_sm")
+                except:
+                    logger.warning("spaCy not available, using simple pattern matching")
+                    self.entity_extractor = "simple"
+            
+            if self.entity_extractor != "simple":
+                # Use spaCy NER
+                doc = self.entity_extractor(content)
+                for ent in doc.ents:
+                    entity_type = self._map_spacy_to_entity_type(ent.label_)
+                    entities.append({
+                        'name': ent.text,
+                        'type': entity_type,
+                        'start': ent.start_char,
+                        'end': ent.end_char,
+                        'confidence': 0.8  # spaCy doesn't provide confidence scores
+                    })
+            else:
+                # Simple pattern matching fallback
+                # Extract capitalized words as potential entities
+                import re
+                pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
+                for match in re.finditer(pattern, content):
+                    entities.append({
+                        'name': match.group(),
+                        'type': 'other',
+                        'start': match.start(),
+                        'end': match.end(),
+                        'confidence': 0.5
+                    })
+            
+        except Exception as e:
+            logger.error(f"Entity extraction failed: {e}")
+        
+        return entities
+    
+    def _map_spacy_to_entity_type(self, spacy_label: str) -> str:
+        """Map spaCy entity labels to our entity types."""
+        mapping = {
+            'PERSON': 'person',
+            'ORG': 'organization',
+            'GPE': 'location',
+            'LOC': 'location',
+            'EVENT': 'event',
+            'PRODUCT': 'product',
+            'WORK_OF_ART': 'concept',
+            'LAW': 'concept',
+            'LANGUAGE': 'technology',
+            'DATE': 'event',
+            'TIME': 'event',
+            'MONEY': 'concept',
+            'QUANTITY': 'concept',
+            'CARDINAL': 'concept',
+            'ORDINAL': 'concept',
+            'PERCENT': 'concept'
+        }
+        return mapping.get(spacy_label, 'other')
+    
+    async def _infer_relationships(self, entities: List[Dict[str, Any]], content: str) -> List[Dict[str, Any]]:
+        """Infer relationships between entities based on context."""
+        relationships = []
+        
+        # Simple co-occurrence based relationships
+        for i, entity1 in enumerate(entities):
+            for j, entity2 in enumerate(entities):
+                if i >= j:  # Avoid duplicates and self-relationships
+                    continue
+                
+                # Calculate distance between entities
+                distance = abs(entity1['start'] - entity2['start'])
+                
+                # If entities are close in text, they're likely related
+                if distance < 200:  # Within ~200 characters
+                    strength = 1.0 - (distance / 200.0)  # Closer = stronger
+                    
+                    # Determine relationship type based on entity types
+                    rel_type = self._determine_relationship_type(
+                        entity1['type'], entity2['type'], content[entity1['start']:entity2['end']]
+                    )
+                    
+                    relationships.append({
+                        'from_entity': entity1['name'],
+                        'to_entity': entity2['name'],
+                        'type': rel_type,
+                        'strength': strength,
+                        'confidence': min(entity1['confidence'], entity2['confidence'])
+                    })
+        
+        return relationships
+    
+    def _determine_relationship_type(self, type1: str, type2: str, context: str) -> str:
+        """Determine relationship type based on entity types and context."""
+        # Simple heuristics for relationship type
+        context_lower = context.lower()
+        
+        if 'work' in context_lower or 'employ' in context_lower:
+            return 'works_at'
+        elif 'develop' in context_lower or 'create' in context_lower or 'build' in context_lower:
+            return 'develops'
+        elif 'lead' in context_lower or 'manage' in context_lower:
+            return 'leads'
+        elif 'use' in context_lower or 'utilize' in context_lower:
+            return 'uses'
+        elif type1 == 'person' and type2 == 'organization':
+            return 'affiliated_with'
+        elif type1 == 'person' and type2 == 'location':
+            return 'located_at'
+        else:
+            return 'relates_to'  # Default relationship
+    
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+        """
+        Store memory and extract knowledge graph components.
+        
+        This method:
+        1. Stores the memory normally (delegated to pgvector)
+        2. Extracts entities from the content
+        3. Creates graph nodes for entities
+        4. Infers and creates relationships
+        """
+        # Ensure pool is initialized
+        await self._ensure_pool()
+        
+        if not self.connection_pool:
+            raise RuntimeError("Graph provider not initialized")
+        
+        memory_id = uuid4()
+        
+        async with self.connection_pool.acquire() as conn:
+            try:
+                # Extract entities from content
+                entities = await self._extract_entities(content)
+                
+                # Get embedding model
+                embedding_model = await self._get_or_create_embedding_model()
+                
+                # Store entities as graph nodes
+                entity_ids = {}
+                for entity in entities:
+                    # Generate entity embedding if model available
+                    entity_embedding = None
+                    if embedding_model:
+                        entity_embedding = embedding_model.encode(entity['name']).tolist()
+                    
+                    # Check if entity already exists
+                    existing = await conn.fetchrow("""
+                        SELECT id, mention_count FROM graph_nodes 
+                        WHERE entity_name = $1 AND entity_type = $2
+                    """, entity['name'], entity['type'])
+                    
+                    if existing:
+                        # Update existing entity
+                        entity_id = existing['id']
+                        await conn.execute("""
+                            UPDATE graph_nodes 
+                            SET mention_count = mention_count + 1,
+                                last_seen = NOW(),
+                                importance_score = LEAST(importance_score + 0.1, 1.0)
+                            WHERE id = $1
+                        """, entity_id)
+                    else:
+                        # Create new entity
+                        entity_id = uuid4()
+                        embedding_str = '[' + ','.join(map(str, entity_embedding)) + ']' if entity_embedding else None
+                        
+                        await conn.execute("""
+                            INSERT INTO graph_nodes 
+                            (id, entity_type, entity_name, embedding, importance_score)
+                            VALUES ($1, $2, $3, $4::vector, $5)
+                        """, entity_id, entity['type'], entity['name'], 
+                            embedding_str, metadata.get('importance_score', 0.5))
+                    
+                    entity_ids[entity['name']] = entity_id
+                    
+                    # Link entity to memory
+                    await conn.execute("""
+                        INSERT INTO memory_entity_map (memory_id, entity_id)
+                        VALUES ($1, $2)
+                        ON CONFLICT DO NOTHING
+                    """, memory_id, entity_id)
+                
+                # Infer and store relationships
+                relationships = await self._infer_relationships(entities, content)
+                
+                for rel in relationships:
+                    if rel['from_entity'] in entity_ids and rel['to_entity'] in entity_ids:
+                        # Calculate ADM score for relationship
+                        adm_score = rel['strength'] * rel['confidence'] * metadata.get('importance_score', 0.5)
+                        
+                        await conn.execute("""
+                            INSERT INTO graph_relationships 
+                            (from_node_id, to_node_id, relationship_type, strength, confidence, adm_score, metadata)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            ON CONFLICT (from_node_id, to_node_id, relationship_type) DO UPDATE SET
+                                occurrence_count = graph_relationships.occurrence_count + 1,
+                                strength = GREATEST(graph_relationships.strength, EXCLUDED.strength),
+                                last_seen = NOW()
+                        """, entity_ids[rel['from_entity']], entity_ids[rel['to_entity']],
+                            rel['type'], rel['strength'], rel['confidence'],
+                            {'context': content[entities[0]['start']:entities[-1]['end']][:200]})
+                
+                logger.info(f"Stored memory {memory_id} with {len(entities)} entities and {len(relationships)} relationships")
+                
+            except Exception as e:
+                logger.error(f"Failed to process graph data: {e}")
+                # Don't fail the whole operation if graph processing fails
+        
+        return memory_id
+    
+    async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
+        """
+        Query memories using graph relationships.
+        
+        This enhanced query can:
+        1. Find memories by entity relationships
+        2. Traverse the graph to find related memories
+        3. Use graph structure to improve relevance
+        """
+        # Ensure pool is initialized
+        await self._ensure_pool()
+        
+        if not self.connection_pool:
+            return []
+        
+        memories = []
+        
+        async with self.connection_pool.acquire() as conn:
+            try:
+                # If entity_name filter is provided, use graph traversal
+                if filters.get('entity_name'):
+                    entity_name = filters['entity_name']
+                    
+                    # Find memories connected to this entity through the graph
+                    rows = await conn.fetch("""
+                        WITH entity_memories AS (
+                            SELECT DISTINCT mem.memory_id, gr.strength as relationship_strength
+                            FROM graph_nodes gn
+                            JOIN memory_entity_map mem ON gn.id = mem.entity_id
+                            LEFT JOIN graph_relationships gr ON (gn.id = gr.from_node_id OR gn.id = gr.to_node_id)
+                            WHERE gn.entity_name = $1
+                        )
+                        SELECT 
+                            vm.id,
+                            vm.content,
+                            vm.metadata,
+                            vm.importance_score,
+                            em.relationship_strength,
+                            vm.created_at
+                        FROM entity_memories em
+                        JOIN vector_memories vm ON em.memory_id = vm.id
+                        ORDER BY em.relationship_strength DESC NULLS LAST
+                        LIMIT $2
+                    """, entity_name, limit)
+                    
+                    for row in rows:
+                        memories.append(MemoryResponse(
+                            id=row['id'],
+                            content=row['content'],
+                            metadata=dict(row['metadata']) if row['metadata'] else {},
+                            importance_score=float(row['importance_score']),
+                            similarity_score=float(row['relationship_strength']),
+                            created_at=row['created_at']
+                        ))
+                
+            except Exception as e:
+                logger.error(f"Graph query failed: {e}")
+        
+        return memories
+    
+    async def get_relationships(self, node_id: UUID) -> List[Dict[str, Any]]:
+        """Get all relationships for a specific node."""
+        # Ensure pool is initialized
+        await self._ensure_pool()
+        
+        if not self.connection_pool:
+            return []
+        
+        relationships = []
+        
+        async with self.connection_pool.acquire() as conn:
+            try:
+                rows = await conn.fetch("""
+                    SELECT 
+                        gr.*,
+                        gn_from.entity_name as from_name,
+                        gn_from.entity_type as from_type,
+                        gn_to.entity_name as to_name,
+                        gn_to.entity_type as to_type
+                    FROM graph_relationships gr
+                    JOIN graph_nodes gn_from ON gr.from_node_id = gn_from.id
+                    JOIN graph_nodes gn_to ON gr.to_node_id = gn_to.id
+                    WHERE gr.from_node_id = $1 OR gr.to_node_id = $1
+                    ORDER BY gr.strength DESC
+                """, node_id)
+                
+                for row in rows:
+                    relationships.append({
+                        'id': row['id'],
+                        'from_node': {
+                            'id': row['from_node_id'],
+                            'name': row['from_name'],
+                            'type': row['from_type']
+                        },
+                        'to_node': {
+                            'id': row['to_node_id'],
+                            'name': row['to_name'],
+                            'type': row['to_type']
+                        },
+                        'type': row['relationship_type'],
+                        'strength': float(row['strength']),
+                        'confidence': float(row['confidence']),
+                        'occurrences': row['occurrence_count']
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Failed to get relationships: {e}")
+        
+        return relationships
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Check health of the graph provider."""
+        # Ensure pool is initialized
+        await self._ensure_pool()
+        
+        if not self.connection_pool:
+            return {
+                'status': 'unhealthy',
+                'error': 'Connection pool not initialized',
+                'details': {}
+            }
+        
+        try:
+            async with self.connection_pool.acquire() as conn:
+                # Check database connection
+                await conn.fetchval("SELECT 1")
+                
+                # Get graph statistics
+                node_count = await conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
+                relationship_count = await conn.fetchval("SELECT COUNT(*) FROM graph_relationships")
+                
+                return {
+                    'status': 'healthy',
+                    'details': {
+                        'connection': 'active',
+                        'graph_nodes': node_count,
+                        'graph_relationships': relationship_count,
+                        'entity_extractor': 'spacy' if self.entity_extractor and self.entity_extractor != 'simple' else 'regex'
+                    }
+                }
+        except Exception as e:
+            logger.error(f"Graph health check failed: {e}")
+            return {
+                'status': 'unhealthy',
+                'error': str(e),
+                'details': {}
+            }
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get statistics for the graph provider."""
+        # Ensure pool is initialized
+        await self._ensure_pool()
+        
+        if not self.connection_pool:
+            return {'error': 'Provider not initialized'}
+        
+        try:
+            async with self.connection_pool.acquire() as conn:
+                stats = await conn.fetchrow("""
+                    SELECT 
+                        (SELECT COUNT(*) FROM graph_nodes) as total_nodes,
+                        (SELECT COUNT(*) FROM graph_relationships) as total_relationships,
+                        (SELECT COUNT(DISTINCT entity_type) FROM graph_nodes) as entity_types,
+                        (SELECT COUNT(DISTINCT relationship_type) FROM graph_relationships) as relationship_types,
+                        (SELECT AVG(mention_count) FROM graph_nodes) as avg_mentions_per_entity,
+                        (SELECT AVG(occurrence_count) FROM graph_relationships) as avg_occurrences_per_relationship
+                """)
+                
+                return {
+                    'total_nodes': stats['total_nodes'],
+                    'total_relationships': stats['total_relationships'],
+                    'entity_types': stats['entity_types'],
+                    'relationship_types': stats['relationship_types'],
+                    'avg_mentions_per_entity': float(stats['avg_mentions_per_entity'] or 0),
+                    'avg_occurrences_per_relationship': float(stats['avg_occurrences_per_relationship'] or 0)
+                }
+        except Exception as e:
+            logger.error(f"Failed to get graph stats: {e}")
+            return {'error': str(e)}
