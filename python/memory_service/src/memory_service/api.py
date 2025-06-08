@@ -399,6 +399,18 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Failed to get stats: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
     
+    @app.get("/debug/env")
+    async def debug_environment():
+        """Debug endpoint to check environment variables."""
+        import os
+        api_key = os.getenv("OPENAI_API_KEY", "NOT_SET")
+        return {
+            "openai_api_key_present": bool(api_key and api_key != "NOT_SET"),
+            "api_key_length": len(api_key) if api_key != "NOT_SET" else 0,
+            "api_key_starts_with": api_key[:7] if api_key != "NOT_SET" else "NOT_SET",
+            "embedding_model_type": unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else "None"
+        }
+    
     @app.get("/providers")
     async def list_providers(store: UnifiedVectorStore = Depends(get_store)):
         """
