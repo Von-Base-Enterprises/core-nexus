@@ -8,8 +8,12 @@ from the Core Nexus codebase while preparing for pgvector integration.
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, Optional, UUID
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
+try:
+    from typing import UUID
+except ImportError:
+    from uuid import UUID
 
 from .unified_store import VectorProvider
 from .models import MemoryResponse, ProviderConfig

@@ -1,0 +1,39 @@
+# Minimal production Dockerfile for Step 1 validation
+FROM python:3.11-slim
+
+# Install essential system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create application directory
+WORKDIR /app
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Copy application source code
+COPY src/ ./src/
+COPY *.py ./
+
+# Create a simple startup script
+RUN echo '#!/bin/bash\nset -e\necho "Starting Core Nexus Memory Service..."\nexec uvicorn src.memory_service.api:app --host 0.0.0.0 --port 8000' > start.sh
+RUN chmod +x start.sh
+
+# Health check script
+RUN echo '#!/usr/bin/env python3\nimport sys\nimport httpx\ntry:\n    response = httpx.get("http://localhost:8000/health", timeout=5)\n    sys.exit(0 if response.status_code == 200 else 1)\nexcept:\n    sys.exit(1)' > health_check.py
+RUN chmod +x health_check.py
+
+# Expose port
+EXPOSE 8000
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Use startup script
+CMD ["./start.sh"]
