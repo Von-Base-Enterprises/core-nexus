@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-06-08T03:35:54.704288",
+  "service_url": "https://core-nexus-memory-service.onrender.com",
+  "total_duration_ms": 231.43386840820312,
+  "overall_success": false,
+  "successful_tests": 0,
+  "total_tests": 4,
+  "success_rate": 0.0,
+  "test_results": {
+    "health_check": {
+      "success": false,
+      "status_code": 502,
+      "data": {},
+      "duration_ms": 230.8807373046875,
+      "error": "HTTP 502: Bad Gateway"
+    },
+    "api_endpoints": {
+      "success": false,
+      "reason": "Health check failed"
+    },
+    "memory_storage": {
+      "success": false,
+      "reason": "Health check failed"
+    },
+    "memory_query": {
+      "success": false,
+      "reason": "Health check failed"
+    }
+  }
+}

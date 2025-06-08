@@ -1,0 +1,19 @@
+# Graph Integration Dependencies for Agent 2
+# Add these to requirements.txt for Knowledge Graph functionality
+
+# Entity extraction and NLP
+spacy>=3.5.0                    # Entity extraction with fallback
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
+
+# Graph database (optional - choose one)
+neo4j>=5.0.0                    # If using Neo4j for advanced graph
+# OR use existing asyncpg for PostgreSQL graph tables
+
+# Enhanced embeddings for entities (optional)
+sentence-transformers>=2.2.0    # Better entity embeddings
+
+# Async HTTP for utility scripts
+aiohttp>=3.8.0                  # Used by monitoring scripts
+
+# Note: The core GraphProvider works with just spacy + asyncpg
+# Other dependencies are for enhanced functionality

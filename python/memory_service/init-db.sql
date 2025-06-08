@@ -215,5 +215,140 @@ LIMIT 100;
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO memory_service_app;
 -- GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO memory_service_app;
 
+-- =====================================================
+-- KNOWLEDGE GRAPH TABLES (Added by Agent 2)
+-- =====================================================
+
+-- Graph nodes table - stores entities extracted from memories
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id UUID PRIMARY KEY,                                    -- Same UUID as vector_memories
+    entity_type TEXT NOT NULL,                              -- person, organization, concept, event, location, etc.
+    entity_name TEXT NOT NULL,                              -- Normalized entity name
+    properties JSONB DEFAULT '{}',                          -- Additional entity properties
+    embedding vector(1536),                                 -- Entity embedding for similarity
+    importance_score FLOAT DEFAULT 0.5,                     -- Entity importance (ADM scored)
+    first_seen TIMESTAMP DEFAULT NOW(),                     -- When entity first appeared
+    last_seen TIMESTAMP DEFAULT NOW(),                      -- Most recent mention
+    mention_count INTEGER DEFAULT 1,                        -- Total mentions across memories
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Graph relationships table - stores connections between entities
+CREATE TABLE IF NOT EXISTS graph_relationships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_node_id UUID REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    to_node_id UUID REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL,                        -- relates_to, mentions, caused_by, part_of, etc.
+    strength FLOAT DEFAULT 0.5,                            -- ADM-scored relationship strength
+    confidence FLOAT DEFAULT 0.5,                          -- Extraction confidence
+    metadata JSONB DEFAULT '{}',                           -- Context and additional info
+    first_seen TIMESTAMP DEFAULT NOW(),                    -- When relationship first observed
+    last_seen TIMESTAMP DEFAULT NOW(),                     -- Most recent observation
+    occurrence_count INTEGER DEFAULT 1,                    -- How often this relationship appears
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_relationship UNIQUE (from_node_id, to_node_id, relationship_type)
+);
+
+-- Memory-to-entity mapping table - links memories to their entities
+CREATE TABLE IF NOT EXISTS memory_entity_map (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    memory_id UUID REFERENCES vector_memories(id) ON DELETE CASCADE,
+    entity_id UUID REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    position_start INTEGER,                                -- Character position in content
+    position_end INTEGER,                                  -- Character position in content
+    confidence FLOAT DEFAULT 0.5,                          -- Extraction confidence
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_memory_entity UNIQUE (memory_id, entity_id, position_start)
+);
+
+-- Create indexes for graph operations
+CREATE INDEX IF NOT EXISTS graph_nodes_entity_type_idx ON graph_nodes (entity_type);
+CREATE INDEX IF NOT EXISTS graph_nodes_entity_name_idx ON graph_nodes (entity_name);
+CREATE INDEX IF NOT EXISTS graph_nodes_importance_idx ON graph_nodes (importance_score DESC);
+CREATE INDEX IF NOT EXISTS graph_nodes_mention_count_idx ON graph_nodes (mention_count DESC);
+CREATE INDEX IF NOT EXISTS graph_nodes_embedding_hnsw_idx 
+    ON graph_nodes USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
+
+CREATE INDEX IF NOT EXISTS graph_relationships_from_idx ON graph_relationships (from_node_id);
+CREATE INDEX IF NOT EXISTS graph_relationships_to_idx ON graph_relationships (to_node_id);
+CREATE INDEX IF NOT EXISTS graph_relationships_type_idx ON graph_relationships (relationship_type);
+CREATE INDEX IF NOT EXISTS graph_relationships_strength_idx ON graph_relationships (strength DESC);
+
+CREATE INDEX IF NOT EXISTS memory_entity_map_memory_idx ON memory_entity_map (memory_id);
+CREATE INDEX IF NOT EXISTS memory_entity_map_entity_idx ON memory_entity_map (entity_id);
+
+-- Create views for common graph queries
+CREATE OR REPLACE VIEW entity_summary AS
+SELECT 
+    gn.id,
+    gn.entity_type,
+    gn.entity_name,
+    gn.mention_count,
+    gn.importance_score,
+    COUNT(DISTINCT gr_from.id) as outgoing_relationships,
+    COUNT(DISTINCT gr_to.id) as incoming_relationships,
+    COUNT(DISTINCT mem.memory_id) as memory_count
+FROM graph_nodes gn
+LEFT JOIN graph_relationships gr_from ON gn.id = gr_from.from_node_id
+LEFT JOIN graph_relationships gr_to ON gn.id = gr_to.to_node_id
+LEFT JOIN memory_entity_map mem ON gn.id = mem.entity_id
+GROUP BY gn.id, gn.entity_type, gn.entity_name, gn.mention_count, gn.importance_score;
+
+CREATE OR REPLACE VIEW relationship_summary AS
+SELECT 
+    gr.relationship_type,
+    COUNT(*) as count,
+    AVG(gr.strength) as avg_strength,
+    AVG(gr.confidence) as avg_confidence,
+    MAX(gr.last_seen) as most_recent
+FROM graph_relationships gr
+GROUP BY gr.relationship_type
+ORDER BY count DESC;
+
+-- Function to get entity context from memories
+CREATE OR REPLACE FUNCTION get_entity_context(entity_id UUID, context_length INTEGER DEFAULT 100)
+RETURNS TABLE (
+    memory_id UUID,
+    content_snippet TEXT,
+    importance_score FLOAT,
+    created_at TIMESTAMP
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        vm.id,
+        SUBSTRING(
+            vm.content, 
+            GREATEST(mem.position_start - context_length, 1), 
+            mem.position_end - mem.position_start + context_length * 2
+        ) as content_snippet,
+        vm.importance_score,
+        vm.created_at
+    FROM memory_entity_map mem
+    JOIN vector_memories vm ON mem.memory_id = vm.id
+    WHERE mem.entity_id = entity_id
+    ORDER BY vm.importance_score DESC, vm.created_at DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to find shortest path between entities (simple BFS)
+CREATE OR REPLACE FUNCTION find_entity_path(start_entity UUID, end_entity UUID, max_depth INTEGER DEFAULT 5)
+RETURNS TABLE (
+    path_nodes UUID[],
+    path_relationships TEXT[],
+    total_strength FLOAT
+) AS $$
+DECLARE
+    current_depth INTEGER := 0;
+    found BOOLEAN := FALSE;
+BEGIN
+    -- Implementation would use recursive CTE for BFS
+    -- Placeholder for now - actual implementation would be more complex
+    RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Display initialization success
 SELECT 'Core Nexus Memory Service database initialized successfully!' as status;
+SELECT 'Knowledge Graph tables added successfully!' as graph_status;

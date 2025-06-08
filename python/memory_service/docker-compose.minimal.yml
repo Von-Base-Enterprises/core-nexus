@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector (essential dependency)
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: core_nexus_minimal
+      POSTGRES_USER: core_nexus
+      POSTGRES_PASSWORD: minimal_test_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U core_nexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Core Nexus Memory Service (minimal configuration)
+  memory_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.minimal
+    environment:
+      # Database (required)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: core_nexus_minimal
+      POSTGRES_USER: core_nexus
+      POSTGRES_PASSWORD: minimal_test_password
+      
+      # Service configuration (minimal)
+      SERVICE_NAME: core-nexus-memory-minimal
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      
+      # Disable optional providers for Step 1
+      PINECONE_API_KEY: ""
+      OPENAI_API_KEY: mock_key_for_testing
+      
+      # Performance (conservative for testing)
+      WORKERS: 1
+      MAX_CONNECTIONS: 100
+      QUERY_TIMEOUT_MS: 10000
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: core_nexus_minimal
