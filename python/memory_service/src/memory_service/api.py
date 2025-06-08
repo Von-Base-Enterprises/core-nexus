@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
     pgvector_config = ProviderConfig(
         name="pgvector",
         enabled=True,
-        primary=True,  # Make pgvector primary for SQL capabilities
+        primary=False,  # Don't make primary unless it initializes successfully
         config={
             "host": "localhost",
             "port": 5432,
@@ -69,9 +69,11 @@ async def lifespan(app: FastAPI):
     try:
         pgvector_provider = PgVectorProvider(pgvector_config)
         providers.append(pgvector_provider)
-        logger.info("PgVector provider initialized")
+        pgvector_config.primary = True  # Make primary if successful
+        logger.info("PgVector provider initialized as primary")
     except Exception as e:
         logger.warning(f"PgVector provider failed to initialize: {e}")
+        pgvector_config.enabled = False
     
     # Add Pinecone if configured
     pinecone_config = ProviderConfig(
@@ -96,7 +98,7 @@ async def lifespan(app: FastAPI):
     chroma_config = ProviderConfig(
         name="chromadb",
         enabled=True,
-        primary=len(providers) == 0,  # Primary if others failed
+        primary=True,  # Make primary by default, will be overridden if pgvector works
         config={
             "collection_name": "core_nexus_memories",
             "persist_directory": "./memory_service_chroma"

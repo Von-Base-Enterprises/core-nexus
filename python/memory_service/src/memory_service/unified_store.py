@@ -65,7 +65,13 @@ class UnifiedVectorStore:
     
     def __init__(self, providers: List[VectorProvider], embedding_model=None, adm_enabled=True):
         self.providers = {p.name: p for p in providers}
-        self.primary_provider = next((p for p in providers if p.config.primary), providers[0])
+        # Find primary provider that's actually enabled
+        self.primary_provider = next(
+            (p for p in providers if p.config.primary and p.enabled), 
+            next((p for p in providers if p.enabled), None)
+        )
+        if not self.primary_provider:
+            raise RuntimeError("No enabled vector providers available")
         self.embedding_model = embedding_model
         self.importance_scorer = ImportanceScoring()
         # Initialize caching (Redis if available, in-memory otherwise)
