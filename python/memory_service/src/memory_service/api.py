@@ -10,12 +10,14 @@ import logging
 import time
 import os
 import sys
+import json
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Any
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST
 from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -25,6 +27,7 @@ from .models import (
 )
 from .unified_store import UnifiedVectorStore
 from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
+from .logging_config import setup_logging, get_logger
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
 #     metrics_collector, get_metrics, record_request, time_request,
@@ -32,7 +35,9 @@ from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
 # )
 # from .db_monitoring import get_database_health
 
-logger = logging.getLogger(__name__)
+# Setup logging with Papertrail support
+setup_logging()
+logger = get_logger("api")
 
 # Global instances
 unified_store: Optional[UnifiedVectorStore] = None
@@ -548,6 +553,177 @@ def create_memory_app() -> FastAPI:
             )
         
         return startup_info
+    
+    @app.get("/logs/stream")
+    async def stream_logs(format: str = "json"):
+        """
+        Stream logs in real-time via Server-Sent Events (SSE).
+        
+        Formats:
+        - json: JSON formatted logs
+        - syslog: Syslog format (RFC3164) compatible with Papertrail
+        - plain: Plain text logs
+        
+        Usage:
+        - curl https://service.com/logs/stream
+        - curl https://service.com/logs/stream?format=syslog
+        """
+        import queue
+        import threading
+        from datetime import datetime
+        
+        # Create queue for log streaming
+        log_queue = queue.Queue(maxsize=100)
+        
+        # Custom handler to capture logs
+        class StreamHandler(logging.Handler):
+            def emit(self, record):
+                try:
+                    if format == "syslog":
+                        # Syslog format: <priority>timestamp hostname app[pid]: message
+                        priority = self._get_syslog_priority(record.levelno)
+                        timestamp = datetime.fromtimestamp(record.created).strftime('%b %d %H:%M:%S')
+                        hostname = os.getenv('RENDER_SERVICE_NAME', 'core-nexus-memory')
+                        pid = os.getpid()
+                        message = self.format(record)
+                        log_line = f"<{priority}>{timestamp} {hostname} {record.name}[{pid}]: {message}\n"
+                    elif format == "plain":
+                        log_line = f"{self.format(record)}\n"
+                    else:  # json
+                        log_data = {
+                            'timestamp': datetime.fromtimestamp(record.created).isoformat(),
+                            'level': record.levelname,
+                            'logger': record.name,
+                            'message': self.format(record),
+                            'module': record.module,
+                            'function': record.funcName,
+                            'line': record.lineno
+                        }
+                        log_line = f"data: {json.dumps(log_data)}\n\n"
+                    
+                    # Non-blocking put
+                    log_queue.put_nowait(log_line)
+                except queue.Full:
+                    pass  # Drop log if queue is full
+                except Exception:
+                    pass
+            
+            def _get_syslog_priority(self, levelno):
+                """Convert Python log level to syslog priority."""
+                # Facility = 16 (local0), Severity based on level
+                facility = 16
+                if levelno >= 50:  # CRITICAL
+                    severity = 2
+                elif levelno >= 40:  # ERROR
+                    severity = 3
+                elif levelno >= 30:  # WARNING
+                    severity = 4
+                elif levelno >= 20:  # INFO
+                    severity = 6
+                else:  # DEBUG
+                    severity = 7
+                return facility * 8 + severity
+        
+        # Add handler to capture logs
+        stream_handler = StreamHandler()
+        stream_handler.setLevel(logging.DEBUG)
+        stream_handler.setFormatter(logging.Formatter('%(message)s'))
+        
+        # Add to root logger and our logger
+        root_logger = logging.getLogger()
+        root_logger.addHandler(stream_handler)
+        logger.addHandler(stream_handler)
+        
+        async def generate():
+            """Generate log stream."""
+            try:
+                # Send initial connection message
+                if format == "json":
+                    yield f"data: {json.dumps({'connected': True, 'format': format})}\n\n"
+                elif format == "syslog":
+                    yield f"<134>{datetime.now().strftime('%b %d %H:%M:%S')} {os.getenv('RENDER_SERVICE_NAME', 'core-nexus')} logger[{os.getpid()}]: Log streaming connected\n"
+                else:
+                    yield "Log streaming connected\n"
+                
+                # Stream logs
+                while True:
+                    try:
+                        # Get log with timeout
+                        log_line = await asyncio.get_event_loop().run_in_executor(
+                            None, log_queue.get, True, 1.0
+                        )
+                        yield log_line
+                        
+                        # Send keepalive every 30 seconds
+                        if format == "json" and asyncio.get_event_loop().time() % 30 < 1:
+                            yield f"data: {json.dumps({'keepalive': True})}\n\n"
+                            
+                    except queue.Empty:
+                        # Send keepalive
+                        if format == "json":
+                            yield "\n"  # SSE keepalive
+                        await asyncio.sleep(0.1)
+                        
+            finally:
+                # Cleanup
+                root_logger.removeHandler(stream_handler)
+                logger.removeHandler(stream_handler)
+        
+        # Return appropriate response type
+        if format == "json":
+            return StreamingResponse(
+                generate(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"  # Disable Nginx buffering
+                }
+            )
+        else:
+            return StreamingResponse(
+                generate(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+    
+    @app.get("/logs/syslog")
+    async def syslog_endpoint(request: Request):
+        """
+        Syslog endpoint information for external log aggregation.
+        
+        Returns connection details for setting up syslog forwarding.
+        """
+        return {
+            "message": "To stream logs to an external syslog server like Papertrail:",
+            "options": {
+                "1_streaming_endpoint": {
+                    "description": "Use our streaming endpoint",
+                    "url": f"{request.url.scheme}://{request.url.netloc}/logs/stream?format=syslog",
+                    "method": "GET",
+                    "format": "RFC3164 syslog format"
+                },
+                "2_environment_config": {
+                    "description": "Configure via environment variables",
+                    "PAPERTRAIL_HOST": "logs.papertrailapp.com",
+                    "PAPERTRAIL_PORT": "34949",
+                    "note": "Logs will be automatically forwarded if these are set"
+                },
+                "3_render_integration": {
+                    "description": "Add log drain in Render.com dashboard",
+                    "format": "syslog+tls://logs.papertrailapp.com:34949",
+                    "location": "Settings -> Log Streams"
+                }
+            },
+            "current_config": {
+                "papertrail_configured": bool(os.getenv("PAPERTRAIL_HOST")),
+                "service_name": os.getenv("RENDER_SERVICE_NAME", "core-nexus-memory")
+            }
+        }
     
     @app.get("/providers")
     async def list_providers(store: UnifiedVectorStore = Depends(get_store)):
