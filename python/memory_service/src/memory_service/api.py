@@ -182,14 +182,10 @@ def create_memory_app() -> FastAPI:
     
     # FastAPI Prometheus Instrumentator for enhanced metrics
     instrumentator = Instrumentator(
-        metric_namespace="core_nexus",
-        metric_subsystem="fastapi",
         should_group_status_codes=True,
         should_ignore_untemplated=True,
         should_round_latency_decimals=True,
         excluded_handlers=["/metrics"],  # Don't track metrics endpoint itself
-        inprogress_name="fastapi_inprogress",
-        inprogress_labels=True,
     )
     instrumentator.instrument(app)
     instrumentator.expose(app, endpoint="/metrics/fastapi")
