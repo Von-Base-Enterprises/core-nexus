@@ -1,0 +1,83 @@
+services:
+  # Main Core Nexus Memory Service
+  - type: web
+    name: core-nexus-memory-service
+    env: python
+    region: oregon
+    plan: starter
+    branch: feat/day1-vertical-slice
+    rootDir: python/memory_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.memory_service.api:create_memory_app --host 0.0.0.0 --port $PORT --workers 3 --factory
+    healthCheckPath: /health
+    envVars:
+      - key: SERVICE_NAME
+        value: core-nexus-memory-prod
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: WORKERS
+        value: "3"
+      - key: MAX_CONNECTIONS
+        value: "100"
+      - key: QUERY_TIMEOUT_MS
+        value: "5000"
+      - key: ENABLE_METRICS
+        value: "true"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: GRAPH_ENABLED
+        value: "true"
+      - key: PINECONE_API_KEY
+        value: ""
+      - key: OPENAI_API_KEY
+        value: "mock_key_for_demo"
+
+  # Keep-alive Background Worker
+  - type: worker
+    name: core-nexus-keep-alive
+    env: python
+    region: oregon
+    plan: starter
+    branch: feat/day1-vertical-slice
+    rootDir: python/memory_service
+    buildCommand: pip install httpx asyncio
+    startCommand: python worker/keep_alive.py
+    envVars:
+      - key: API_URL
+        value: https://core-nexus-memory-service.onrender.com
+      - key: PING_SEC
+        value: "300"
+      - key: PING_TIMEOUT
+        value: "10"
+      - key: PING_RETRIES
+        value: "3"
+
+  # Prometheus Monitoring
+  - type: web
+    name: core-nexus-prometheus
+    env: docker
+    region: oregon
+    plan: starter
+    branch: feat/day1-vertical-slice
+    rootDir: python/memory_service/monitoring
+    dockerfilePath: ./prometheus.Dockerfile
+    envVars:
+      - key: CORE_NEXUS_URL
+        value: https://core-nexus-memory-service.onrender.com
+
+  # Grafana Dashboard
+  - type: web
+    name: core-nexus-grafana
+    env: docker
+    region: oregon
+    plan: starter
+    branch: feat/day1-vertical-slice
+    rootDir: python/memory_service/monitoring
+    dockerfilePath: ./grafana.Dockerfile
+    envVars:
+      - key: GF_SECURITY_ADMIN_PASSWORD
+        value: admin123
+      - key: PROMETHEUS_URL
+        value: https://core-nexus-prometheus.onrender.com
