@@ -6,7 +6,11 @@ Unified data models for the Core Nexus Long Term Memory Module.
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
-from uuid import UUID, uuid4
+from uuid import uuid4
+try:
+    from typing import UUID
+except ImportError:
+    from uuid import UUID
 
 from pydantic import BaseModel, Field
 
