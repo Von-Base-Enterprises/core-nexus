@@ -6,6 +6,7 @@ from the Core Nexus codebase while preparing for pgvector integration.
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
@@ -343,15 +344,18 @@ class PgVectorProvider(VectorProvider):
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
             
+            # Serialize metadata to JSON string for PostgreSQL JSONB column
+            metadata_json = json.dumps(metadata) if metadata else '{}'
+            
             await conn.execute(f"""
                 INSERT INTO {self.table_name} 
                 (id, content, embedding, metadata, importance_score)
-                VALUES ($1, $2, $3::vector, $4, $5)
+                VALUES ($1, $2, $3::vector, $4::jsonb, $5)
             """, 
                 memory_id, 
                 content, 
                 embedding_str,
-                metadata,
+                metadata_json,
                 metadata.get('importance_score', 0.5)
             )
             
