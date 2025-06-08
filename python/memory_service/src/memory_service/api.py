@@ -24,11 +24,12 @@ from .models import (
 )
 from .unified_store import UnifiedVectorStore
 from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
-from .metrics import (
-    metrics_collector, get_metrics, record_request, time_request,
-    record_memory_operation, set_service_info
-)
-from .db_monitoring import get_database_health
+# Temporarily disable complex imports for stable deployment
+# from .metrics import (
+#     metrics_collector, get_metrics, record_request, time_request,
+#     record_memory_operation, set_service_info
+# )
+# from .db_monitoring import get_database_health
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +134,14 @@ async def lifespan(app: FastAPI):
     import time
     app.state.start_time = time.time()
     
-    # Initialize service info metrics
-    set_service_info(
-        version="0.1.0",
-        config={
-            "providers": [p.name for p in providers],
-            "environment": os.getenv("ENVIRONMENT", "production")
-        }
-    )
+    # Initialize service info metrics - DISABLED FOR STABLE DEPLOYMENT
+    # set_service_info(
+    #     version="0.1.0",
+    #     config={
+    #         "providers": [p.name for p in providers],
+    #         "environment": os.getenv("ENVIRONMENT", "production")
+    #     }
+    # )
     
     yield
     
@@ -201,13 +202,13 @@ def create_memory_app() -> FastAPI:
         # Process request
         response = await call_next(request)
         
-        # Record metrics
+        # Record metrics - DISABLED FOR STABLE DEPLOYMENT
         process_time = time.time() - start_time
-        record_request(
-            method=request.method,
-            endpoint=request.url.path,
-            status_code=response.status_code
-        )
+        # record_request(
+        #     method=request.method,
+        #     endpoint=request.url.path,
+        #     status_code=response.status_code
+        # )
         
         # Add process time header
         response.headers["X-Process-Time"] = str(process_time)
@@ -252,42 +253,42 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Health check failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
     
-    @app.get("/metrics")
-    async def metrics_endpoint():
-        """
-        Prometheus metrics endpoint.
-        
-        Returns service metrics in Prometheus text format for monitoring and alerting.
-        """
-        try:
-            # Collect current metrics
-            if unified_store:
-                await metrics_collector.collect_service_metrics(unified_store)
-            
-            # Return Prometheus metrics
-            metrics_data = get_metrics()
-            return Response(
-                content=metrics_data,
-                media_type=CONTENT_TYPE_LATEST,
-                headers={"Cache-Control": "no-cache"}
-            )
-        except Exception as e:
-            logger.error(f"Metrics collection failed: {e}")
-            raise HTTPException(status_code=500, detail="Metrics collection failed")
+    # @app.get("/metrics") - DISABLED FOR STABLE DEPLOYMENT
+    # async def metrics_endpoint():
+    #     """
+    #     Prometheus metrics endpoint.
+    #     
+    #     Returns service metrics in Prometheus text format for monitoring and alerting.
+    #     """
+    #     try:
+    #         # Collect current metrics
+    #         if unified_store:
+    #             await metrics_collector.collect_service_metrics(unified_store)
+    #         
+    #         # Return Prometheus metrics
+    #         metrics_data = get_metrics()
+    #         return Response(
+    #             content=metrics_data,
+    #             media_type=CONTENT_TYPE_LATEST,
+    #             headers={"Cache-Control": "no-cache"}
+    #         )
+    #     except Exception as e:
+    #         logger.error(f"Metrics collection failed: {e}")
+    #         raise HTTPException(status_code=500, detail="Metrics collection failed")
     
-    @app.get("/db/stats")
-    async def database_stats():
-        """
-        Database statistics and performance metrics.
-        
-        Returns connection pool status, slow queries, and database health information.
-        """
-        try:
-            health_data = await get_database_health()
-            return JSONResponse(content=health_data)
-        except Exception as e:
-            logger.error(f"Database stats failed: {e}")
-            raise HTTPException(status_code=500, detail="Database stats unavailable")
+    # @app.get("/db/stats") - DISABLED FOR STABLE DEPLOYMENT
+    # async def database_stats():
+    #     """
+    #     Database statistics and performance metrics.
+    #     
+    #     Returns connection pool status, slow queries, and database health information.
+    #     """
+    #     try:
+    #         health_data = await get_database_health()
+    #         return JSONResponse(content=health_data)
+    #     except Exception as e:
+    #         logger.error(f"Database stats failed: {e}")
+    #         raise HTTPException(status_code=500, detail="Database stats unavailable")
     
     @app.post("/memories", response_model=MemoryResponse)
     async def store_memory(
