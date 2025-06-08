@@ -1,0 +1,183 @@
+{
+  "timestamp": "2025-06-07 23:46:08",
+  "stats": {
+    "total_files": 9,
+    "total_lines": 4151,
+    "todo_count": 19,
+    "placeholder_count": 5,
+    "function_count": 52,
+    "class_count": 29,
+    "critical_issues": 0
+  },
+  "issues": [
+    {
+      "severity": "WARNING",
+      "category": "PLACEHOLDER_PASS",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/unified_store.py",
+      "line": 38,
+      "message": "pass"
+    },
+    {
+      "severity": "WARNING",
+      "category": "PLACEHOLDER_PASS",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/unified_store.py",
+      "line": 43,
+      "message": "pass"
+    },
+    {
+      "severity": "WARNING",
+      "category": "PLACEHOLDER_PASS",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/unified_store.py",
+      "line": 48,
+      "message": "pass"
+    },
+    {
+      "severity": "WARNING",
+      "category": "PLACEHOLDER_PASS",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/unified_store.py",
+      "line": 53,
+      "message": "pass"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/unified_store.py",
+      "line": 98,
+      "message": "# TODO: Load from configuration"
+    },
+    {
+      "severity": "WARNING",
+      "category": "PLACEHOLDER_TEXT",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/adm.py",
+      "line": 233,
+      "message": "query=\"user patterns\",  # Placeholder - will be filtered by user_id"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/api.py",
+      "line": 275,
+      "message": "avg_importance_score=0.5,  # TODO: Calculate from actual data"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/api.py",
+      "line": 276,
+      "message": "queries_last_hour=stats['total_queries'],  # TODO: Implement time-based tracking"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/api.py",
+      "line": 529,
+      "message": "# TODO: Get memory by ID from providers"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/api.py",
+      "line": 534,
+      "message": "memory=None  # TODO: Implement memory retrieval by ID"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 91,
+      "message": "queries_24h = self.unified_store.stats.get('total_queries', 0)  # TODO: Make time-aware"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 144,
+      "message": "# TODO: Implement actual trend calculation from stored metrics"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 329,
+      "message": "# TODO: Implement CSV export"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 343,
+      "message": "# TODO: Implement actual time-based counting"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 351,
+      "message": "# TODO: Implement actual calculation"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 357,
+      "message": "# TODO: Implement actual user analysis"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 368,
+      "message": "# TODO: Implement actual quality distribution calculation"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 381,
+      "message": "# TODO: Implement actual evolution tracking"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 400,
+      "message": "# TODO: Implement actual high-value memory identification"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 408,
+      "message": "# TODO: Implement actual underutilization analysis"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 416,
+      "message": "# TODO: Implement actual topic analysis"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/dashboard.py",
+      "line": 429,
+      "message": "# TODO: Implement actual user pattern analysis"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/tracking.py",
+      "line": 321,
+      "message": "'error_rate_by_hour': {}  # TODO: Implement hourly error rates"
+    },
+    {
+      "severity": "WARNING",
+      "category": "TODO",
+      "file": "/mnt/c/Users/Tyvon/Dev/core-nexus/python/memory_service/src/memory_service/tracking.py",
+      "line": 353,
+      "message": "# TODO: Implement CSV export"
+    }
+  ],
+  "production_ready": false
+}

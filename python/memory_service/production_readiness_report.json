@@ -1,0 +1,142 @@
+{
+  "timestamp": "2025-06-07 23:41:24",
+  "total_tests": 17,
+  "passed": 0,
+  "failed": 17,
+  "critical_failures": 14,
+  "performance_metrics": {},
+  "production_ready": false,
+  "detailed_results": {
+    "passed": [],
+    "failed": [
+      [
+        "code_completeness",
+        "Found 24 incomplete code patterns"
+      ],
+      [
+        "import_memory_service.unified_store",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.providers",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.adm",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.api",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.dashboard",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.tracking",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.temporal",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.models",
+        "No module named 'pydantic'"
+      ],
+      [
+        "provider_imports",
+        "Failed to import providers: No module named 'pydantic'"
+      ],
+      [
+        "unified_store",
+        "Unified store testing failed: No module named 'pydantic'"
+      ],
+      [
+        "adm_testing",
+        "ADM testing failed: No module named 'pydantic'"
+      ],
+      [
+        "dashboard_testing",
+        "Dashboard testing failed: No module named 'pydantic'"
+      ],
+      [
+        "tracking_testing",
+        "Tracking system testing failed: No module named 'pydantic'"
+      ],
+      [
+        "integration_testing",
+        "Integration testing failed: No module named 'pydantic'"
+      ],
+      [
+        "evolution_testing",
+        "Evolution testing failed: No module named 'pydantic'"
+      ],
+      [
+        "security_testing",
+        "Security testing failed: No module named 'pydantic'"
+      ]
+    ],
+    "performance": {},
+    "evolution_metrics": {},
+    "critical_failures": [
+      [
+        "code_completeness",
+        "Found 24 incomplete code patterns"
+      ],
+      [
+        "import_memory_service.unified_store",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.providers",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.adm",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.api",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.dashboard",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.tracking",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.temporal",
+        "No module named 'pydantic'"
+      ],
+      [
+        "import_memory_service.models",
+        "No module named 'pydantic'"
+      ],
+      [
+        "provider_imports",
+        "Failed to import providers: No module named 'pydantic'"
+      ],
+      [
+        "unified_store",
+        "Unified store testing failed: No module named 'pydantic'"
+      ],
+      [
+        "adm_testing",
+        "ADM testing failed: No module named 'pydantic'"
+      ],
+      [
+        "integration_testing",
+        "Integration testing failed: No module named 'pydantic'"
+      ],
+      [
+        "evolution_testing",
+        "Evolution testing failed: No module named 'pydantic'"
+      ]
+    ]
+  }
+}
