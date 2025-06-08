@@ -429,13 +429,43 @@ def create_memory_app() -> FastAPI:
     async def debug_environment():
         """Debug endpoint to check environment variables."""
         import os
-        api_key = os.getenv("OPENAI_API_KEY", "NOT_SET")
-        return {
-            "openai_api_key_present": bool(api_key and api_key != "NOT_SET"),
-            "api_key_length": len(api_key) if api_key != "NOT_SET" else 0,
-            "api_key_starts_with": api_key[:7] if api_key != "NOT_SET" else "NOT_SET",
-            "embedding_model_type": unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else "None"
+        
+        # Check various environment variables
+        env_status = {
+            "openai": {
+                "OPENAI_API_KEY": {
+                    "present": bool(os.getenv("OPENAI_API_KEY")),
+                    "length": len(os.getenv("OPENAI_API_KEY", "")) if os.getenv("OPENAI_API_KEY") else 0,
+                    "starts_with": os.getenv("OPENAI_API_KEY", "")[:7] if os.getenv("OPENAI_API_KEY") else "NOT_SET"
+                }
+            },
+            "postgresql": {
+                "PGVECTOR_HOST": os.getenv("PGVECTOR_HOST", "NOT_SET"),
+                "PGVECTOR_PORT": os.getenv("PGVECTOR_PORT", "NOT_SET"),
+                "PGVECTOR_DATABASE": os.getenv("PGVECTOR_DATABASE", "NOT_SET"),
+                "PGVECTOR_USER": os.getenv("PGVECTOR_USER", "NOT_SET"),
+                "PGVECTOR_PASSWORD": {
+                    "present": bool(os.getenv("PGVECTOR_PASSWORD")),
+                    "length": len(os.getenv("PGVECTOR_PASSWORD", "")) if os.getenv("PGVECTOR_PASSWORD") else 0
+                }
+            },
+            "render": {
+                "RENDER": os.getenv("RENDER", "NOT_SET"),
+                "RENDER_SERVICE_NAME": os.getenv("RENDER_SERVICE_NAME", "NOT_SET"),
+                "RENDER_SERVICE_TYPE": os.getenv("RENDER_SERVICE_TYPE", "NOT_SET"),
+                "RENDER_GIT_COMMIT": os.getenv("RENDER_GIT_COMMIT", "NOT_SET")[:8] if os.getenv("RENDER_GIT_COMMIT") else "NOT_SET"
+            },
+            "service": {
+                "SERVICE_NAME": os.getenv("SERVICE_NAME", "NOT_SET"),
+                "ENVIRONMENT": os.getenv("ENVIRONMENT", "NOT_SET"),
+                "LOG_LEVEL": os.getenv("LOG_LEVEL", "NOT_SET"),
+                "CORS_ORIGINS": os.getenv("CORS_ORIGINS", "NOT_SET")
+            },
+            "embedding_model": unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else "None",
+            "primary_provider": unified_store.primary_provider.name if unified_store and unified_store.primary_provider else "None"
         }
+        
+        return env_status
     
     @app.get("/debug/logs")
     async def get_recent_logs(lines: int = 100):
