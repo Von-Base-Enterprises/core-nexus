@@ -43,7 +43,7 @@ class QueryRequest(BaseModel):
     
     query: str = Field(..., description="Query text")
     limit: int = Field(10, ge=1, le=100, description="Maximum results to return")
-    min_similarity: float = Field(0.7, ge=0.0, le=1.0, description="Minimum similarity threshold")
+    min_similarity: float = Field(0.3, ge=0.0, le=1.0, description="Minimum similarity threshold")
     filters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadata filters")
     user_id: Optional[str] = Field(None, description="Filter by user")
     conversation_id: Optional[str] = Field(None, description="Filter by conversation")
