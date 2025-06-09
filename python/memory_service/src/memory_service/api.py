@@ -59,6 +59,13 @@ async def lifespan(app: FastAPI):
     # Add pgvector if PostgreSQL is available
     # Use Render PostgreSQL internal hostname for better performance
     pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
+    
+    # Validate required password is set
+    pgvector_password = os.getenv("PGVECTOR_PASSWORD")
+    if not pgvector_password:
+        logger.error("PGVECTOR_PASSWORD environment variable is required but not set")
+        raise ValueError("PGVECTOR_PASSWORD must be set in environment variables")
+    
     pgvector_config = ProviderConfig(
         name="pgvector",
         enabled=True,
@@ -68,7 +75,7 @@ async def lifespan(app: FastAPI):
             "port": int(os.getenv("PGVECTOR_PORT", "5432")),
             "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
             "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
-            "password": os.getenv("PGVECTOR_PASSWORD"),
+            "password": pgvector_password,
             "table_name": "vector_memories",
             "embedding_dim": 1536,
             "distance_metric": "cosine"
