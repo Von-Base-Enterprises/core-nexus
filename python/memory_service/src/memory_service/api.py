@@ -124,9 +124,45 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"ChromaDB provider failed to initialize: {e}")
     
-    # Add Graph Provider for knowledge graph functionality - TEMPORARILY DISABLED
-    # TODO: Re-enable once deployment is stable
-    logger.info("Graph provider temporarily disabled for stable deployment")
+    # Add Graph Provider for knowledge graph functionality
+    # Feature flag controlled activation for safe rollout
+    if os.getenv("GRAPH_ENABLED", "false").lower() == "true":
+        logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
+        
+        # Build connection string from pgvector config (reuse existing connection)
+        if pgvector_config.enabled and 'pgvector' in [p.name for p in providers]:
+            try:
+                graph_connection = (
+                    f"postgresql://{pgvector_config.config['user']}:"
+                    f"{pgvector_config.config['password']}@"
+                    f"{pgvector_config.config['host']}:"
+                    f"{pgvector_config.config['port']}/"
+                    f"{pgvector_config.config['database']}"
+                )
+                
+                graph_config = ProviderConfig(
+                    name="graph",
+                    enabled=True,
+                    primary=False,
+                    config={
+                        "connection_string": graph_connection,
+                        "table_prefix": "graph"
+                    }
+                )
+                
+                # Import and initialize GraphProvider
+                from .providers import GraphProvider
+                graph_provider = GraphProvider(graph_config)
+                providers.append(graph_provider)
+                logger.info("✅ Graph provider initialized successfully - Knowledge graph is ACTIVE!")
+                
+            except Exception as e:
+                logger.error(f"Graph provider initialization failed: {e}")
+                logger.info("Continuing without graph provider - system remains stable")
+        else:
+            logger.warning("Graph provider requires pgvector to be enabled")
+    else:
+        logger.info("Graph provider disabled (set GRAPH_ENABLED=true to activate)")
     
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
