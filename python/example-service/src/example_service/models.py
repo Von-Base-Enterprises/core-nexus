@@ -18,12 +18,12 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     is_active: bool = Field(default=True, description="Whether the user is active")
 
-    @validator('name')
+    @validator('name', allow_reuse=True)
     def validate_name(cls, v: str) -> str:
         """Validate and normalize the name."""
         return v.strip()
 
-    @validator('email')
+    @validator('email', allow_reuse=True)
     def validate_email(cls, v: EmailStr) -> EmailStr:
         """Validate and normalize the email."""
         return v.lower().strip()
@@ -51,12 +51,12 @@ class CreateUserRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="User's full name")
     email: EmailStr = Field(..., description="User's email address")
 
-    @validator('name')
+    @validator('name', allow_reuse=True)
     def validate_name(cls, v: str) -> str:
         """Validate and normalize the name."""
         return v.strip()
 
-    @validator('email')
+    @validator('email', allow_reuse=True)
     def validate_email(cls, v: EmailStr) -> EmailStr:
         """Validate and normalize the email."""
         return v.lower().strip()
@@ -78,12 +78,12 @@ class UpdateUserRequest(BaseModel):
     email: Optional[EmailStr] = Field(None, description="User's email address")
     is_active: Optional[bool] = Field(None, description="Whether the user is active")
 
-    @validator('name')
+    @validator('name', allow_reuse=True)
     def validate_name(cls, v: Optional[str]) -> Optional[str]:
         """Validate and normalize the name."""
         return v.strip() if v else v
 
-    @validator('email')
+    @validator('email', allow_reuse=True)
     def validate_email(cls, v: Optional[EmailStr]) -> Optional[EmailStr]:
         """Validate and normalize the email."""
         return v.lower().strip() if v else v
