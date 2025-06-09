@@ -1,10 +1,96 @@
-__pycache__/
-*.pyc
-.yarn/cache/
+# Dependencies
 node_modules/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build outputs
+*.log
+*.pid
+*.seed
+*.pid.lock
 .DS_Store
+<<<<<<< Updated upstream
 
 # Local test outputs
 ingest_output.txt
 query_output.txt
 CoreNexusInfo.txt
+=======
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test
+coverage/
+.nyc_output/
+
+# Production
+dist/
+build/
+*.tsbuildinfo
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Security
+*.pem
+*.key
+*.crt
+*.p12
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+chroma_db/
+
+# Local development
+.local/
+.history/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Core Nexus specific
+memory_cache/
+vector_indexes/
+graph_data/
+>>>>>>> Stashed changes

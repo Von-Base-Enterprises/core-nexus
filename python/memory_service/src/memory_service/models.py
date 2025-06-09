@@ -41,7 +41,7 @@ class MemoryResponse(BaseModel):
 class QueryRequest(BaseModel):
     """Request model for querying memories."""
     
-    query: str = Field(..., description="Query text")
+    query: str = Field("", description="Query text (empty returns all memories)")
     limit: int = Field(10, ge=1, le=100, description="Maximum results to return")
     min_similarity: float = Field(0.3, ge=0.0, le=1.0, description="Minimum similarity threshold")
     filters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadata filters")

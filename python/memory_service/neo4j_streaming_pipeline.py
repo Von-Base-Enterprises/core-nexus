@@ -347,7 +347,7 @@ async def main():
     pipeline = Neo4jStreamingPipeline(
         neo4j_uri="neo4j://localhost:7687",  # Or Neo4j Aura URI
         neo4j_user="neo4j",
-        neo4j_password="password",
+        neo4j_password=os.getenv("NEO4J_PASSWORD", "password"),
         core_nexus_url="https://core-nexus-memory-service.onrender.com"
     )
     
