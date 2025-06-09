@@ -5,7 +5,7 @@ services:
     env: python
     region: oregon
     plan: starter
-    branch: feat/day1-vertical-slice
+    branch: main
     rootDir: python/memory_service
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
@@ -47,7 +47,7 @@ services:
     env: python
     region: oregon
     plan: starter
-    branch: feat/day1-vertical-slice
+    branch: main
     rootDir: python/memory_service
     buildCommand: pip install httpx asyncio
     startCommand: python worker/keep_alive.py
@@ -67,7 +67,7 @@ services:
     env: docker
     region: oregon
     plan: starter
-    branch: feat/day1-vertical-slice
+    branch: main
     rootDir: python/memory_service/monitoring
     dockerfilePath: ./prometheus.Dockerfile
     envVars:
@@ -80,7 +80,7 @@ services:
     env: docker
     region: oregon
     plan: starter
-    branch: feat/day1-vertical-slice
+    branch: main
     rootDir: python/memory_service/monitoring
     dockerfilePath: ./grafana.Dockerfile
     envVars:
