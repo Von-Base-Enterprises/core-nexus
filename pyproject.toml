@@ -31,8 +31,8 @@ poethepoet = "^0.31.0"
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.0"
 mkdocs-material = "^9.5.0"
-mkdocstrings = "^0.27.0"
-mkdocstrings-python = "^1.12.0"
+mkdocstrings = "^0.29.1"
+mkdocstrings-python = "^1.16.12"
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]
