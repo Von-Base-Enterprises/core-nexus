@@ -23,7 +23,7 @@ pytest-mock = "^3.12.0"
 
 # Development tools
 pre-commit = "^4.0.0"
-poethepoet = "^0.31.0"
+poethepoet = "^0.34.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.0"
