@@ -1436,6 +1436,77 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Graph stats failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
     
+    @app.post("/admin/init-database")
+    async def init_database_indexes(
+        admin_key: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Emergency endpoint to create missing database indexes.
+        
+        This fixes the query performance issue by creating the required pgvector indexes.
+        """
+        # Simple security check
+        if admin_key != os.getenv("ADMIN_KEY", "emergency-fix-2024"):
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        pgvector_provider = None
+        for name, provider in store.providers.items():
+            if name == 'pgvector' and provider.enabled:
+                pgvector_provider = provider
+                break
+        
+        if not pgvector_provider:
+            raise HTTPException(status_code=503, detail="pgvector provider not available")
+        
+        try:
+            async with pgvector_provider.connection_pool.acquire() as conn:
+                # Create the critical vector index
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
+                    ON vector_memories 
+                    USING ivfflat (embedding vector_cosine_ops) 
+                    WITH (lists = 100)
+                """)
+                
+                # Create supporting indexes
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata 
+                    ON vector_memories USING GIN (metadata)
+                """)
+                
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_importance 
+                    ON vector_memories (importance_score DESC)
+                """)
+                
+                # Update statistics
+                await conn.execute("ANALYZE vector_memories")
+                
+                # Verify indexes were created
+                indexes = await conn.fetch("""
+                    SELECT indexname 
+                    FROM pg_indexes 
+                    WHERE tablename = 'vector_memories'
+                """)
+                
+                # Test query performance
+                test_result = await pgvector_provider.query(
+                    embedding=[0.1] * 1536,  # Mock embedding
+                    limit=5
+                )
+                
+                return {
+                    "success": True,
+                    "indexes_created": [idx['indexname'] for idx in indexes],
+                    "test_query_returned": len(test_result),
+                    "message": "Database indexes created successfully! Queries should now work."
+                }
+                
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to initialize database: {str(e)}")
+    
     @app.post("/graph/query")
     async def query_knowledge_graph(
         query: dict,
