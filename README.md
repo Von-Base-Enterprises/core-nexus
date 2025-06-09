@@ -205,6 +205,8 @@ PGVECTOR_DATABASE=nexus_memory_db
 PGVECTOR_USER=postgres
 PGVECTOR_PASSWORD=your-password
 
+# PGVECTOR_PASSWORD must be provided via environment variables; there is no fallback default
+
 # Feature Flags
 GRAPH_ENABLED=false  # Enable knowledge graph features
 LOG_LEVEL=INFO

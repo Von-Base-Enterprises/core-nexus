@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
             "port": int(os.getenv("PGVECTOR_PORT", "5432")),
             "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
             "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
-            "password": os.getenv("PGVECTOR_PASSWORD", "2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V"),
+            "password": os.getenv("PGVECTOR_PASSWORD"),
             "table_name": "vector_memories",
             "embedding_dim": 1536,
             "distance_metric": "cosine"

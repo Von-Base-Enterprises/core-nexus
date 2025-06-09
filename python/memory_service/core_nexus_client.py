@@ -141,7 +141,7 @@ class CoreNexusClient:
             created_at=memory_data.get("created_at")
         )
     
-    def query_memories(self, query: str, limit: int = 10, min_similarity: float = 0.7,
+    def query_memories(self, query: str, limit: int = 10, min_similarity: float = 0.3,
                       filters: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None,
                       conversation_id: Optional[str] = None) -> QueryResult:
         """

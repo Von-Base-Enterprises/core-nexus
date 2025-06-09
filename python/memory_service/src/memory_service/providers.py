@@ -377,9 +377,9 @@ class PgVectorProvider(VectorProvider):
             if filters:
                 for key, value in filters.items():
                     if key not in ['limit', 'offset']:
+                        where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                        params.append(str(value))
                         param_count += 1
-                        where_clauses.append(f"metadata->>${param_count-1} = ${param_count}")
-                        params.extend([key, str(value)])
                         
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             

@@ -39,7 +39,7 @@ services:
         value: nexus_memory_db
       - key: PGVECTOR_USER
         value: nexus_memory_db_user
-      # PGVECTOR_PASSWORD should be set in dashboard for security
+      # PGVECTOR_PASSWORD must be set in the dashboard for security
 
   # Keep-alive Background Worker
   - type: worker
