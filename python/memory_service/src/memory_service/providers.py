@@ -409,7 +409,7 @@ class PgVectorProvider(VectorProvider):
                 memory = MemoryResponse(
                     id=row['id'],
                     content=row['content'],
-                    metadata=dict(row['metadata']) if row['metadata'] else {},
+                    metadata=row['metadata'] if isinstance(row['metadata'], dict) else {},
                     embedding=[],  # Don't return full embeddings in response
                     importance_score=float(row['importance_score']),
                     similarity_score=float(row['similarity_score']),
