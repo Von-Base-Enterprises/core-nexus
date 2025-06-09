@@ -136,23 +136,16 @@ async def lifespan(app: FastAPI):
     if os.getenv("GRAPH_ENABLED", "false").lower() == "true":
         logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
         
-        # Build connection string from pgvector config (reuse existing connection)
-        if pgvector_config.enabled and 'pgvector' in [p.name for p in providers]:
+        # Reuse pgvector's connection pool for security and efficiency
+        pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
+        if pgvector_provider and hasattr(pgvector_provider, 'connection_pool'):
             try:
-                graph_connection = (
-                    f"postgresql://{pgvector_config.config['user']}:"
-                    f"{pgvector_config.config['password']}@"
-                    f"{pgvector_config.config['host']}:"
-                    f"{pgvector_config.config['port']}/"
-                    f"{pgvector_config.config['database']}"
-                )
-                
                 graph_config = ProviderConfig(
                     name="graph",
                     enabled=True,
                     primary=False,
                     config={
-                        "connection_string": graph_connection,
+                        "connection_pool": pgvector_provider.connection_pool,  # Share pool
                         "table_prefix": "graph"
                     }
                 )
@@ -1276,13 +1269,13 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
             
-            # TODO: Fetch memory from vector store and process
-            # For now, return a placeholder
-            return {
-                "status": "success",
-                "memory_id": memory_id,
-                "message": "Memory synced to graph (placeholder)"
-            }
+            # TODO: Implement memory fetching and entity extraction
+            # This requires fetching the memory content from the primary provider
+            # and running it through the graph provider's entity extraction
+            raise HTTPException(
+                status_code=501,
+                detail="Memory sync not yet implemented. This endpoint will extract entities from existing memories."
+            )
             
         except Exception as e:
             logger.error(f"Graph sync failed: {e}")
@@ -1301,6 +1294,11 @@ def create_memory_app() -> FastAPI:
         Returns connected entities and their relationships up to max_depth.
         """
         try:
+            # Validate inputs
+            from .validators import validate_entity_name, validate_graph_depth
+            entity_name = validate_entity_name(entity_name)
+            max_depth = validate_graph_depth(max_depth)
+            
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")

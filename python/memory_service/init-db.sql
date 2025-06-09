@@ -278,6 +278,11 @@ CREATE INDEX IF NOT EXISTS graph_relationships_strength_idx ON graph_relationshi
 CREATE INDEX IF NOT EXISTS memory_entity_map_memory_idx ON memory_entity_map (memory_id);
 CREATE INDEX IF NOT EXISTS memory_entity_map_entity_idx ON memory_entity_map (entity_id);
 
+-- Partial index for high-confidence entity extractions (as suggested by Agent 3)
+CREATE INDEX IF NOT EXISTS memory_entity_map_confidence_idx 
+    ON memory_entity_map (confidence DESC) 
+    WHERE confidence > 0.7;
+
 -- Create views for common graph queries
 CREATE OR REPLACE VIEW entity_summary AS
 SELECT 

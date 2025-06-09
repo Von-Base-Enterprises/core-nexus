@@ -550,31 +550,39 @@ class GraphProvider(VectorProvider):
     
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
-        self.connection_pool = None
+        self.connection_pool = config.config.get('connection_pool')  # Reuse existing pool
         self.connection_string = config.config.get('connection_string')
         self.table_prefix = config.config.get('table_prefix', 'graph')
         self.entity_extractor = None  # Will be initialized lazily
-        self._pool_initialized = False
+        self._pool_initialized = bool(self.connection_pool)  # Already initialized if pool provided
     
     async def _ensure_pool(self):
         """Ensure connection pool is initialized (lazy initialization)."""
-        if not self._pool_initialized and self.connection_string:
-            try:
-                import asyncpg
-                
-                self.connection_pool = await asyncpg.create_pool(
-                    self.connection_string,
-                    min_size=2,
-                    max_size=10,
-                    command_timeout=60
-                )
+        if not self._pool_initialized:
+            if self.connection_pool:
+                # Pool was provided, mark as initialized
                 self._pool_initialized = True
-                logger.info("Graph provider connection pool initialized")
-                
-            except Exception as e:
-                logger.error(f"Failed to initialize graph provider pool: {e}")
-                self.enabled = False
-                raise
+                logger.info("Graph provider using shared connection pool")
+            elif self.connection_string:
+                # Create new pool from connection string (fallback)
+                try:
+                    import asyncpg
+                    
+                    self.connection_pool = await asyncpg.create_pool(
+                        self.connection_string,
+                        min_size=2,
+                        max_size=10,
+                        command_timeout=60
+                    )
+                    self._pool_initialized = True
+                    logger.info("Graph provider created new connection pool")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to initialize graph provider pool: {e}")
+                    self.enabled = False
+                    raise
+            else:
+                raise RuntimeError("GraphProvider requires either connection_pool or connection_string")
     
     async def _get_or_create_embedding_model(self):
         """Get or create the embedding model for entity embeddings."""

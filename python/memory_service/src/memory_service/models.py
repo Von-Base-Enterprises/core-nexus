@@ -148,7 +148,7 @@ class RelationshipType(str):
 class GraphNode(BaseModel):
     """Model for knowledge graph nodes (entities)."""
     
-    id: UUID = Field(..., description="Same UUID as memory ID for correlation")
+    id: UUID = Field(default_factory=uuid4, description="Unique entity identifier")
     entity_type: str = Field(..., description="Type of entity")
     entity_name: str = Field(..., description="Normalized name of entity")
     properties: Dict[str, Any] = Field(default_factory=dict, description="Additional properties")
