@@ -3,3 +3,8 @@ __pycache__/
 .yarn/cache/
 node_modules/
 .DS_Store
+
+# Local test outputs
+ingest_output.txt
+query_output.txt
+CoreNexusInfo.txt
