@@ -58,6 +58,8 @@ class QueryResponse(BaseModel):
     total_found: int = Field(0, description="Total memories found")
     query_time_ms: float = Field(0.0, description="Query execution time in milliseconds")
     providers_used: List[str] = Field(default_factory=list, description="Vector providers queried")
+    trust_metrics: Optional[Dict[str, Any]] = Field(None, description="Trust and confidence metrics")
+    query_metadata: Optional[Dict[str, Any]] = Field(None, description="Additional query metadata")
 
 
 class HealthCheckResponse(BaseModel):

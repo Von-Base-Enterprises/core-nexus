@@ -238,7 +238,12 @@ class UnifiedVectorStore:
                     return cached_result['response']
             
             # Generate query embedding
-            query_embedding = await self._generate_embedding(request.query)
+            # For empty queries, use a zero vector to match all memories
+            if not request.query or request.query.strip() == "":
+                query_embedding = [0.0] * 1536  # Use zero vector for "get all" queries
+                logger.info("Empty query detected - using zero vector to retrieve all memories")
+            else:
+                query_embedding = await self._generate_embedding(request.query)
             
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
