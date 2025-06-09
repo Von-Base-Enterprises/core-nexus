@@ -1,0 +1,93 @@
+{
+  "timestamp": "2025-06-09T02:35:36.781874",
+  "summary": {
+    "total": 7,
+    "success": 0,
+    "by_status": {
+      "200": 0,
+      "501": 0,
+      "503": 0,
+      "500": 6
+    }
+  },
+  "results": [
+    {
+      "endpoint": "Graph Stats",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to get graph stats: "
+      },
+      "time": 0.4064371585845947
+    },
+    {
+      "endpoint": "Graph Query",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to query graph: "
+      },
+      "time": 0.3301215171813965
+    },
+    {
+      "endpoint": "Entity Exploration (VBE)",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to explore entity: "
+      },
+      "time": 0.3637418746948242
+    },
+    {
+      "endpoint": "Path Finding (VBE to Nike)",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to find path: "
+      },
+      "time": 0.19580292701721191
+    },
+    {
+      "endpoint": "Memory Sync",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to sync memory: "
+      },
+      "time": 0.18703556060791016
+    },
+    {
+      "endpoint": "Bulk Sync",
+      "status": 422,
+      "success": false,
+      "error": {
+        "detail": [
+          {
+            "type": "list_type",
+            "loc": [
+              "body"
+            ],
+            "msg": "Input should be a valid list",
+            "input": {
+              "memory_ids": [
+                "id1",
+                "id2"
+              ]
+            },
+            "url": "https://errors.pydantic.dev/2.5/v/list_type"
+          }
+        ]
+      },
+      "time": 0.39028382301330566
+    },
+    {
+      "endpoint": "Graph Insights",
+      "status": 500,
+      "success": false,
+      "error": {
+        "detail": "Failed to get insights: "
+      },
+      "time": 0.18381571769714355
+    }
+  ]
+}
