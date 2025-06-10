@@ -1,0 +1,278 @@
+{
+  "timestamp": 228698.091518226,
+  "batch": 2,
+  "memories_processed": 150,
+  "entities": [
+    {
+      "name": "Von Base Enterprises",
+      "type": "ORGANIZATION",
+      "importance": 0.9
+    },
+    {
+      "name": "Nike",
+      "type": "ORGANIZATION",
+      "importance": 0.7
+    },
+    {
+      "name": "3D Mapping",
+      "type": "TECHNOLOGY",
+      "importance": 0.8
+    },
+    {
+      "name": "Drone technology",
+      "type": "TECHNOLOGY",
+      "importance": 0.8
+    },
+    {
+      "name": "Aerial drone content",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "AI",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "Digital media solutions",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "Artificial Intelligence",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "Monday.com",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "Google Drive",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "VR",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "AR",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "XR",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "Web3",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "Metaverse",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "3d printing",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "A/B testing",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "UI/UX",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "Kerwin Barron",
+      "type": "PERSON",
+      "importance": 0.6
+    },
+    {
+      "name": "Jennoa Graham",
+      "type": "PERSON",
+      "importance": 0.6
+    },
+    {
+      "name": "Shannen Quejado",
+      "type": "PERSON",
+      "importance": 0.6
+    },
+    {
+      "name": "AI Grant Bot",
+      "type": "PROJECT",
+      "importance": 0.6
+    },
+    {
+      "name": "DroneDasher",
+      "type": "PROJECT",
+      "importance": 0.6
+    },
+    {
+      "name": "VBE Fashion",
+      "type": "PROJECT",
+      "importance": 0.6
+    },
+    {
+      "name": "VBE XR Labs",
+      "type": "PROJECT",
+      "importance": 0.6
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Von Base Enterprises",
+      "target": "Nike",
+      "type": "PARTNERS_WITH",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "3D Mapping",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Drone technology",
+      "type": "USES",
+      "strength": 0.9
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Aerial drone content",
+      "type": "DEVELOPS",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "AI",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Digital media solutions",
+      "type": "DEVELOPS",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Artificial Intelligence",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Monday.com",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Google Drive",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "VR",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "AR",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "XR",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Web3",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Metaverse",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "3d printing",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "A/B testing",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "UI/UX",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Kerwin Barron",
+      "target": "Von Base Enterprises",
+      "type": "WORKS_FOR",
+      "strength": 0.6
+    },
+    {
+      "source": "Jennoa Graham",
+      "target": "Von Base Enterprises",
+      "type": "WORKS_FOR",
+      "strength": 0.6
+    },
+    {
+      "source": "Shannen Quejado",
+      "target": "Von Base Enterprises",
+      "type": "WORKS_FOR",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "AI Grant Bot",
+      "type": "DEVELOPS",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "DroneDasher",
+      "type": "DEVELOPS",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "VBE Fashion",
+      "type": "DEVELOPS",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "VBE XR Labs",
+      "type": "DEVELOPS",
+      "strength": 0.6
+    }
+  ]
+}

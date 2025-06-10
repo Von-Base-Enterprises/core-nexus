@@ -28,15 +28,14 @@ from .models import (
 from .unified_store import UnifiedVectorStore
 from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
 from .logging_config import setup_logging, get_logger
-# Temporarily disable bulk import/export to fix deployment
-# from .bulk_import_simple import (
-#     BulkImportService, BulkImportRequest, ImportProgress,
-#     ImportStatus, ImportFormat
-# )
-# from .memory_export import (
-#     MemoryExportService, ExportRequest, ExportFormat,
-#     ExportFilters
-# )
+from .bulk_import_simple import (
+    BulkImportService, BulkImportRequest, ImportProgress,
+    ImportStatus, ImportFormat
+)
+from .memory_export import (
+    MemoryExportService, ExportRequest, ExportFormat,
+    ExportFilters
+)
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
 #     metrics_collector, get_metrics, record_request, time_request,
@@ -52,10 +51,8 @@ logger = get_logger("api")
 unified_store: Optional[UnifiedVectorStore] = None
 usage_collector: Optional['UsageCollector'] = None
 memory_dashboard: Optional['MemoryDashboard'] = None
-# bulk_import_service: Optional[BulkImportService] = None
-# memory_export_service: Optional[MemoryExportService] = None
-bulk_import_service = None
-memory_export_service = None
+bulk_import_service: Optional[BulkImportService] = None
+memory_export_service: Optional[MemoryExportService] = None
 
 
 @asynccontextmanager
@@ -223,10 +220,10 @@ async def lifespan(app: FastAPI):
     logger.info(f"Memory service started with {len(providers)} providers and {embedding_model.__class__.__name__}")
     
     # Initialize bulk import service (simplified version without Redis)
-    # global bulk_import_service, memory_export_service
-    # bulk_import_service = BulkImportService(unified_store)
-    # memory_export_service = MemoryExportService(unified_store)
-    # logger.info("Bulk import/export services initialized")
+    global bulk_import_service, memory_export_service
+    bulk_import_service = BulkImportService(unified_store)
+    memory_export_service = MemoryExportService(unified_store)
+    logger.info("Bulk import/export services initialized")
     
     # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
     # from .tracking import UsageCollector
@@ -1783,8 +1780,17 @@ def create_memory_app() -> FastAPI:
     async def knowledge_graph_live_stats(store: UnifiedVectorStore = Depends(get_store)):
         """Real-time stats for Agent 3 dashboard - poll every 10 seconds"""
         try:
-            pool = get_connection_pool()
-            async with pool.acquire() as conn:
+            # Get pgvector provider's connection pool
+            pgvector_provider = None
+            for name, provider in store.providers.items():
+                if name == 'pgvector' and provider.enabled:
+                    pgvector_provider = provider
+                    break
+            
+            if not pgvector_provider:
+                raise HTTPException(status_code=503, detail="pgvector provider not available")
+            
+            async with pgvector_provider.connection_pool.acquire() as conn:
                 # Get unique entity count
                 entity_count = await conn.fetchval(
                     "SELECT COUNT(*) FROM graph_nodes"

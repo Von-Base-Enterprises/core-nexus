@@ -1,0 +1,99 @@
+{
+  "timestamp": "2025-06-09T03:30:44.281208",
+  "steps_completed": [
+    "api_health_check",
+    "stats_retrieved",
+    "providers_checked",
+    "test_memory_created",
+    "query_tested"
+  ],
+  "api_accessible": true,
+  "providers_active": [
+    "pgvector",
+    "chromadb",
+    "graph"
+  ],
+  "memories_accessible": true,
+  "chromadb_redundancy": true,
+  "recommendations": [
+    "\u2705 ChromaDB redundancy is already active",
+    "\ud83c\udfaf All 1,004 memories are automatically mirrored"
+  ],
+  "current_stats": {
+    "total_memories": 0,
+    "memories_by_provider": {
+      "pgvector": 0,
+      "chromadb": 0,
+      "graph": 0
+    },
+    "avg_importance_score": 0.5,
+    "most_recent_memory": null,
+    "queries_last_hour": 3,
+    "avg_query_time_ms": 800.6285826365153
+  },
+  "providers_data": {
+    "providers": [
+      {
+        "name": "pgvector",
+        "enabled": true,
+        "primary": true,
+        "config": {
+          "retry_count": 3,
+          "timeout_seconds": 30.0
+        },
+        "stats": {
+          "provider": "pgvector",
+          "total_memories": 1005,
+          "avg_importance_score": 0.47063161388547997,
+          "oldest_memory": "2025-06-08T11:57:43.998336",
+          "newest_memory": "2025-06-09T05:02:42.897156",
+          "table_size": "19 MB",
+          "table_name": "vector_memories",
+          "embedding_dimension": 1536
+        }
+      },
+      {
+        "name": "chromadb",
+        "enabled": true,
+        "primary": false,
+        "config": {
+          "retry_count": 3,
+          "timeout_seconds": 30.0
+        },
+        "stats": {
+          "provider": "chromadb",
+          "total_memories": 0,
+          "collection_name": "core_nexus_memories",
+          "embedding_dimension": 1536
+        }
+      },
+      {
+        "name": "graph",
+        "enabled": true,
+        "primary": false,
+        "config": {
+          "retry_count": 3,
+          "timeout_seconds": 30.0
+        },
+        "stats": {
+          "error": "relation \"graph_nodes\" does not exist"
+        }
+      }
+    ],
+    "primary_provider": "pgvector",
+    "total_providers": 3,
+    "embedding_model": {
+      "model_type": "OpenAIEmbeddingModel",
+      "dimension": 1536,
+      "health": {
+        "status": "healthy",
+        "model": "text-embedding-3-small",
+        "dimension": 1536,
+        "response_time_ms": 3802.83,
+        "api_key_configured": true,
+        "max_batch_size": 100
+      }
+    }
+  },
+  "test_memory_id": "2c614ca4-1f91-4b5b-8261-d80df046a70f"
+}

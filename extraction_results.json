@@ -1,0 +1,257 @@
+{
+  "timestamp": "2025-06-09T11:22:21.355057",
+  "memories_processed": 100,
+  "extraction_time": 6.006584644317627,
+  "entities": [
+    {
+      "name": "Microsoft",
+      "type": "ORGANIZATION",
+      "importance": 0.8
+    },
+    {
+      "name": "Bill Gates",
+      "type": "PERSON",
+      "importance": 0.7
+    },
+    {
+      "name": "Azure",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "Windows",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "Core Nexus",
+      "type": "PROJECT",
+      "importance": 0.9
+    },
+    {
+      "name": "GPT-4",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "Pinecone",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "Postgres",
+      "type": "TECHNOLOGY",
+      "importance": 0.7
+    },
+    {
+      "name": "Von Base Enterprises",
+      "type": "ORGANIZATION",
+      "importance": 0.9
+    },
+    {
+      "name": "ACE",
+      "type": "CONCEPT",
+      "importance": 0.8
+    },
+    {
+      "name": "OpenAI",
+      "type": "ORGANIZATION",
+      "importance": 0.6
+    },
+    {
+      "name": "SerpAPI",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "psycopg2",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "SQLAlchemy",
+      "type": "TECHNOLOGY",
+      "importance": 0.5
+    },
+    {
+      "name": "Python",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    },
+    {
+      "name": "Langchain",
+      "type": "TECHNOLOGY",
+      "importance": 0.6
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Microsoft",
+      "target": "Bill Gates",
+      "type": "FOUNDED_BY",
+      "strength": 0.9
+    },
+    {
+      "source": "Microsoft",
+      "target": "Azure",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Microsoft",
+      "target": "Windows",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "ACE",
+      "type": "DEVELOPED_BY",
+      "strength": 0.9
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Pinecone",
+      "type": "USES",
+      "strength": 0.8
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Postgres",
+      "type": "USES",
+      "strength": 0.8
+    },
+    {
+      "source": "Core Nexus",
+      "target": "GPT-4",
+      "type": "USES",
+      "strength": 0.8
+    },
+    {
+      "source": "ACE",
+      "target": "GPT-4",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "ACE",
+      "target": "Pinecone",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "ACE",
+      "target": "Postgres",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "agent",
+      "target": "Core Nexus",
+      "type": "PART_OF",
+      "strength": 0.7
+    }
+  ],
+  "memory_ids": [
+    "24b05452-6021-4956-a8a1-25d232291fb7",
+    "f6059472-00e6-480b-bac2-2f9ddeca3f8d",
+    "2c614ca4-1f91-4b5b-8261-d80df046a70f",
+    "b3bfd1a0-1df0-4324-8b08-001816a8c32e",
+    "e58a0304-9bf5-440a-b096-43fb54bb8f22",
+    "94b25779-1672-441e-b258-3a3e0b6a8b96",
+    "162576d8-615c-497e-bb9a-8ba7909d619b",
+    "7fd5ef0c-2617-49da-8f1d-cf699fe2a146",
+    "493e2de7-05eb-4852-bd67-edaaf2fcc5e7",
+    "1daa1093-9629-4f80-9968-954c7199d75c",
+    "84b1da47-34bf-4f7c-8f32-9256f7a64e97",
+    "fb1a8a13-d986-4fa2-bf16-f64aa3a56e5c",
+    "74778eb6-a11d-4afd-9d96-b14db734908c",
+    "f19c9360-3299-4caa-9f12-5298da7e4e4a",
+    "9cf68159-bcdc-4d36-b22c-799230d955b1",
+    "1cc9dfc6-6586-4dc9-b900-9c8649d466bb",
+    "0066ea0f-12cc-4e14-937c-7d88dd9e65a6",
+    "e660891a-60bc-48df-b3d4-272a7342689b",
+    "8acba262-ed42-4eec-8e80-4c83314f61e6",
+    "69137100-5fde-4ab8-a2cd-f23da951019e",
+    "05974364-acda-44c3-97a2-44b35c309d64",
+    "85339da6-ef97-4d2c-bdf5-7d2afcf2940c",
+    "5523b72e-6f0d-4e69-a973-0cd648844986",
+    "cdd5f3ad-b443-486b-b5eb-ac052b365cdc",
+    "7ea92542-c5d8-43f8-bd44-0c60ae1de814",
+    "3a25b023-8216-4fff-8fc2-3ced690d56c4",
+    "5fc63937-d272-46c5-a6b7-469aa82c027e",
+    "f72c10c9-7dad-4a89-a913-6d354fb5d26d",
+    "f81402af-1546-4607-be63-b72fba8c06ef",
+    "49820f43-7b1a-4522-a1a7-e93dc2cbd185",
+    "8dde0c91-ed64-4bb2-b9be-f346d58595fe",
+    "16870f55-03fc-4821-a07d-71ddf89fdd3a",
+    "3f51ea9d-e81a-4361-a5e3-4936c984b56d",
+    "a9c2657e-853b-48c2-bfca-40b18d110f09",
+    "d2f8a2e9-7f1a-47bc-87aa-d76a23bc3831",
+    "ae1a6eb0-b816-4a31-8659-6cf05f4f46e1",
+    "100e195c-ed3b-4255-b264-0e5011b1887e",
+    "5ff0d2f7-8041-4a09-8f6b-86208a1f91b9",
+    "eaf744fc-2756-4baf-9709-d10a8a6cb91f",
+    "32d5bc57-9807-44c1-8bf8-bc43a8c0fc08",
+    "5c532832-d493-44db-b128-57d52aaae0eb",
+    "7502f273-4367-461d-8066-f33915cca811",
+    "77e30605-f877-4e60-8625-a12051db60cb",
+    "67397e75-99f7-4013-8ed8-836425d76f13",
+    "ddbed3a3-968b-4088-95af-2a7625e3b10f",
+    "78ccb400-e19d-42b4-aee2-52519441c2ee",
+    "1046016f-c35d-493a-bcff-1cb232e28ebc",
+    "c7c61ba5-1d4e-44f5-a63f-95961b1d85f8",
+    "b2e4cb60-8482-49bc-a992-c95c55cf1f40",
+    "cc5aad58-5919-43a6-9222-1e25938aa1ab",
+    "c6f3ff6a-7254-414b-a466-b5e86942b912",
+    "d8463991-e9bb-46e9-bf69-8903a7528c5e",
+    "5196cee7-1732-4d9f-b2d6-f14dc00de235",
+    "abb7fbb9-71d6-494b-b7d6-684d1dc63655",
+    "49f939c4-640a-4a3a-b59f-557d426861a8",
+    "198990da-8a40-46b7-96e2-9d25143b9d17",
+    "d37e8452-e165-4f12-a947-3fbae6749f89",
+    "f4337cfa-9dc0-4b70-a1d8-0f8c633b99c1",
+    "82f290d8-109f-47eb-aa2a-61b18deaab19",
+    "9fe4be3f-3e65-4355-a5e5-992001133bb8",
+    "a75050e2-bb49-4b28-9bba-ace2fadef719",
+    "e88a0f3a-dd42-4346-be73-36f43b76278d",
+    "8c763a18-cf6b-4b7c-b3e7-367fb810197b",
+    "4b7d7474-830a-41bb-a16f-c88726be06fa",
+    "d651a7eb-f5db-44ba-bca9-3559c22f6fb0",
+    "2589c6dd-0895-463f-a586-b16a66ec0105",
+    "7cd8e84b-7a54-4cb7-a8e0-021ec26b5b9b",
+    "0c03eeca-0228-4994-99b2-9655eca057c3",
+    "536c6ad3-98b2-4f4b-8c83-fca82df3745a",
+    "d6343f3d-12da-4645-93f2-163a4e6881e9",
+    "ce8047da-f846-4104-81dc-7f937398e2cf",
+    "5f7c968a-fec8-4687-ba01-39e9716b76e3",
+    "7a3e1d6c-bb6e-47db-8b3b-7d276258806b",
+    "0c728353-80dc-48da-9f8c-4752a9a71aea",
+    "7db0f93c-c559-43d5-abc6-d82043d907e0",
+    "8083f5d8-779f-4405-a9c0-c4ec2ff8ad4d",
+    "cc69ce01-a8aa-4e6e-99e6-b846a3445ef1",
+    "a8c6f3d9-550d-4ad7-8691-6d9f380f15dc",
+    "8fe7a386-a8d0-4f50-aad8-a5fd565c8021",
+    "1011f7c9-709c-4c35-b291-22a394f6020c",
+    "3e38f14a-765d-49fc-a20c-13565f3aab60",
+    "0f310d27-01b2-4ffa-9bef-da1493880e3b",
+    "fd4b90a0-60f1-49a8-a1d1-3513b0442841",
+    "bf2489a0-9aa9-48a7-879d-a421976ef08b",
+    "57d81c79-e497-4328-afe2-85307cfd9b8c",
+    "63bb35d6-dfda-480c-b8d4-255f46fe44f9",
+    "4d7f1afc-7b3a-4d8d-b162-b17a0dc9d7c8",
+    "ba1ad57a-44c2-4e4a-baee-738cec1bd940",
+    "e90862e8-cddc-4df2-8428-ac57000daa1e",
+    "a4f5e0b9-eca2-4611-a3f5-d84bc37a60c5",
+    "9570fa76-9dd1-4c02-a963-b3cebfcd16c6",
+    "63affc55-5fe4-4922-ba23-6d9b8f9e75db",
+    "c116c906-6ab8-48f1-a6fb-e9935dac531f",
+    "0ac1dc4e-2741-4cf2-899b-1a0c0c147a49",
+    "c38b86cb-7f98-47a8-93c1-eab61d5762b1",
+    "071e4774-738c-4998-9c2b-ff61a59b5a8a",
+    "24bf0605-f705-46ca-9658-2e3a3e4d921c",
+    "0a8072b8-315c-42c3-81d1-90a0cc87ea55",
+    "f704fcde-f84c-4ccf-bdcc-0df16bebb54e",
+    "b1768e31-54b4-4c2d-a27c-c1c97696f82d"
+  ]
+}

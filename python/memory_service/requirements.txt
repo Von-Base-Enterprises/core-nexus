@@ -27,6 +27,7 @@ asyncio-pool==0.6.0
 
 # Monitoring and logging
 structlog==23.2.0
+loguru==0.7.2
 
 # Development and testing
 pytest==7.4.3

@@ -1,0 +1,790 @@
+{
+  "timestamp": "2025-06-09T15:16:02.932890",
+  "memories_processed": 1008,
+  "successful_batches": 6,
+  "failed_batches": 1,
+  "entities": [
+    {
+      "name": "Core Nexus",
+      "type": "TECHNOLOGY",
+      "importance": 0.8,
+      "count": 6
+    },
+    {
+      "name": "GPT-4",
+      "type": "TECHNOLOGY",
+      "importance": 0.9,
+      "count": 4
+    },
+    {
+      "name": "Pinecone",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 5
+    },
+    {
+      "name": "Postgres",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 4
+    },
+    {
+      "name": "Langchain",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 4
+    },
+    {
+      "name": "OpenAI",
+      "type": "ORGANIZATION",
+      "importance": 0.7,
+      "count": 4
+    },
+    {
+      "name": "Von Base Enterprises (VBE)",
+      "type": "ORGANIZATION",
+      "importance": 0.9,
+      "count": 3
+    },
+    {
+      "name": "SQLAlchemy",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 4
+    },
+    {
+      "name": "psycopg2",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 4
+    },
+    {
+      "name": "Chroma",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 4
+    },
+    {
+      "name": "Von Base Enterprises",
+      "type": "ORGANIZATION",
+      "importance": 0.8,
+      "count": 2
+    },
+    {
+      "name": "SerpAPI",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 3
+    },
+    {
+      "name": "Nike",
+      "type": "ORGANIZATION",
+      "importance": 0.7,
+      "count": 2
+    },
+    {
+      "name": "AI",
+      "type": "TECHNOLOGY",
+      "importance": 0.8,
+      "count": 1
+    },
+    {
+      "name": "VBE (Von Base Enterprises)",
+      "type": "ORGANIZATION",
+      "importance": 0.8,
+      "count": 1
+    },
+    {
+      "name": "drones",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "digital media",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "Tyvonne Boykin",
+      "type": "PERSON",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "drone technology",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "artificial intelligence (AI)",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "digital media services",
+      "type": "TECHNOLOGY",
+      "importance": 0.7,
+      "count": 1
+    },
+    {
+      "name": "Autonomous AI Agents",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "LLM",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "AI agent",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "SQLDatabase",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "Agent",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "ACE",
+      "type": "SYSTEM",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "PostgreSQL",
+      "type": "TECHNOLOGY",
+      "importance": 0.6,
+      "count": 1
+    },
+    {
+      "name": "OpenAI text-embedding-3-small",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "PostgreSQL pgvector",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "LangChain",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "tiktoken",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "SerpAPIWrapper",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "Von Base",
+      "type": "PERSON",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "ACE (Autonomous Cognitive Entity)",
+      "type": "TECHNOLOGY",
+      "importance": 0.5,
+      "count": 1
+    },
+    {
+      "name": "Distinguished Systems Engineer",
+      "type": "PERSON",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Tyvon",
+      "type": "PERSON",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Auto-GPT",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "AgentGPT",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "BabyAGI",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Go",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Amazon",
+      "type": "ORGANIZATION",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Sunbelt Business Brokers",
+      "type": "ORGANIZATION",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "ConversationBufferMemory",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "SQLDatabaseChain",
+      "type": "TECHNOLOGY",
+      "importance": 0.4,
+      "count": 1
+    },
+    {
+      "name": "Shannon",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Amy",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Rel",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Adio",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Wi-Fi Pineapple",
+      "type": "TECHNOLOGY",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "LLMs",
+      "type": "TECHNOLOGY",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Paul Judge",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Bryan Jenkins",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Leeronson Boykin",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Nina Christine Johannes",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "Shannen Quejado",
+      "type": "PERSON",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "CharacterTextSplitter",
+      "type": "TECHNOLOGY",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "LLMMathChain",
+      "type": "TECHNOLOGY",
+      "importance": 0.3,
+      "count": 1
+    },
+    {
+      "name": "J.A.R.V.I.S.",
+      "type": "TECHNOLOGY",
+      "importance": 0.2,
+      "count": 1
+    },
+    {
+      "name": "F.R.I.D.A.Y.",
+      "type": "TECHNOLOGY",
+      "importance": 0.2,
+      "count": 1
+    }
+  ],
+  "relationships": [
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "Nike",
+      "type": "PARTNERSHIP",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "Core Nexus",
+      "type": "USES",
+      "strength": 0.9
+    },
+    {
+      "source": "Core Nexus",
+      "target": "OpenAI text-embedding-3-small",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "PostgreSQL pgvector",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "drones",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "AI",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "digital media",
+      "type": "DEVELOPS",
+      "strength": 0.8
+    },
+    {
+      "source": "Tyvon",
+      "target": "Von Base Enterprises (VBE)",
+      "type": "CEO",
+      "strength": 0.9
+    },
+    {
+      "source": "Shannon",
+      "target": "Von Base Enterprises (VBE)",
+      "type": "EMPLOYEE",
+      "strength": 0.5
+    },
+    {
+      "source": "Amy",
+      "target": "Von Base Enterprises (VBE)",
+      "type": "EMPLOYEE",
+      "strength": 0.5
+    },
+    {
+      "source": "Rel",
+      "target": "Von Base Enterprises (VBE)",
+      "type": "EMPLOYEE",
+      "strength": 0.5
+    },
+    {
+      "source": "Adio",
+      "target": "Von Base Enterprises (VBE)",
+      "type": "EMPLOYEE",
+      "strength": 0.5
+    },
+    {
+      "source": "drones",
+      "target": "AI",
+      "type": "INTEGRATED_WITH",
+      "strength": 0.7
+    },
+    {
+      "source": "drones",
+      "target": "Wi-Fi Pineapple",
+      "type": "INTEGRATED_WITH",
+      "strength": 0.4
+    },
+    {
+      "source": "drones",
+      "target": "LLMs",
+      "type": "INTEGRATED_WITH",
+      "strength": 0.4
+    },
+    {
+      "source": "digital media",
+      "target": "AI",
+      "type": "INTEGRATED_WITH",
+      "strength": 0.7
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "Tyvonne Boykin",
+      "type": "owns",
+      "strength": 0.9
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "drone technology",
+      "type": "uses",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "artificial intelligence (AI)",
+      "type": "uses",
+      "strength": 0.8
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "digital media services",
+      "type": "offers",
+      "strength": 0.8
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Postgres",
+      "type": "uses",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Pinecone",
+      "type": "uses",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "LLM",
+      "type": "uses",
+      "strength": 0.7
+    },
+    {
+      "source": "Autonomous AI Agents",
+      "target": "LangChain",
+      "type": "example_of",
+      "strength": 0.6
+    },
+    {
+      "source": "Autonomous AI Agents",
+      "target": "Auto-GPT",
+      "type": "example_of",
+      "strength": 0.5
+    },
+    {
+      "source": "Autonomous AI Agents",
+      "target": "AgentGPT",
+      "type": "example_of",
+      "strength": 0.5
+    },
+    {
+      "source": "Autonomous AI Agents",
+      "target": "BabyAGI",
+      "type": "example_of",
+      "strength": 0.5
+    },
+    {
+      "source": "Autonomous AI Agents",
+      "target": "Go",
+      "type": "example_of",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "Sunbelt Business Brokers",
+      "type": "related_to",
+      "strength": 0.4
+    },
+    {
+      "source": "Sunbelt Business Brokers",
+      "target": "Shannen Quejado",
+      "type": "assigned_to",
+      "strength": 0.4
+    },
+    {
+      "source": "Von Base Enterprises (VBE)",
+      "target": "Core Nexus",
+      "type": "OWNER_OF",
+      "strength": 0.9
+    },
+    {
+      "source": "Core Nexus",
+      "target": "GPT-4",
+      "type": "USES",
+      "strength": 0.8
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Pinecone",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "Postgres",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "AI agent",
+      "type": "DEPLOYED",
+      "strength": 0.8
+    },
+    {
+      "source": "AI agent",
+      "target": "Langchain",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "AI agent",
+      "target": "OpenAI",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "AI agent",
+      "target": "SerpAPI",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "AI agent",
+      "target": "psycopg2",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "AI agent",
+      "target": "tiktoken",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "AI agent",
+      "target": "Chroma",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "AI agent",
+      "target": "SQLAlchemy",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Core Nexus",
+      "type": "OWNER",
+      "strength": 0.9
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "Agent",
+      "type": "DEVELOPER",
+      "strength": 0.8
+    },
+    {
+      "source": "Agent",
+      "target": "OpenAI",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Agent",
+      "target": "GPT-4",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Agent",
+      "target": "Langchain",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "Agent",
+      "target": "SerpAPIWrapper",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "Agent",
+      "target": "SQLDatabase",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Agent",
+      "target": "Pinecone",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Agent",
+      "target": "Postgres",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "Von Base",
+      "target": "Core Nexus",
+      "type": "DEVELOPER",
+      "strength": 0.6
+    },
+    {
+      "source": "Nike",
+      "target": "Core Nexus",
+      "type": "POTENTIAL_OWNER",
+      "strength": 0.5
+    },
+    {
+      "source": "Von Base Enterprises",
+      "target": "ACE",
+      "type": "DEVELOPER_OF",
+      "strength": 0.9
+    },
+    {
+      "source": "Core Nexus",
+      "target": "ACE",
+      "type": "DEPLOYMENT_OF",
+      "strength": 0.8
+    },
+    {
+      "source": "ACE",
+      "target": "GPT-4",
+      "type": "USES",
+      "strength": 0.7
+    },
+    {
+      "source": "ACE",
+      "target": "Langchain",
+      "type": "USES",
+      "strength": 0.6
+    },
+    {
+      "source": "ACE",
+      "target": "SerpAPI",
+      "type": "USES",
+      "strength": 0.5
+    },
+    {
+      "source": "ACE",
+      "target": "psycopg2",
+      "type": "USES",
+      "strength": 0.4
+    },
+    {
+      "source": "ACE",
+      "target": "SQLAlchemy",
+      "type": "USES",
+      "strength": 0.4
+    },
+    {
+      "source": "ACE",
+      "target": "Chroma",
+      "type": "USES",
+      "strength": 0.4
+    },
+    {
+      "source": "VBE (Von Base Enterprises)",
+      "target": "ACE (Autonomous Cognitive Entity)",
+      "type": "develops",
+      "strength": 0.9
+    },
+    {
+      "source": "Core Nexus",
+      "target": "PostgreSQL",
+      "type": "uses",
+      "strength": 0.7
+    },
+    {
+      "source": "Core Nexus",
+      "target": "GPT-4",
+      "type": "uses",
+      "strength": 0.7
+    },
+    {
+      "source": "ACE (Autonomous Cognitive Entity)",
+      "target": "GPT-4",
+      "type": "leverages",
+      "strength": 0.6
+    },
+    {
+      "source": "ACE (Autonomous Cognitive Entity)",
+      "target": "Pinecone",
+      "type": "uses",
+      "strength": 0.6
+    },
+    {
+      "source": "ACE (Autonomous Cognitive Entity)",
+      "target": "PostgreSQL",
+      "type": "accesses",
+      "strength": 0.6
+    },
+    {
+      "source": "Langchain",
+      "target": "Pinecone",
+      "type": "integrates_with",
+      "strength": 0.5
+    },
+    {
+      "source": "Langchain",
+      "target": "OpenAI",
+      "type": "integrates_with",
+      "strength": 0.5
+    },
+    {
+      "source": "psycopg2",
+      "target": "PostgreSQL",
+      "type": "connects_to",
+      "strength": 0.5
+    }
+  ]
+}
