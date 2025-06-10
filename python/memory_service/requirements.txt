@@ -41,4 +41,7 @@ prometheus-fastapi-instrumentator==6.1.0  # FastAPI Prometheus integration
 # Graph integration dependencies (for Knowledge Graph)
 spacy>=3.5.0              # Entity extraction with NLP
 # Note: spacy model needs to be downloaded separately:
-# python -m spacy download en_core_web_smpandas==2.0.3
+# python -m spacy download en_core_web_sm
+
+# Data processing
+pandas==2.0.3
