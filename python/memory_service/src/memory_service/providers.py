@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class PineconeProvider(VectorProvider):
     """
     Pinecone provider wrapping existing implementations from CoreNexus.py
-    
+
     Leverages existing cloud-scale vector storage with added resilience.
     """
 
@@ -75,7 +75,7 @@ class PineconeProvider(VectorProvider):
 class ChromaProvider(VectorProvider):
     """
     ChromaDB provider for local vector storage.
-    
+
     Fast, embedded solution perfect for development and edge deployments.
     """
 
@@ -105,7 +105,7 @@ class ChromaProvider(VectorProvider):
             try:
                 self.collection = self.client.get_collection(collection_name)
                 logger.info(f"Loaded existing ChromaDB collection: {collection_name}")
-            except:
+            except Exception:
                 self.collection = self.client.create_collection(
                     name=collection_name,
                     metadata={"hnsw:space": "cosine"}
@@ -238,7 +238,7 @@ class ChromaProvider(VectorProvider):
 class PgVectorProvider(VectorProvider):
     """
     PostgreSQL with pgvector extension provider.
-    
+
     Combines the reliability of PostgreSQL with vector similarity search.
     Perfect for unified queries across structured and vector data.
     """
@@ -289,20 +289,20 @@ class PgVectorProvider(VectorProvider):
 
                     # Create indexes
                     await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding 
-                        ON {self.table_name} 
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
+                        ON {self.table_name}
                         USING ivfflat (embedding vector_cosine_ops)
                         WITH (lists = 100)
                     """)
 
                     await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_metadata 
-                        ON {self.table_name} 
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_metadata
+                        ON {self.table_name}
                         USING GIN (metadata)
                     """)
 
                     await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_importance 
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_importance
                         ON {self.table_name} (importance_score DESC)
                     """)
 
@@ -345,7 +345,7 @@ class PgVectorProvider(VectorProvider):
             metadata_json = json.dumps(metadata) if metadata else '{}'
 
             await conn.execute(f"""
-                INSERT INTO {self.table_name} 
+                INSERT INTO {self.table_name}
                 (id, content, embedding, metadata, importance_score)
                 VALUES ($1, $2, $3::vector, $4::jsonb, $5)
             """,
@@ -385,7 +385,7 @@ class PgVectorProvider(VectorProvider):
 
             # Query with cosine similarity
             query = f"""
-                SELECT 
+                SELECT
                     id,
                     content,
                     metadata,
@@ -436,8 +436,8 @@ class PgVectorProvider(VectorProvider):
 
                 # Check if pgvector is enabled
                 pgvector_enabled = await conn.fetchval("""
-                    SELECT COUNT(*) > 0 
-                    FROM pg_extension 
+                    SELECT COUNT(*) > 0
+                    FROM pg_extension
                     WHERE extname = 'vector'
                 """)
 
@@ -467,7 +467,7 @@ class PgVectorProvider(VectorProvider):
         try:
             async with self.connection_pool.acquire() as conn:
                 stats = await conn.fetchrow(f"""
-                    SELECT 
+                    SELECT
                         COUNT(*) as total_memories,
                         AVG(importance_score) as avg_importance,
                         MIN(created_at) as oldest_memory,
@@ -516,7 +516,7 @@ class PgVectorProvider(VectorProvider):
         try:
             async with self.connection_pool.acquire() as conn:
                 result = await conn.execute(f"""
-                    UPDATE {self.table_name} 
+                    UPDATE {self.table_name}
                     SET importance_score = $1, updated_at = NOW()
                     WHERE id = $2
                 """, importance_score, memory_id)
@@ -540,7 +540,7 @@ class PgVectorProvider(VectorProvider):
 class GraphProvider(VectorProvider):
     """
     PostgreSQL-based Graph Provider for Knowledge Graph functionality.
-    
+
     Extends the existing provider pattern to add relationship understanding
     to memories, transforming isolated data into connected intelligence.
     """
@@ -603,7 +603,7 @@ class GraphProvider(VectorProvider):
                 try:
                     import spacy
                     self.entity_extractor = spacy.load("en_core_web_sm")
-                except:
+                except Exception:
                     logger.warning("spaCy not available, using simple pattern matching")
                     self.entity_extractor = "simple"
 
@@ -715,7 +715,7 @@ class GraphProvider(VectorProvider):
     async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """
         Store memory and extract knowledge graph components.
-        
+
         This method:
         1. Stores the memory normally (delegated to pgvector)
         2. Extracts entities from the content
@@ -748,7 +748,7 @@ class GraphProvider(VectorProvider):
 
                     # Check if entity already exists
                     existing = await conn.fetchrow("""
-                        SELECT id, mention_count FROM graph_nodes 
+                        SELECT id, mention_count FROM graph_nodes
                         WHERE entity_name = $1 AND entity_type = $2
                     """, entity['name'], entity['type'])
 
@@ -756,7 +756,7 @@ class GraphProvider(VectorProvider):
                         # Update existing entity
                         entity_id = existing['id']
                         await conn.execute("""
-                            UPDATE graph_nodes 
+                            UPDATE graph_nodes
                             SET mention_count = mention_count + 1,
                                 last_seen = NOW(),
                                 importance_score = LEAST(importance_score + 0.1, 1.0)
@@ -768,7 +768,7 @@ class GraphProvider(VectorProvider):
                         embedding_str = '[' + ','.join(map(str, entity_embedding)) + ']' if entity_embedding else None
 
                         await conn.execute("""
-                            INSERT INTO graph_nodes 
+                            INSERT INTO graph_nodes
                             (id, entity_type, entity_name, embedding, importance_score)
                             VALUES ($1, $2, $3, $4::vector, $5)
                         """, entity_id, entity['type'], entity['name'],
@@ -789,10 +789,10 @@ class GraphProvider(VectorProvider):
                 for rel in relationships:
                     if rel['from_entity'] in entity_ids and rel['to_entity'] in entity_ids:
                         # Calculate ADM score for relationship
-                        adm_score = rel['strength'] * rel['confidence'] * metadata.get('importance_score', 0.5)
+                        rel['strength'] * rel['confidence'] * metadata.get('importance_score', 0.5)
 
                         await conn.execute("""
-                            INSERT INTO graph_relationships 
+                            INSERT INTO graph_relationships
                             (from_node_id, to_node_id, relationship_type, strength, confidence, adm_score, metadata)
                             VALUES ($1, $2, $3, $4, $5, $6, $7)
                             ON CONFLICT (from_node_id, to_node_id, relationship_type) DO UPDATE SET
@@ -814,7 +814,7 @@ class GraphProvider(VectorProvider):
     async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """
         Query memories using graph relationships.
-        
+
         This enhanced query can:
         1. Find memories by entity relationships
         2. Traverse the graph to find related memories
@@ -843,7 +843,7 @@ class GraphProvider(VectorProvider):
                             LEFT JOIN graph_relationships gr ON (gn.id = gr.from_node_id OR gn.id = gr.to_node_id)
                             WHERE gn.entity_name = $1
                         )
-                        SELECT 
+                        SELECT
                             vm.id,
                             vm.content,
                             vm.metadata,
@@ -884,7 +884,7 @@ class GraphProvider(VectorProvider):
         async with self.connection_pool.acquire() as conn:
             try:
                 rows = await conn.fetch("""
-                    SELECT 
+                    SELECT
                         gr.*,
                         gn_from.entity_name as from_name,
                         gn_from.entity_type as from_type,
@@ -970,7 +970,7 @@ class GraphProvider(VectorProvider):
         try:
             async with self.connection_pool.acquire() as conn:
                 stats = await conn.fetchrow("""
-                    SELECT 
+                    SELECT
                         (SELECT COUNT(*) FROM graph_nodes) as total_nodes,
                         (SELECT COUNT(*) FROM graph_relationships) as total_relationships,
                         (SELECT COUNT(DISTINCT entity_type) FROM graph_nodes) as entity_types,

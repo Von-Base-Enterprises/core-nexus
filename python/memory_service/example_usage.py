@@ -31,7 +31,7 @@ from memory_service import (
 async def demonstrate_memory_service():
     """
     Demonstrate the unified memory service capabilities.
-    
+
     Shows storage, querying, and provider management.
     """
 
@@ -176,7 +176,7 @@ async def demonstrate_memory_service():
 async def demonstrate_api_server():
     """
     Demonstrate running the FastAPI server.
-    
+
     Shows how to integrate with the REST API.
     """
     print("\n🌐 API Server Demo")

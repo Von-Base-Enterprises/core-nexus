@@ -20,9 +20,9 @@ async def fix_database():
         # Create the critical vector index
         print("\n📊 Creating vector similarity index...")
         await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
-            ON vector_memories 
-            USING ivfflat (embedding vector_cosine_ops) 
+            CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding
+            ON vector_memories
+            USING ivfflat (embedding vector_cosine_ops)
             WITH (lists = 100)
         """)
         print("✅ Vector index created!")
@@ -30,7 +30,7 @@ async def fix_database():
         # Create metadata index
         print("\n📊 Creating metadata index...")
         await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata 
+            CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata
             ON vector_memories USING GIN (metadata)
         """)
         print("✅ Metadata index created!")
@@ -38,7 +38,7 @@ async def fix_database():
         # Create importance score index
         print("\n📊 Creating importance score index...")
         await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_vector_memories_importance 
+            CREATE INDEX IF NOT EXISTS idx_vector_memories_importance
             ON vector_memories (importance_score DESC)
         """)
         print("✅ Importance index created!")
@@ -51,8 +51,8 @@ async def fix_database():
         # Verify indexes
         print("\n🔍 Verifying indexes...")
         indexes = await conn.fetch("""
-            SELECT indexname 
-            FROM pg_indexes 
+            SELECT indexname
+            FROM pg_indexes
             WHERE tablename = 'vector_memories'
             ORDER BY indexname
         """)

@@ -273,7 +273,7 @@ class ProductionMonitor:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Create concurrent health check requests
                 tasks = []
-                for i in range(concurrent_requests):
+                for _i in range(concurrent_requests):
                     task = client.get(f"{self.base_url}/health")
                     tasks.append(task)
 

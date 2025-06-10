@@ -44,7 +44,7 @@ def monitor_extraction():
                     new_content = f.read()
                     print(new_content, end='')
                 last_size = current_size
-        except:
+        except Exception:
             pass
 
         # Show elapsed time

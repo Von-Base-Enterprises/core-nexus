@@ -70,8 +70,8 @@ async def check_tables(db_url):
 
         # Get all tables
         tables = await conn.fetch("""
-            SELECT tablename 
-            FROM pg_tables 
+            SELECT tablename
+            FROM pg_tables
             WHERE schemaname = 'public'
             ORDER BY tablename
         """)
@@ -107,9 +107,9 @@ async def test_vector_operations(db_url):
 
         # Check which table to use
         tables = await conn.fetch("""
-            SELECT tablename 
-            FROM pg_tables 
-            WHERE schemaname = 'public' 
+            SELECT tablename
+            FROM pg_tables
+            WHERE schemaname = 'public'
             AND tablename IN ('memories', 'vector_memories')
         """)
 
@@ -123,8 +123,8 @@ async def test_vector_operations(db_url):
 
         # Get table structure
         columns = await conn.fetch(f"""
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
+            SELECT column_name, data_type
+            FROM information_schema.columns
             WHERE table_name = '{table_name}'
             ORDER BY ordinal_position
         """)
@@ -145,11 +145,11 @@ async def test_vector_operations(db_url):
             # Try to retrieve a sample
             if count > 0:
                 sample = await conn.fetchrow(f"""
-                    SELECT id, content, 
-                           CASE WHEN embedding IS NULL THEN 'NULL' 
-                                ELSE 'Vector[' || array_length(embedding::float[], 1)::text || ']' 
+                    SELECT id, content,
+                           CASE WHEN embedding IS NULL THEN 'NULL'
+                                ELSE 'Vector[' || array_length(embedding::float[], 1)::text || ']'
                            END as embedding_info
-                    FROM {table_name} 
+                    FROM {table_name}
                     LIMIT 1
                 """)
                 print("\nSample record:")
@@ -207,32 +207,32 @@ async def create_memory(
             user_id=request.user_id,
             conversation_id=request.conversation_id
         )
-        
+
         # CRITICAL: Verify the memory was actually stored
         verification_start = time.time()
         max_retries = 3
         verified = False
-        
+
         for attempt in range(max_retries):
             if attempt > 0:
                 await asyncio.sleep(0.5)  # Brief wait between retries
-            
+
             # Try to retrieve the memory
             search_results = await store.search(
                 query="",  # Empty query to get all
                 limit=100,
                 min_similarity=0.0
             )
-            
+
             # Check if our memory is in the results
             for result in search_results:
                 if result.get("id") == memory_result["id"]:
                     verified = True
                     break
-            
+
             if verified:
                 break
-        
+
         if not verified:
             # Memory creation failed - data not persisted
             logger.error(f"Memory {memory_result['id']} created but not retrievable")
@@ -240,11 +240,11 @@ async def create_memory(
                 status_code=500,
                 detail="Memory storage verification failed - data not persisted"
             )
-        
+
         logger.info(f"Memory {memory_result['id']} created and verified in {(time.time() - verification_start)*1000:.0f}ms")
-        
+
         return MemoryResponse(**memory_result)
-        
+
     except Exception as e:
         logger.error(f"Memory creation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

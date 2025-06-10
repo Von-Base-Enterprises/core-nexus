@@ -151,7 +151,7 @@ def show_integration_example():
 
 1. Extracts entities from the content:
    "Von Base Enterprises is developing Core Nexus with AI capabilities"
-   
+
    Entities extracted:
    - Von Base Enterprises (organization)
    - Core Nexus (product)

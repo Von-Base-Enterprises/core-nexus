@@ -22,8 +22,8 @@ async def check_schema():
 
     # Get column information
     columns = await conn.fetch("""
-        SELECT column_name, data_type 
-        FROM information_schema.columns 
+        SELECT column_name, data_type
+        FROM information_schema.columns
         WHERE table_name = 'memories'
         ORDER BY ordinal_position
     """)
@@ -34,9 +34,9 @@ async def check_schema():
 
     # Check if graph tables exist
     graph_tables = await conn.fetch("""
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
         AND table_name LIKE 'graph%'
     """)
 

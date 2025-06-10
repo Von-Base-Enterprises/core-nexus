@@ -52,16 +52,16 @@ class QuickSyncManager:
 
             # Fetch all memory data
             fetch_query = """
-                SELECT 
-                    id, 
-                    content, 
-                    embedding, 
-                    metadata, 
+                SELECT
+                    id,
+                    content,
+                    embedding,
+                    metadata,
                     user_id,
                     conversation_id,
                     importance_score,
                     created_at
-                FROM vector_memories 
+                FROM vector_memories
                 ORDER BY created_at DESC
             """
 

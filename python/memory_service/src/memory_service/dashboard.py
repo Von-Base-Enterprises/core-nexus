@@ -48,7 +48,7 @@ class QualityTrend:
 class MemoryDashboard:
     """
     Real-time dashboard for memory service monitoring and analytics.
-    
+
     Provides insights into memory quality, performance, and evolution patterns.
     """
 
@@ -65,7 +65,7 @@ class MemoryDashboard:
     async def get_comprehensive_metrics(self) -> MemoryMetrics:
         """
         Get comprehensive memory service metrics.
-        
+
         Aggregates data from all providers and analysis engines.
         """
         try:
@@ -134,7 +134,7 @@ class MemoryDashboard:
     async def get_quality_trends(self, days: int = 7) -> list[dict[str, Any]]:
         """
         Get memory quality trends over time.
-        
+
         Shows how memory quality has evolved over the specified period.
         """
         try:
@@ -165,7 +165,7 @@ class MemoryDashboard:
     async def get_provider_performance(self) -> dict[str, dict[str, Any]]:
         """
         Get detailed performance metrics for each provider.
-        
+
         Includes health, performance, and feature comparison.
         """
         try:
@@ -232,7 +232,7 @@ class MemoryDashboard:
     async def get_adm_performance(self) -> dict[str, Any]:
         """
         Get ADM scoring engine performance metrics.
-        
+
         Shows how well the automated decision making is performing.
         """
         try:
@@ -259,7 +259,7 @@ class MemoryDashboard:
     async def get_memory_insights(self, limit: int = 50) -> dict[str, Any]:
         """
         Get insights about memory patterns and usage.
-        
+
         Identifies trends, patterns, and optimization opportunities.
         """
         try:
@@ -299,7 +299,7 @@ class MemoryDashboard:
     async def export_metrics(self, format: str = 'json') -> str:
         """
         Export comprehensive metrics in specified format.
-        
+
         Supports JSON, CSV formats for external analysis.
         """
         try:

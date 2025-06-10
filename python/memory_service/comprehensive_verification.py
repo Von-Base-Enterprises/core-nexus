@@ -522,7 +522,7 @@ class ProductionReadinessVerifier:
             validation_passes = 0
             for content, metadata in invalid_inputs:
                 try:
-                    request = MemoryRequest(content=content, metadata=metadata)
+                    MemoryRequest(content=content, metadata=metadata)
                     # If this doesn't raise an error, validation might be missing
                     if len(content) == 0:
                         self.log_failure('input_validation', "Empty content accepted")

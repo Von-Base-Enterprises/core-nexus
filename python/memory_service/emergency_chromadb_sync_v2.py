@@ -104,7 +104,7 @@ class EmergencyChromaDBSync:
             self.collection = self.chroma_client.get_collection("memories")
             existing_count = self.collection.count()
             logger.info(f"✅ Using existing collection. Current vectors: {existing_count}")
-        except:
+        except Exception:
             self.collection = self.chroma_client.create_collection(
                 name="memories",
                 metadata={"description": "Core Nexus memory vectors"}
@@ -114,7 +114,7 @@ class EmergencyChromaDBSync:
     async def fetch_memories_batch(self, offset: int, limit: int) -> list[dict]:
         """Fetch a batch of memories from pgvector"""
         query = """
-            SELECT 
+            SELECT
                 id,
                 content,
                 embedding,
@@ -155,7 +155,7 @@ class EmergencyChromaDBSync:
         results = {"success": 0, "failed": 0, "skipped": 0}
 
         # Check which memories already exist
-        memory_ids = [m['id'] for m in memories]
+        [m['id'] for m in memories]
 
         # Skip if already synced (based on checkpoint)
         new_memories = []

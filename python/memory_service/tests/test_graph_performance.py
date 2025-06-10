@@ -93,7 +93,7 @@ class TestEntityExtractionPerformance:
             iterations = 100
             for _ in range(iterations):
                 start = time.perf_counter()
-                entities = list(re.finditer(pattern, content))
+                list(re.finditer(pattern, content))
                 duration = time.perf_counter() - start
                 perf.record_time(f'regex_{size}', duration)
 
@@ -132,7 +132,7 @@ class TestEntityExtractionPerformance:
 
             # Simulated parallel processing
             start = time.perf_counter()
-            results = await asyncio.gather(*[
+            await asyncio.gather(*[
                 self.extract_entities_async(content, pattern) for content in contents
             ])
             par_duration = time.perf_counter() - start
@@ -192,7 +192,7 @@ class TestRelationshipInferencePerformance:
             iterations = 50
             for _ in range(iterations):
                 start = time.perf_counter()
-                relationships = self.infer_relationships(entities)
+                self.infer_relationships(entities)
                 duration = time.perf_counter() - start
                 perf.record_time(f'inference_{count}', duration)
 
@@ -281,7 +281,7 @@ class TestGraphQueryPerformance:
 
             for start_node in start_nodes:
                 start = time.perf_counter()
-                visited = self.bfs_traverse(start_node, nodes, edges, max_depth=3)
+                self.bfs_traverse(start_node, nodes, edges, max_depth=3)
                 duration = time.perf_counter() - start
                 perf.record_time(f'traverse_{size}', duration)
 

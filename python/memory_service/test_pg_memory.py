@@ -72,8 +72,8 @@ async def test_memory_settings():
 
                 # Try to create the index
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
-                    ON vector_memories 
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding
+                    ON vector_memories
                     USING ivfflat (embedding vector_cosine_ops)
                     WITH (lists = 100)
                 """)
@@ -87,7 +87,7 @@ async def test_memory_settings():
                 try:
                     await conn.execute("""
                         CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding_small
-                        ON vector_memories 
+                        ON vector_memories
                         USING ivfflat (embedding vector_cosine_ops)
                         WITH (lists = 10)
                     """)
@@ -105,7 +105,7 @@ async def test_memory_settings():
         # Test a vector query
         try:
             result = await conn.fetchval("""
-                SELECT COUNT(*) FROM vector_memories 
+                SELECT COUNT(*) FROM vector_memories
                 WHERE embedding IS NOT NULL
             """)
             print(f"✓ Memories with embeddings: {result}")

@@ -57,9 +57,9 @@ class UnifiedVectorStore:
     """
     Unified vector store that leverages existing implementations:
     - Pinecone (cloud scale)
-    - ChromaDB (local speed) 
+    - ChromaDB (local speed)
     - pgvector (unified queries)
-    
+
     Provides automatic failover, load balancing, and caching.
     """
 
@@ -131,7 +131,7 @@ class UnifiedVectorStore:
     async def store_memory(self, request: MemoryRequest) -> MemoryResponse:
         """
         Store a memory across providers with automatic replication.
-        
+
         Leverages existing implementations while adding resilience.
         """
         start_time = time.time()
@@ -224,7 +224,7 @@ class UnifiedVectorStore:
     async def query_memories(self, request: QueryRequest) -> QueryResponse:
         """
         Query memories across providers with intelligent routing.
-        
+
         Uses existing vector store implementations with added optimizations.
         """
         start_time = time.time()
@@ -334,7 +334,7 @@ class UnifiedVectorStore:
     def _calculate_importance(self, request: MemoryRequest) -> float:
         """
         Calculate memory importance score using existing metadata patterns.
-        
+
         This leverages patterns found in existing conversation_history tables.
         """
         scoring = self.importance_scorer

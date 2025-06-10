@@ -12,13 +12,13 @@ from fastapi import HTTPException
 def validate_entity_name(entity_name: str) -> str:
     """
     Validate and sanitize entity names to prevent injection attacks.
-    
+
     Args:
         entity_name: Raw entity name from user input
-        
+
     Returns:
         Sanitized entity name
-        
+
     Raises:
         HTTPException: If entity name is invalid
     """
@@ -57,13 +57,13 @@ def validate_entity_name(entity_name: str) -> str:
 def validate_relationship_type(rel_type: str) -> str:
     """
     Validate relationship type against allowed values.
-    
+
     Args:
         rel_type: Relationship type string
-        
+
     Returns:
         Validated relationship type
-        
+
     Raises:
         HTTPException: If relationship type is invalid
     """
@@ -87,18 +87,18 @@ def validate_relationship_type(rel_type: str) -> str:
 def validate_confidence_score(score: float, field_name: str = "confidence") -> float:
     """
     Validate confidence scores are within valid range.
-    
+
     Args:
         score: Confidence score
         field_name: Name of field for error messages
-        
+
     Returns:
         Validated score
-        
+
     Raises:
         HTTPException: If score is invalid
     """
-    if not isinstance(score, (int, float)):
+    if not isinstance(score, int | float):
         raise HTTPException(status_code=400, detail=f"{field_name} must be a number")
 
     if score < 0.0 or score > 1.0:
@@ -110,13 +110,13 @@ def validate_confidence_score(score: float, field_name: str = "confidence") -> f
 def validate_graph_depth(depth: int) -> int:
     """
     Validate graph traversal depth to prevent DoS.
-    
+
     Args:
         depth: Requested traversal depth
-        
+
     Returns:
         Validated depth
-        
+
     Raises:
         HTTPException: If depth is invalid
     """

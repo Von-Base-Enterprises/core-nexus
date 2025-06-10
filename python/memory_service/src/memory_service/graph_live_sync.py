@@ -94,7 +94,7 @@ async def get_sync_status():
     pool = get_connection_pool()
     async with pool.acquire() as conn:
         stats = await get_graph_live_stats(conn)
-        
+
         return JSONResponse({
             "agent2_stats": stats,
             "sync_instructions": {

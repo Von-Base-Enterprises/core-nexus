@@ -291,7 +291,7 @@ print("Mock dependencies created successfully")
         self.create_mock_dependencies_check()
 
         # Generate report
-        report = self.generate_deployment_report()
+        self.generate_deployment_report()
 
         # Summary
         duration = time.time() - start_time

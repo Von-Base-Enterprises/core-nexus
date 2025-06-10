@@ -56,7 +56,7 @@ def test_endpoint(name, method, url, data=None, headers=None):
         error_body = None
         try:
             error_body = json.loads(e.read().decode('utf-8'))
-        except:
+        except Exception:
             error_body = {"error": str(e)}
 
         print(f"❌ Status: {e.code}")

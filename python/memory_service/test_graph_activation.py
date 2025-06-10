@@ -36,9 +36,9 @@ def check_environment():
         import spacy
         print("\n✅ spaCy is installed")
         try:
-            nlp = spacy.load("en_core_web_sm")
+            spacy.load("en_core_web_sm")
             print("✅ spaCy model 'en_core_web_sm' is available")
-        except:
+        except Exception:
             print("⚠️  spaCy model not found. Install with:")
             print("   python -m spacy download en_core_web_sm")
     except ImportError:
@@ -102,7 +102,7 @@ async def test_api_endpoints():
         return
 
     # If aiohttp is available, use it
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession():
         base_url = "http://localhost:8000"
 
         # Similar tests with aiohttp...
@@ -187,7 +187,7 @@ def main():
     print("\n" + "=" * 60)
     try:
         asyncio.run(test_api_endpoints())
-    except:
+    except Exception:
         # Fallback to sync version
         import time
         time.sleep(0.1)  # Small delay

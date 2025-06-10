@@ -89,7 +89,7 @@ class Step1Validator:
                 if result.stdout.strip() == "200":
                     self.test("Service starts successfully", True)
                     return True
-            except:
+            except Exception:
                 pass
 
             if attempt == 0:

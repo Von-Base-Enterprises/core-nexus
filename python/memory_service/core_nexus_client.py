@@ -34,10 +34,10 @@ class QueryResult:
 class CoreNexusClient:
     """
     Client for Core Nexus Memory Service
-    
+
     Provides simple methods for agents to:
     - Store memories
-    - Query memories  
+    - Query memories
     - Check service health
     - Get statistics
     """
@@ -79,7 +79,7 @@ class CoreNexusClient:
             error_data = {}
             try:
                 error_data = json.loads(e.read().decode('utf-8'))
-            except:
+            except Exception:
                 pass
 
             raise CoreNexusError(f"HTTP {e.code}: {e.reason}", e.code, error_data)
@@ -94,7 +94,7 @@ class CoreNexusClient:
             result = self._make_request("/health")
             health_data = result["data"]
             return health_data.get("status") == "healthy"
-        except:
+        except Exception:
             return False
 
     def get_health_details(self) -> dict[str, Any]:
@@ -107,14 +107,14 @@ class CoreNexusClient:
                     conversation_id: str | None = None) -> MemoryResult:
         """
         Store a memory in the service
-        
+
         Args:
             content: The text content to store
             metadata: Additional metadata (optional)
             importance_score: Manual importance score 0-1 (optional)
             user_id: User identifier (optional)
             conversation_id: Conversation identifier (optional)
-            
+
         Returns:
             MemoryResult with the stored memory details
         """
@@ -146,7 +146,7 @@ class CoreNexusClient:
                       conversation_id: str | None = None) -> QueryResult:
         """
         Query memories using natural language
-        
+
         Args:
             query: Natural language query
             limit: Maximum number of results (1-100)
@@ -154,7 +154,7 @@ class CoreNexusClient:
             filters: Additional metadata filters (optional)
             user_id: Filter by user (optional)
             conversation_id: Filter by conversation (optional)
-            
+
         Returns:
             QueryResult with matching memories
         """
@@ -205,11 +205,11 @@ class CoreNexusClient:
     def wait_for_service(self, max_wait_seconds: int = 300, check_interval: int = 10) -> bool:
         """
         Wait for the service to become healthy (useful for cold starts)
-        
+
         Args:
             max_wait_seconds: Maximum time to wait
             check_interval: Seconds between health checks
-            
+
         Returns:
             True if service becomes healthy, False if timeout
         """

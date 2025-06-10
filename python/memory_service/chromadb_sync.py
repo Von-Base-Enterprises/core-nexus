@@ -175,7 +175,7 @@ class ChromaDBSyncManager:
             )
 
             # Store in ChromaDB
-            stored_memory = await self.chroma_provider.store(
+            await self.chroma_provider.store(
                 content=memory_request.content,
                 embedding=memory.embedding,  # Use existing embedding
                 metadata=memory_request.metadata,

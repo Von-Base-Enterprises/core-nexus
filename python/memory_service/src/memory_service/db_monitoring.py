@@ -119,17 +119,17 @@ class DatabaseMonitor:
         try:
             async with self.pool.acquire() as conn:
                 query = """
-                SELECT 
+                SELECT
                     query,
                     total_exec_time as total_time,
                     calls,
                     mean_exec_time as mean_time,
                     max_exec_time as max_time,
                     stddev_exec_time as stddev_time
-                FROM pg_stat_statements 
+                FROM pg_stat_statements
                 WHERE query NOT LIKE '%pg_stat_statements%'
                   AND query NOT LIKE '%pg_database%'
-                ORDER BY total_exec_time DESC 
+                ORDER BY total_exec_time DESC
                 LIMIT $1
                 """
 
@@ -161,7 +161,7 @@ class DatabaseMonitor:
             async with self.pool.acquire() as conn:
                 # Get basic database info
                 db_info = await conn.fetchrow("""
-                    SELECT 
+                    SELECT
                         datname,
                         numbackends,
                         xact_commit,
@@ -173,15 +173,15 @@ class DatabaseMonitor:
                         tup_inserted,
                         tup_updated,
                         tup_deleted
-                    FROM pg_stat_database 
+                    FROM pg_stat_database
                     WHERE datname = current_database()
                 """)
 
                 # Get active connections
                 active_connections = await conn.fetchval("""
-                    SELECT count(*) 
-                    FROM pg_stat_activity 
-                    WHERE state = 'active' 
+                    SELECT count(*)
+                    FROM pg_stat_activity
+                    WHERE state = 'active'
                       AND datname = current_database()
                 """)
 

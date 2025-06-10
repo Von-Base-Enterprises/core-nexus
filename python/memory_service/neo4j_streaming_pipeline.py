@@ -47,7 +47,7 @@ class Neo4jStreamingPipeline:
     2. Extracts entities using spaCy
     3. Deduplicates and enriches entities
     4. Streams to Neo4j in real-time
-    
+
     Following patterns from:
     - Neo4j GraphRAG guide
     - O'Reilly Knowledge Graphs book
@@ -69,7 +69,7 @@ class Neo4jStreamingPipeline:
         # Load spaCy model
         try:
             self.nlp = spacy.load("en_core_web_sm")
-        except:
+        except Exception:
             logger.warning("spaCy model not found, using simple extraction")
             self.nlp = None
 
@@ -214,7 +214,7 @@ class Neo4jStreamingPipeline:
 
                 await session.run("""
                     MERGE (e:Entity {name: $name})
-                    ON CREATE SET 
+                    ON CREATE SET
                         e.type = $type,
                         e.first_seen = datetime(),
                         e.confidence = $confidence,
@@ -222,10 +222,10 @@ class Neo4jStreamingPipeline:
                     ON MATCH SET
                         e.mention_count = e.mention_count + 1,
                         e.last_seen = datetime(),
-                        e.confidence = CASE 
-                            WHEN e.confidence < $confidence 
-                            THEN $confidence 
-                            ELSE e.confidence 
+                        e.confidence = CASE
+                            WHEN e.confidence < $confidence
+                            THEN $confidence
+                            ELSE e.confidence
                         END
                     WITH e
                     MERGE (m:Memory {id: $memory_id})
@@ -299,7 +299,7 @@ class Neo4jStreamingPipeline:
         """
         logger.info("🚀 Starting Neo4j Streaming Pipeline...")
 
-        last_check = datetime.now()
+        datetime.now()
 
         while True:
             try:
@@ -328,7 +328,7 @@ class Neo4jStreamingPipeline:
                     avg_time = sum(self.metrics["processing_time_ms"]) / len(self.metrics["processing_time_ms"])
                     logger.info(f"📊 Performance: Avg {avg_time:.0f}ms per memory, {self.metrics['entities_extracted']} entities extracted")
 
-                last_check = datetime.now()
+                datetime.now()
                 await asyncio.sleep(poll_interval)
 
             except Exception as e:

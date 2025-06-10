@@ -55,7 +55,7 @@ class OpenAIEmbeddingModel(EmbeddingModel):
     ):
         """
         Initialize OpenAI embedding model.
-        
+
         Args:
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
             model: OpenAI embedding model to use
@@ -113,13 +113,13 @@ class OpenAIEmbeddingModel(EmbeddingModel):
     async def embed_text(self, text: str) -> list[float]:
         """
         Generate embedding for a single text.
-        
+
         Args:
             text: Input text to embed
-            
+
         Returns:
             List of floats representing the embedding vector
-            
+
         Raises:
             ValueError: If text is empty or too long
             Exception: If OpenAI API request fails
@@ -159,13 +159,13 @@ class OpenAIEmbeddingModel(EmbeddingModel):
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
         Generate embeddings for multiple texts efficiently.
-        
+
         Args:
             texts: List of texts to embed
-            
+
         Returns:
             List of embedding vectors in the same order as input texts
-            
+
         Raises:
             ValueError: If any text is invalid
             Exception: If OpenAI API request fails
@@ -227,10 +227,10 @@ class OpenAIEmbeddingModel(EmbeddingModel):
     def _clean_text(self, text: str) -> str:
         """
         Clean and prepare text for embedding.
-        
+
         Args:
             text: Raw input text
-            
+
         Returns:
             Cleaned text ready for embedding
         """
@@ -250,7 +250,7 @@ class OpenAIEmbeddingModel(EmbeddingModel):
     async def health_check(self) -> dict[str, Any]:
         """
         Check if the embedding service is healthy.
-        
+
         Returns:
             Dictionary with health status and metrics
         """
@@ -328,15 +328,15 @@ def create_embedding_model(
 ) -> EmbeddingModel:
     """
     Factory function to create embedding models.
-    
+
     Args:
         provider: Embedding provider ("openai" or "mock")
         model: Model name for the provider
         **kwargs: Additional configuration for the model
-        
+
     Returns:
         Configured embedding model instance
-        
+
     Raises:
         ValueError: If provider is not supported
         ImportError: If required packages are not installed

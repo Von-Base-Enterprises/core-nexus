@@ -50,9 +50,9 @@ class EntityDeduplicator:
 
         # Get entity type distribution
         type_dist = await self.conn.fetch("""
-            SELECT entity_type, COUNT(*) as count 
-            FROM graph_nodes 
-            GROUP BY entity_type 
+            SELECT entity_type, COUNT(*) as count
+            FROM graph_nodes
+            GROUP BY entity_type
             ORDER BY count DESC
         """)
 
@@ -118,7 +118,7 @@ class EntityDeduplicator:
 
                 # Update the best one to canonical name
                 await self.conn.execute("""
-                    UPDATE graph_nodes 
+                    UPDATE graph_nodes
                     SET entity_name = $1,
                         mention_count = $2
                     WHERE id = $3
@@ -131,14 +131,14 @@ class EntityDeduplicator:
                     if entity['id'] != best['id']:
                         # Update relationships
                         await self.conn.execute("""
-                            UPDATE graph_relationships 
-                            SET from_node_id = $1 
+                            UPDATE graph_relationships
+                            SET from_node_id = $1
                             WHERE from_node_id = $2
                         """, best['id'], entity['id'])
 
                         await self.conn.execute("""
-                            UPDATE graph_relationships 
-                            SET to_node_id = $1 
+                            UPDATE graph_relationships
+                            SET to_node_id = $1
                             WHERE to_node_id = $2
                         """, best['id'], entity['id'])
 
@@ -149,7 +149,7 @@ class EntityDeduplicator:
                                 VALUES ($1, $2, $3)
                                 ON CONFLICT (alias) DO NOTHING
                             """, entity['entity_name'], canonical_name, best['id'])
-                        except:
+                        except Exception:
                             pass
 
                         # Delete duplicate
@@ -201,7 +201,7 @@ async def get_live_stats():
             rel_count = await conn.fetchval(
                 "SELECT COUNT(*) FROM graph_relationships"
             )
-            
+
             # Get top entities by connections
             top_entities = await conn.fetch("""
                 SELECT n.entity_name, n.entity_type, n.importance_score,
@@ -213,7 +213,7 @@ async def get_live_stats():
                 ORDER BY connections DESC, n.importance_score DESC
                 LIMIT 10
             """)
-            
+
             return JSONResponse({
                 "entity_count": entity_count,
                 "relationship_count": rel_count,

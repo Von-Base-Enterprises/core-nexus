@@ -93,7 +93,7 @@ class MemoryExportService:
                             continue
                         if filters.date_to and memory_date > filters.date_to:
                             continue
-                    except:
+                    except Exception:
                         pass  # Skip if date parsing fails
 
                 # Importance filter

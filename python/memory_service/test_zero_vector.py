@@ -23,7 +23,7 @@ async def test_zero_vector():
     try:
         # This query should fail or return no results
         result = await conn.fetch("""
-            SELECT 
+            SELECT
                 id,
                 content,
                 1 - (embedding <=> $1::vector) as similarity_score
@@ -43,7 +43,7 @@ async def test_zero_vector():
     try:
         # Query without using vector similarity
         result = await conn.fetch("""
-            SELECT 
+            SELECT
                 id,
                 content,
                 importance_score,
@@ -66,7 +66,7 @@ async def test_zero_vector():
         small_vector = '[' + ','.join(['0.001'] * 1536) + ']'
 
         result = await conn.fetch("""
-            SELECT 
+            SELECT
                 id,
                 content,
                 1 - (embedding <=> $1::vector) as similarity_score

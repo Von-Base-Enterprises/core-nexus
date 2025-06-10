@@ -27,7 +27,7 @@ def wait_for_memory(client: CoreNexusClient, memory_id: str, max_retries: int = 
             for memory in result.memories:
                 if memory.id == memory_id:
                     return True
-        except:
+        except Exception:
             pass
 
     return False
@@ -172,7 +172,7 @@ def main():
         print(f"Total memories: {final_count}")
         if initial_count is not None:
             print(f"Memories added during test: {final_count - initial_count}")
-    except:
+    except Exception:
         print("Failed to get final count")
 
     print("\n=== Health Check Complete ===")

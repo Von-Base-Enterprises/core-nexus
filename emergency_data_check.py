@@ -133,5 +133,5 @@ try:
         else:
             print(f"✅ Production has {total} memories")
             print("Data is present, other issues may exist")
-except:
-    print("❌ Cannot verify data status - API may be down")
+except Exception as e:
+    print(f"❌ Cannot verify data status - API may be down: {e}")

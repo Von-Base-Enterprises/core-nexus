@@ -6,7 +6,7 @@ with automatic failover, caching, and temporal query capabilities.
 
 This service leverages existing implementations:
 - Pinecone (cloud scale)
-- ChromaDB (local speed) 
+- ChromaDB (local speed)
 - pgvector (unified queries)
 """
 

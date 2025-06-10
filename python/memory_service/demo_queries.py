@@ -112,7 +112,7 @@ class CoreNexusDemoQueries:
                     return result.get("memories", [])
                 else:
                     return []
-        except:
+        except Exception:
             return []
 
     async def query_graph(self, session: aiohttp.ClientSession, query: str) -> dict:
@@ -136,7 +136,7 @@ class CoreNexusDemoQueries:
                     return await response.json()
                 else:
                     return {"nodes": [], "relationships": []}
-        except:
+        except Exception:
             return {"nodes": [], "relationships": []}
 
     def extract_key_terms(self, query: str) -> list[str]:

@@ -66,7 +66,7 @@ class RenderDeploymentReporter:
                 try:
                     with open("/tmp/endpoint_test") as f:
                         response_data = f.read()
-                except:
+                except Exception:
                     pass
 
                 results[endpoint] = {
@@ -230,7 +230,7 @@ class RenderDeploymentReporter:
 
         # Display endpoint status
         print("🔍 ENDPOINT STATUS:")
-        for endpoint, result in report["endpoint_testing"].items():
+        for _endpoint, result in report["endpoint_testing"].items():
             status_icon = "✅" if result.get("working") else "🔄" if result.get("status_code") in ["502", "503", "504"] else "❌"
             print(f"   {status_icon} {result['description']}: HTTP {result['status_code']}")
 

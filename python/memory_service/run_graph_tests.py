@@ -99,7 +99,7 @@ class TestRunner:
 
     def run_all_tests(self):
         """Run all graph tests."""
-        test_dir = Path(__file__).parent / 'tests'
+        Path(__file__).parent / 'tests'
         test_files = [
             'tests/test_graph_provider.py',
             'tests/test_graph_integration.py',

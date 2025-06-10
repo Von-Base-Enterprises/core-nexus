@@ -56,7 +56,7 @@ class ADMThresholds:
 class DataQualityAnalyzer:
     """
     Analyzes data quality using multiple dimensions.
-    
+
     Implements sophisticated quality metrics beyond simple content length.
     """
 
@@ -66,7 +66,7 @@ class DataQualityAnalyzer:
     async def analyze_quality(self, content: str, metadata: dict[str, Any]) -> float:
         """
         Calculate data quality score (0.0 - 1.0).
-        
+
         Considers: completeness, accuracy, consistency, timeliness, uniqueness.
         """
         try:
@@ -142,7 +142,7 @@ class DataQualityAnalyzer:
             return 0.5
 
         try:
-            if isinstance(created_at, (int, float)):
+            if isinstance(created_at, int | float):
                 created_time = datetime.fromtimestamp(created_at)
             else:
                 created_time = datetime.fromisoformat(str(created_at))
@@ -174,7 +174,7 @@ class DataQualityAnalyzer:
 class DataRelevanceAnalyzer:
     """
     Analyzes data relevance using contextual and semantic factors.
-    
+
     Considers user patterns, conversation context, and semantic relationships.
     """
 
@@ -190,7 +190,7 @@ class DataRelevanceAnalyzer:
     ) -> float:
         """
         Calculate data relevance score (0.0 - 1.0).
-        
+
         Considers: user patterns, conversation context, semantic similarity, temporal context.
         """
         try:
@@ -346,7 +346,7 @@ class DataRelevanceAnalyzer:
 class DataIntelligenceAnalyzer:
     """
     Analyzes data intelligence using knowledge extraction and insight generation.
-    
+
     Focuses on the potential for learning and decision-making enhancement.
     """
 
@@ -361,7 +361,7 @@ class DataIntelligenceAnalyzer:
     ) -> float:
         """
         Calculate data intelligence score (0.0 - 1.0).
-        
+
         Considers: knowledge density, actionability, learning potential, prediction value.
         """
         try:
@@ -468,7 +468,7 @@ class DataIntelligenceAnalyzer:
 class ADMScoringEngine:
     """
     Main ADM scoring engine that combines all analysis components.
-    
+
     Implements the Core Nexus Darwin-Gödel intelligence framework.
     """
 
@@ -499,7 +499,7 @@ class ADMScoringEngine:
     ) -> dict[str, float]:
         """
         Calculate comprehensive ADM score with component breakdown.
-        
+
         Returns:
             Dict with 'adm_score' and component scores (dq, dr, di)
         """
@@ -556,7 +556,7 @@ class ADMScoringEngine:
     ) -> tuple[EvolutionStrategy, float]:
         """
         Suggest evolution strategy based on Darwin-Gödel principles.
-        
+
         Returns:
             Tuple of (strategy, confidence_score)
         """

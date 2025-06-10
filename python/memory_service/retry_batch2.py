@@ -149,7 +149,7 @@ async def retry_batch2():
                     """, entity_map[rel['source']], entity_map[rel['target']],
                         rel['type'], float(rel.get('strength', 0.5)))
                     rel_count += 1
-                except:
+                except Exception:
                     pass
 
         logger.info(f"✅ Inserted {len(entity_map)} entities and {rel_count} relationships")

@@ -224,7 +224,7 @@ class SimpleRenderDeployer:
                         self.log(f"Providers: {list(health_data.get('providers', {}).keys())}")
 
                         return True
-                    except:
+                    except Exception:
                         self.log("Health endpoint responded but couldn't parse JSON")
                         return True
 

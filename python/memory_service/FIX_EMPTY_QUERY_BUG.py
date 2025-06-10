@@ -31,11 +31,11 @@ PROVIDERS_PY_ADDITION = '''
         """
         if not self.connection_pool:
             return []
-            
+
         async with self.connection_pool.acquire() as conn:
             # Query recent memories ordered by creation time
             query = f"""
-                SELECT 
+                SELECT
                     id,
                     content,
                     metadata,
@@ -46,13 +46,13 @@ PROVIDERS_PY_ADDITION = '''
                 ORDER BY created_at DESC
                 LIMIT $1 OFFSET $2
             """
-            
+
             rows = await conn.fetch(query, limit, offset)
-            
+
             # Also get total count
             count_query = f"SELECT COUNT(*) FROM {self.table_name}"
             total_count = await conn.fetchval(count_query)
-            
+
             # Convert to MemoryResponse objects
             memories = []
             for row in rows:
@@ -67,7 +67,7 @@ PROVIDERS_PY_ADDITION = '''
                     updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
                 )
                 memories.append(memory)
-                
+
         # Store total count for later use
         self._last_total_count = total_count
         return memories
@@ -78,11 +78,11 @@ UNIFIED_STORE_PY_REPLACEMENT = '''
     async def query_memories(self, request: QueryRequest) -> QueryResponse:
         """
         Query memories across providers with intelligent routing.
-        
+
         FIXED: Empty queries now return recent memories instead of using zero vector.
         """
         start_time = time.time()
-        
+
         try:
             # Check cache first
             cache_key = self._get_cache_key(request)
@@ -91,16 +91,16 @@ UNIFIED_STORE_PY_REPLACEMENT = '''
                 if time.time() - cached_result['timestamp'] < 300:  # 5 min cache
                     logger.debug(f"Cache hit for query: {request.query[:50]}...")
                     return cached_result['response']
-            
+
             # FIXED: Handle empty queries differently
             if not request.query or request.query.strip() == "":
                 logger.info("Empty query detected - returning recent memories")
-                
+
                 # Use pgvector provider's direct query method if available
                 memories = []
                 total_found = 0
                 providers_used = []
-                
+
                 # Try pgvector first as it's the primary provider
                 if 'pgvector' in self.providers and self.providers['pgvector'].enabled:
                     provider = self.providers['pgvector']
@@ -125,9 +125,9 @@ UNIFIED_STORE_PY_REPLACEMENT = '''
                                         ORDER BY created_at DESC
                                         LIMIT $1
                                     """, request.limit or 10)
-                                    
+
                                     total_found = await conn.fetchval(f"SELECT COUNT(*) FROM {provider.table_name}")
-                                    
+
                                     memories = []
                                     for row in rows:
                                         memory = MemoryResponse(
@@ -143,7 +143,7 @@ UNIFIED_STORE_PY_REPLACEMENT = '''
                                     providers_used = ['pgvector']
                     except Exception as e:
                         logger.error(f"Failed to get recent memories from pgvector: {e}")
-                
+
                 # If pgvector failed, try other providers
                 if not memories:
                     for provider_name, provider in self.providers.items():
@@ -157,81 +157,81 @@ UNIFIED_STORE_PY_REPLACEMENT = '''
                                 break
                             except Exception as e:
                                 logger.error(f"Provider {provider_name} failed: {e}")
-                
+
                 query_time = (time.time() - start_time) * 1000
-                
+
                 response = QueryResponse(
                     memories=memories[:request.limit or 10],
                     total_found=total_found,
                     query_time_ms=query_time,
                     providers_used=providers_used
                 )
-                
+
                 # Cache result
                 self.query_cache[cache_key] = {
                     'response': response,
                     'timestamp': time.time()
                 }
-                
+
                 # Update stats
                 self.stats['total_queries'] += 1
                 self.stats['avg_query_time'] = (
-                    (self.stats['avg_query_time'] * (self.stats['total_queries'] - 1) + query_time) / 
+                    (self.stats['avg_query_time'] * (self.stats['total_queries'] - 1) + query_time) /
                     self.stats['total_queries']
                 )
-                
+
                 logger.info(f"Empty query returned {len(memories)} memories in {query_time:.1f}ms")
                 return response
-            
+
             # For non-empty queries, continue with normal vector similarity search
             query_embedding = await self._generate_embedding(request.query)
-            
+
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
-            
+
             # Query providers
             if len(providers_to_query) == 1:
                 memories = await self._query_provider(
-                    providers_to_query[0], 
-                    query_embedding, 
+                    providers_to_query[0],
+                    query_embedding,
                     request
                 )
                 providers_used = [providers_to_query[0].name]
             else:
                 memories, providers_used = await self._query_multiple_providers(
-                    providers_to_query, 
-                    query_embedding, 
+                    providers_to_query,
+                    query_embedding,
                     request
                 )
-            
+
             # Filter and sort results
             filtered_memories = self._filter_and_rank_memories(memories, request)
-            
+
             query_time = (time.time() - start_time) * 1000
-            
+
             # Update stats
             self.stats['total_queries'] += 1
             self.stats['avg_query_time'] = (
-                (self.stats['avg_query_time'] * (self.stats['total_queries'] - 1) + query_time) / 
+                (self.stats['avg_query_time'] * (self.stats['total_queries'] - 1) + query_time) /
                 self.stats['total_queries']
             )
-            
+
             response = QueryResponse(
                 memories=filtered_memories[:request.limit],
                 total_found=len(filtered_memories),
                 query_time_ms=query_time,
                 providers_used=providers_used
             )
-            
+
             # Cache result
             self.query_cache[cache_key] = {
                 'response': response,
                 'timestamp': time.time()
             }
-            
+
             logger.info(f"Query returned {len(filtered_memories)} memories in {query_time:.1f}ms")
             return response
-            
+
         except Exception as e:
             logger.error(f"Query failed: {e}")
             raise
@@ -265,7 +265,7 @@ STEP-BY-STEP IMPLEMENTATION GUIDE
    curl -X POST https://core-nexus-memory-service.onrender.com/memories/query \\
      -H "Content-Type: application/json" \\
      -d '{"query": "", "limit": 5}'
-   
+
    Should return:
    - "total_found": 1020
    - 5 recent memories in the array

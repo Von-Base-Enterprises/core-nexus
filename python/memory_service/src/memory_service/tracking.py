@@ -55,7 +55,7 @@ class PerformanceMetrics:
 class UsageCollector:
     """
     Collects and aggregates usage data for analytics.
-    
+
     Provides real-time insights into system performance and user behavior.
     """
 
@@ -218,10 +218,10 @@ class UsageCollector:
             memory_ops_per_minute = memory_ops_recent / 60 if recent_events else 0
 
             # Unique users last hour
-            unique_users = len(set(
+            unique_users = len({
                 e.user_id for e in recent_events
                 if e.user_id and e.user_id != 'system'
-            ))
+            })
 
             return PerformanceMetrics(
                 total_requests=total_requests,
@@ -364,7 +364,7 @@ class UsageCollector:
 class UsageTrackingMiddleware(BaseHTTPMiddleware):
     """
     FastAPI middleware for automatic usage tracking.
-    
+
     Captures all API requests and responses for analytics.
     """
 

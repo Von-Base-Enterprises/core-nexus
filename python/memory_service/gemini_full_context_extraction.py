@@ -252,7 +252,7 @@ async def process_in_two_batches(conn, rows, rate_limiter):
     results2 = await process_batch(batch2, 2, rate_limiter)
 
     # Merge results
-    merged = merge_batch_results([results1, results2])
+    merge_batch_results([results1, results2])
     logger.info("✅ Merged results from both batches")
 
 async def process_batch(memories, batch_num, rate_limiter):
@@ -303,7 +303,7 @@ async def insert_mega_results(conn, data):
                         INSERT INTO graph_relationships (
                             from_node_id, to_node_id, relationship_type, strength, metadata
                         ) VALUES ($1, $2, $3, $4, $5)
-                        ON CONFLICT (from_node_id, to_node_id, relationship_type) 
+                        ON CONFLICT (from_node_id, to_node_id, relationship_type)
                         DO UPDATE SET
                             strength = GREATEST(graph_relationships.strength, EXCLUDED.strength),
                             metadata = graph_relationships.metadata || EXCLUDED.metadata

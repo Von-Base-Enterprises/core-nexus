@@ -344,7 +344,7 @@ def create_memory_app() -> FastAPI:
     async def health_check(store: UnifiedVectorStore = Depends(get_store)):
         """
         Check the health of all vector providers.
-        
+
         Returns detailed status of each provider and overall service health.
         """
         try:
@@ -407,7 +407,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Store a new memory with automatic embedding generation.
-        
+
         The memory will be stored across all enabled providers for resilience.
         """
         try:
@@ -433,7 +433,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Query memories using natural language.
-        
+
         Returns semantically similar memories ranked by relevance and importance.
         Special handling: Empty queries return all memories (fixes 3-result bug).
         """
@@ -484,7 +484,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Get all memories without search (returns most recent first).
-        
+
         This endpoint addresses the issue where only 3 memories were returned.
         Now properly returns all memories with configurable limit.
         """
@@ -525,7 +525,7 @@ def create_memory_app() -> FastAPI:
     async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get comprehensive memory service statistics.
-        
+
         Includes counts, performance metrics, and provider-specific details.
         """
         try:
@@ -601,7 +601,7 @@ def create_memory_app() -> FastAPI:
     async def get_recent_logs(lines: int = 100):
         """
         Get recent application logs for debugging.
-        
+
         Returns last N lines of logs with timestamps and levels.
         """
         try:
@@ -682,7 +682,7 @@ def create_memory_app() -> FastAPI:
     async def get_startup_logs():
         """
         Get startup and initialization logs.
-        
+
         Shows what happened during service initialization.
         """
         # Create a summary of startup state
@@ -735,12 +735,12 @@ def create_memory_app() -> FastAPI:
     async def stream_logs(format: str = "json"):
         """
         Stream logs in real-time via Server-Sent Events (SSE).
-        
+
         Formats:
         - json: JSON formatted logs
         - syslog: Syslog format (RFC3164) compatible with Papertrail
         - plain: Plain text logs
-        
+
         Usage:
         - curl https://service.com/logs/stream
         - curl https://service.com/logs/stream?format=syslog
@@ -871,7 +871,7 @@ def create_memory_app() -> FastAPI:
     async def syslog_endpoint(request: Request):
         """
         Syslog endpoint information for external log aggregation.
-        
+
         Returns connection details for setting up syslog forwarding.
         """
         return {
@@ -905,7 +905,7 @@ def create_memory_app() -> FastAPI:
     async def list_providers(store: UnifiedVectorStore = Depends(get_store)):
         """
         List all configured vector providers and their status.
-        
+
         Useful for monitoring and debugging provider configurations.
         """
         try:
@@ -956,7 +956,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Test the embedding functionality with provided text.
-        
+
         Useful for verifying OpenAI integration and debugging embedding issues.
         """
         try:
@@ -987,7 +987,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Store multiple memories in batch for better performance.
-        
+
         Processes memories concurrently while maintaining data integrity.
         """
         try:
@@ -1033,15 +1033,15 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Import memories in bulk from CSV, JSON, or JSONL format.
-        
+
         This endpoint starts an asynchronous import job and returns immediately
         with a job ID for tracking progress.
-        
+
         Supports:
         - CSV with content column and optional metadata columns
         - JSON array or object with memories array
         - JSONL (newline-delimited JSON) for streaming large datasets
-        
+
         Features:
         - Automatic deduplication
         - Validation and error handling
@@ -1067,7 +1067,7 @@ def create_memory_app() -> FastAPI:
     async def get_import_status(import_id: str):
         """
         Get the status of a bulk import job.
-        
+
         Returns detailed progress information including:
         - Current status (pending, processing, completed, failed)
         - Records processed/successful/failed
@@ -1099,12 +1099,12 @@ def create_memory_app() -> FastAPI:
     async def export_memories(request: ExportRequest):
         """
         Export memories in various formats with filtering.
-        
+
         Supports:
         - JSON: Complete data with metadata
         - CSV: Spreadsheet-compatible format
         - PDF: Formatted document (coming soon)
-        
+
         Features:
         - Date range filtering
         - Importance score filtering
@@ -1130,13 +1130,13 @@ def create_memory_app() -> FastAPI:
     async def export_gdpr_package(user_id: str):
         """
         Export GDPR-compliant data package for a specific user.
-        
+
         Creates a comprehensive data export including:
         - All user memories
         - Complete metadata
         - Data sources and processing information
         - Export metadata and timestamps
-        
+
         Compliant with GDPR Article 20 (Right to Data Portability)
         """
         if not memory_export_service:
@@ -1155,7 +1155,7 @@ def create_memory_app() -> FastAPI:
     async def clear_query_cache(store: UnifiedVectorStore = Depends(get_store)):
         """
         Clear the query result cache.
-        
+
         Use this when you need fresh results or after significant data updates.
         """
         try:
@@ -1180,7 +1180,7 @@ def create_memory_app() -> FastAPI:
     async def get_dashboard_metrics():
         """
         Get comprehensive dashboard metrics.
-        
+
         Provides real-time insights into memory service performance and quality.
         """
         try:
@@ -1198,7 +1198,7 @@ def create_memory_app() -> FastAPI:
     async def get_quality_trends(days: int = 7):
         """
         Get memory quality trends over time.
-        
+
         Shows how memory quality has evolved over the specified period.
         """
         try:
@@ -1216,7 +1216,7 @@ def create_memory_app() -> FastAPI:
     async def get_provider_performance():
         """
         Get detailed performance metrics for each vector provider.
-        
+
         Includes health, performance, and feature comparison.
         """
         try:
@@ -1234,7 +1234,7 @@ def create_memory_app() -> FastAPI:
     async def get_memory_insights(limit: int = 50):
         """
         Get insights about memory patterns and usage.
-        
+
         Identifies trends, patterns, and optimization opportunities.
         """
         try:
@@ -1256,7 +1256,7 @@ def create_memory_app() -> FastAPI:
     async def get_adm_performance(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get ADM scoring engine performance metrics.
-        
+
         Shows how well the automated decision making is performing.
         """
         try:
@@ -1278,7 +1278,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Analyze content using ADM scoring without storing.
-        
+
         Provides detailed breakdown of data quality, relevance, and intelligence.
         """
         try:
@@ -1314,7 +1314,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Suggest evolution strategy for a specific memory.
-        
+
         Uses Darwin-Gödel principles to recommend memory lifecycle actions.
         """
         try:
@@ -1353,7 +1353,7 @@ def create_memory_app() -> FastAPI:
     async def get_usage_analytics():
         """
         Get comprehensive usage analytics and patterns.
-        
+
         Provides insights into system performance and user behavior.
         """
         try:
@@ -1385,7 +1385,7 @@ def create_memory_app() -> FastAPI:
     async def export_analytics(format: str = "json", limit: int | None = None):
         """
         Export usage events and analytics data.
-        
+
         Supports JSON and CSV formats for external analysis.
         """
         try:
@@ -1432,7 +1432,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Record user feedback on memory usefulness.
-        
+
         This feeds the evolution engine for continuous improvement.
         """
         try:
@@ -1480,7 +1480,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Sync a specific memory to the knowledge graph.
-        
+
         Extracts entities and relationships from an existing memory.
         """
         try:
@@ -1510,7 +1510,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Explore relationships from a specific entity.
-        
+
         Returns connected entities and their relationships up to max_depth.
         """
         try:
@@ -1555,7 +1555,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Find the shortest path between two entities in the knowledge graph.
-        
+
         Uses graph traversal to find connections.
         """
         try:
@@ -1582,7 +1582,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Get graph-based insights for a specific memory.
-        
+
         Shows entities extracted and their relationships.
         """
         try:
@@ -1618,7 +1618,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Sync multiple memories to the knowledge graph in bulk.
-        
+
         Efficient batch processing for initial graph population.
         """
         try:
@@ -1641,7 +1641,7 @@ def create_memory_app() -> FastAPI:
     async def get_graph_statistics(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get comprehensive knowledge graph statistics.
-        
+
         Shows entity counts, relationship types, and graph health.
         """
         try:
@@ -1668,7 +1668,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Emergency endpoint to create missing database indexes.
-        
+
         This fixes the query performance issue by creating the required pgvector indexes.
         """
         # Simple security check
@@ -1688,20 +1688,20 @@ def create_memory_app() -> FastAPI:
             async with pgvector_provider.connection_pool.acquire() as conn:
                 # Create the critical vector index
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
-                    ON vector_memories 
-                    USING ivfflat (embedding vector_cosine_ops) 
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding
+                    ON vector_memories
+                    USING ivfflat (embedding vector_cosine_ops)
                     WITH (lists = 100)
                 """)
 
                 # Create supporting indexes
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata 
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata
                     ON vector_memories USING GIN (metadata)
                 """)
 
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_importance 
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_importance
                     ON vector_memories (importance_score DESC)
                 """)
 
@@ -1710,8 +1710,8 @@ def create_memory_app() -> FastAPI:
 
                 # Verify indexes were created
                 indexes = await conn.fetch("""
-                    SELECT indexname 
-                    FROM pg_indexes 
+                    SELECT indexname
+                    FROM pg_indexes
                     WHERE tablename = 'vector_memories'
                 """)
 
@@ -1739,7 +1739,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Advanced graph query endpoint.
-        
+
         Supports entity filtering, relationship traversal, and pattern matching.
         """
         try:
@@ -1761,7 +1761,7 @@ def create_memory_app() -> FastAPI:
             start_time = time.time()
 
             limit = query.get('limit', 10)
-            memories = await graph_provider.query([], limit, filters)
+            await graph_provider.query([], limit, filters)
 
             query_time = (time.time() - start_time) * 1000
 

@@ -47,7 +47,7 @@ class CoreNexusKeepAlive:
         logger.info("🔥 Starting Core Nexus Keep-Alive Service...")
 
         while True:
-            success = await self.heartbeat()
+            await self.heartbeat()
 
             # Calculate uptime
             total = self.stats["heartbeats_sent"] + self.stats["failures"]
@@ -65,7 +65,7 @@ class CoreNexusKeepAlive:
         """Aggressive warmup for cold service."""
         logger.info("🔥🔥🔥 AGGRESSIVE WARMUP MODE!")
 
-        for i in range(5):
+        for _i in range(5):
             await self.heartbeat()
             await asyncio.sleep(10)  # Every 10 seconds for first minute
 

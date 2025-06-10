@@ -442,7 +442,7 @@ class BulkImportService:
                 importance_score=record.importance_score
             )
 
-            memory_response = await self.store.store_memory(memory_request)
+            await self.store.store_memory(memory_request)
             progress.successful_records += 1
 
         except Exception as e:

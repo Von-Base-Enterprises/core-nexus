@@ -221,7 +221,7 @@ class GeminiEntityExtractor:
                             # Insert new entity into graph_nodes
                             await conn.execute("""
                                 INSERT INTO graph_nodes (
-                                    id, entity_type, entity_name, properties, 
+                                    id, entity_type, entity_name, properties,
                                     importance_score, first_seen, last_seen, mention_count
                                 ) VALUES ($1, $2, $3, $4, $5, $6, $6, 1)
                                 ON CONFLICT (id) DO UPDATE SET
@@ -239,8 +239,8 @@ class GeminiEntityExtractor:
                         else:
                             # Update existing entity
                             await conn.execute("""
-                                UPDATE graph_nodes 
-                                SET last_seen = $1, 
+                                UPDATE graph_nodes
+                                SET last_seen = $1,
                                     mention_count = mention_count + 1,
                                     importance_score = GREATEST(importance_score, $2)
                                 WHERE id = $3
@@ -266,7 +266,7 @@ class GeminiEntityExtractor:
                                     from_node_id, to_node_id, relationship_type,
                                     strength, confidence, metadata, first_seen, last_seen
                                 ) VALUES ($1, $2, $3, $4, $4, $5, $6, $6)
-                                ON CONFLICT (from_node_id, to_node_id, relationship_type) 
+                                ON CONFLICT (from_node_id, to_node_id, relationship_type)
                                 DO UPDATE SET
                                     strength = GREATEST(graph_relationships.strength, EXCLUDED.strength),
                                     last_seen = EXCLUDED.last_seen,
@@ -329,7 +329,7 @@ class GeminiEntityExtractor:
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT id, content, metadata, user_id, conversation_id, 
+                SELECT id, content, metadata, user_id, conversation_id,
                        importance_score, created_at
                 FROM vector_memories
                 ORDER BY importance_score DESC, created_at DESC

@@ -11,20 +11,20 @@ async def initialize_database_indexes(store):
         async with pgvector_provider.connection_pool.acquire() as conn:
             # Create the critical vector index
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
-                ON vector_memories 
-                USING ivfflat (embedding vector_cosine_ops) 
+                CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding
+                ON vector_memories
+                USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100)
             """)
 
             # Create supporting indexes
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata 
+                CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata
                 ON vector_memories USING GIN (metadata)
             """)
 
             await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_vector_memories_importance 
+                CREATE INDEX IF NOT EXISTS idx_vector_memories_importance
                 ON vector_memories (importance_score DESC)
             """)
 
@@ -33,8 +33,8 @@ async def initialize_database_indexes(store):
 
             # Verify indexes were created
             indexes = await conn.fetch("""
-                SELECT indexname 
-                FROM pg_indexes 
+                SELECT indexname
+                FROM pg_indexes
                 WHERE tablename = 'vector_memories'
             """)
 

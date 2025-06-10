@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class TemporalMemoryStore:
     """
     Temporal memory queries leveraging existing PostgreSQL partitioning.
-    
+
     Integrates with the existing conversation_history partition strategy
     while providing vector similarity search across time ranges.
     """
@@ -51,7 +51,7 @@ class TemporalMemoryStore:
     async def query_temporal_memories(self, query: TemporalQuery) -> list[MemoryResponse]:
         """
         Query memories within a specific time range using partition optimization.
-        
+
         Combines PostgreSQL temporal queries with vector similarity search.
         """
         if not self.connection_pool:
@@ -104,15 +104,15 @@ class TemporalMemoryStore:
     ) -> list[str]:
         """
         Get conversation IDs from time range using existing partition strategy.
-        
+
         Leverages the existing conversation_history partitioning for efficiency.
         """
         async with self.connection_pool.acquire() as conn:
             # Query existing conversation_history partitions
             # This leverages the existing PostgreSQL partitioning strategy
             query = """
-            SELECT DISTINCT conversation_id 
-            FROM conversation_history 
+            SELECT DISTINCT conversation_id
+            FROM conversation_history
             WHERE created_at >= $1 AND created_at <= $2
             ORDER BY created_at DESC
             LIMIT 1000
@@ -131,11 +131,11 @@ class TemporalMemoryStore:
     ) -> list[MemoryResponse]:
         """
         Rank memories by temporal relevance combined with semantic similarity.
-        
+
         Applies time-decay weighting to balance recency with relevance.
         """
         now = datetime.utcnow()
-        query_duration = (query.end_time - query.start_time).total_seconds()
+        (query.end_time - query.start_time).total_seconds()
 
         for memory in memories:
             # Calculate time-based relevance
@@ -160,7 +160,7 @@ class TemporalMemoryStore:
     ) -> dict[str, Any] | None:
         """
         Get conversation summary leveraging existing conversation_history.
-        
+
         Provides context for memory retrieval and importance scoring.
         """
         if not self.connection_pool:
@@ -170,14 +170,14 @@ class TemporalMemoryStore:
             async with self.connection_pool.acquire() as conn:
                 # Build query with optional time range
                 base_query = """
-                SELECT 
+                SELECT
                     conversation_id,
                     COUNT(*) as message_count,
                     MIN(created_at) as start_time,
                     MAX(created_at) as end_time,
                     AVG(COALESCE(metadata->>'importance_score', '0.5')::float) as avg_importance,
                     ARRAY_AGG(DISTINCT user_id) as participants
-                FROM conversation_history 
+                FROM conversation_history
                 WHERE conversation_id = $1
                 """
 
@@ -216,7 +216,7 @@ class TemporalMemoryStore:
     ) -> list[dict[str, Any]]:
         """
         Get user's memory timeline leveraging existing data structures.
-        
+
         Provides chronological view of important memories and conversations.
         """
         if not self.connection_pool:
@@ -229,14 +229,14 @@ class TemporalMemoryStore:
             async with self.connection_pool.acquire() as conn:
                 # Query existing conversation_history for timeline
                 query = """
-                SELECT 
+                SELECT
                     conversation_id,
                     created_at,
                     metadata,
                     COALESCE(metadata->>'importance_score', '0.5')::float as importance
-                FROM conversation_history 
-                WHERE user_id = $1 
-                    AND created_at >= $2 
+                FROM conversation_history
+                WHERE user_id = $1
+                    AND created_at >= $2
                     AND created_at <= $3
                 ORDER BY importance DESC, created_at DESC
                 LIMIT $4
@@ -264,7 +264,7 @@ class TemporalMemoryStore:
     async def get_partition_stats(self) -> dict[str, Any]:
         """
         Get statistics about temporal partitions for monitoring.
-        
+
         Shows how data is distributed across time partitions.
         """
         if not self.connection_pool:
@@ -274,13 +274,13 @@ class TemporalMemoryStore:
             async with self.connection_pool.acquire() as conn:
                 # Get partition information from existing conversation_history
                 query = """
-                SELECT 
+                SELECT
                     schemaname,
                     tablename,
                     attname,
                     n_distinct,
                     avg_width
-                FROM pg_stats 
+                FROM pg_stats
                 WHERE tablename LIKE 'conversation_history%'
                 ORDER BY tablename
                 """
@@ -311,7 +311,7 @@ class TemporalMemoryStore:
     async def cleanup_old_memories(self, days_to_keep: int = 365) -> dict[str, Any]:
         """
         Clean up old memories beyond retention period.
-        
+
         Leverages existing partition strategy for efficient cleanup.
         """
         if not self.connection_pool:
@@ -324,7 +324,7 @@ class TemporalMemoryStore:
                 # Count memories to be deleted
                 count_query = """
                 SELECT COUNT(*) as count
-                FROM conversation_history 
+                FROM conversation_history
                 WHERE created_at < $1
                 """
 

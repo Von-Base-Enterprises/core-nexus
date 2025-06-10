@@ -131,7 +131,7 @@ class EntityDeduplicator:
 
         # Create index for faster lookups
         await self.conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_canonical_name 
+            CREATE INDEX IF NOT EXISTS idx_canonical_name
             ON entity_canonicalization(canonical_name)
         """)
 
@@ -149,7 +149,7 @@ class EntityDeduplicator:
         max_importance = max(e['importance_score'] or 0.5 for e in entities)
 
         await self.conn.execute("""
-            UPDATE graph_nodes 
+            UPDATE graph_nodes
             SET entity_name = $1,
                 mention_count = $2,
                 importance_score = $3,
@@ -164,28 +164,28 @@ class EntityDeduplicator:
                 await self.conn.execute("""
                     INSERT INTO entity_canonicalization (alias, canonical_name, canonical_id)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (alias) DO UPDATE 
+                    ON CONFLICT (alias) DO UPDATE
                     SET canonical_name = EXCLUDED.canonical_name,
                         canonical_id = EXCLUDED.canonical_id
                 """, entity['entity_name'], canonical_name, canonical_id)
 
                 # Update relationships to point to canonical entity
                 await self.conn.execute("""
-                    UPDATE graph_relationships 
-                    SET from_node_id = $1 
+                    UPDATE graph_relationships
+                    SET from_node_id = $1
                     WHERE from_node_id = $2
                 """, canonical_id, entity['id'])
 
                 await self.conn.execute("""
-                    UPDATE graph_relationships 
-                    SET to_node_id = $1 
+                    UPDATE graph_relationships
+                    SET to_node_id = $1
                     WHERE to_node_id = $2
                 """, canonical_id, entity['id'])
 
                 # Update memory-entity mappings
                 await self.conn.execute("""
-                    UPDATE memory_entity_map 
-                    SET entity_id = $1 
+                    UPDATE memory_entity_map
+                    SET entity_id = $1
                     WHERE entity_id = $2
                 """, canonical_id, entity['id'])
 
@@ -258,12 +258,12 @@ async def get_live_stats(db=Depends(get_unified_store)):
     """Agent 3 polls this every 10 seconds for live updates"""
     try:
         stats = await db.graph_provider.get_stats()
-        
+
         # Get unique entity count (post-deduplication)
         entity_count = await db.execute_scalar(
             "SELECT COUNT(DISTINCT entity_name) FROM graph_nodes"
         )
-        
+
         # Get top entities by connections
         top_entities = await db.fetch_all("""
             SELECT n.entity_name, n.entity_type, n.importance_score,
@@ -275,7 +275,7 @@ async def get_live_stats(db=Depends(get_unified_store)):
             ORDER BY connection_count DESC, n.importance_score DESC
             LIMIT 10
         """)
-        
+
         return {
             "entity_count": entity_count,
             "relationship_count": stats.get("total_relationships", 0),
@@ -305,7 +305,7 @@ async def get_live_stats(db=Depends(get_unified_store)):
 async def verify_dashboard_sync(db=Depends(get_unified_store)):
     """Verify Agent 3 dashboard is showing correct data"""
     our_stats = await get_live_stats(db)
-    
+
     return {
         "backend_stats": our_stats,
         "sync_status": "ready",

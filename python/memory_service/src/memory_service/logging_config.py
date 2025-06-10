@@ -18,7 +18,7 @@ def setup_papertrail_logging(
 ):
     """
     Configure logging to send to Papertrail via syslog.
-    
+
     Args:
         papertrail_host: Papertrail host (e.g., 'logs.papertrailapp.com')
         papertrail_port: Papertrail port (e.g., 34949)
@@ -71,7 +71,7 @@ def setup_papertrail_logging(
 def setup_logging():
     """
     Configure comprehensive logging for the application.
-    
+
     Sets up:
     - Console logging (always enabled)
     - File logging (if LOG_FILE env var is set)

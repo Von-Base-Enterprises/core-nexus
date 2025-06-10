@@ -114,19 +114,19 @@ async def process_memories_safely():
             # Method 1: Direct parse
             try:
                 json_data = json.loads(response_text)
-            except:
+            except Exception:
                 # Method 2: Extract from code blocks
                 if "```json" in response_text:
                     json_str = response_text.split("```json")[1].split("```")[0]
                     try:
                         json_data = json.loads(json_str.strip())
-                    except:
+                    except Exception:
                         pass
                 elif "```" in response_text:
                     json_str = response_text.split("```")[1].split("```")[0]
                     try:
                         json_data = json.loads(json_str.strip())
-                    except:
+                    except Exception:
                         pass
 
                 # Method 3: Find JSON object
@@ -136,7 +136,7 @@ async def process_memories_safely():
                     if json_match:
                         try:
                             json_data = json.loads(json_match.group())
-                        except:
+                        except Exception:
                             pass
 
             if json_data:
@@ -235,7 +235,7 @@ async def process_memories_safely():
         entity_id_map[entity['name']] = entity_id
 
         try:
-            result = await conn.execute("""
+            await conn.execute("""
                 INSERT INTO graph_nodes (id, entity_type, entity_name, importance_score, mention_count)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (entity_name) DO UPDATE SET
@@ -271,7 +271,7 @@ async def process_memories_safely():
                     rel.get('type', 'RELATED_TO'),
                     float(rel.get('strength', 0.5)))
                 new_relationships += 1
-            except:
+            except Exception:
                 pass
 
     # Get final stats

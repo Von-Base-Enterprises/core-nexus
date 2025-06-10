@@ -104,9 +104,9 @@ async def test_graph_provider_initialization():
 
         # Check initialization
         assert provider.name == "graph", "Provider name mismatch"
-        assert provider.enabled == True, "Provider not enabled"
+        assert provider.enabled, "Provider not enabled"
         assert provider.connection_string == config.config["connection_string"], "Connection string mismatch"
-        assert provider._pool_initialized == False, "Pool should not be initialized yet"
+        assert not provider._pool_initialized, "Pool should not be initialized yet"
 
         log_test("GraphProvider initialization", "PASSED", "Provider created with correct config")
         return True
@@ -140,7 +140,7 @@ async def test_lazy_pool_initialization():
         try:
             await provider._ensure_pool()
             log_test("Lazy pool with no connection", "PASSED", "Handled missing connection gracefully")
-        except:
+        except Exception:
             log_test("Lazy pool with no connection", "WARNING", "Pool initialization failed without connection")
 
         # Now test with mock connection string
@@ -162,21 +162,21 @@ async def test_api_startup_integration():
         # Check environment variable handling
         os.environ["GRAPH_ENABLED"] = "true"
         enabled = os.getenv("GRAPH_ENABLED", "true").lower() == "true"
-        assert enabled == True, "GRAPH_ENABLED env var not parsed correctly"
+        assert enabled, "GRAPH_ENABLED env var not parsed correctly"
 
         log_test("Environment variable parsing", "PASSED", "GRAPH_ENABLED=true parsed correctly")
 
         # Test with disabled
         os.environ["GRAPH_ENABLED"] = "false"
         enabled = os.getenv("GRAPH_ENABLED", "true").lower() == "true"
-        assert enabled == False, "GRAPH_ENABLED=false not parsed correctly"
+        assert not enabled, "GRAPH_ENABLED=false not parsed correctly"
 
         log_test("Environment variable disabled", "PASSED", "GRAPH_ENABLED=false parsed correctly")
 
         # Reset to default
         del os.environ["GRAPH_ENABLED"]
         enabled = os.getenv("GRAPH_ENABLED", "true").lower() == "true"
-        assert enabled == True, "Default should be true"
+        assert enabled, "Default should be true"
 
         log_test("Environment variable default", "PASSED", "Defaults to enabled when not set")
 

@@ -278,7 +278,7 @@ class RenderDeployer:
                     self.log(f"Total memories: {health_data.get('total_memories', 0)}")
 
                     return True
-                except:
+                except Exception:
                     self.log("Health endpoint responded but couldn't parse JSON")
                     return True
             else:
@@ -325,7 +325,7 @@ class RenderDeployer:
 
         try:
             # Check existing services
-            existing_services = self.check_existing_services()
+            self.check_existing_services()
 
             # Create database
             self.log("Step 1: Creating PostgreSQL database...")

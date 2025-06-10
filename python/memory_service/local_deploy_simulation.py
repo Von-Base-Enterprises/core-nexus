@@ -146,7 +146,7 @@ class LocalDeploymentSimulator:
             self.log("✅ api module imported")
 
             # Try to create the app
-            app = api.create_memory_app()
+            api.create_memory_app()
             self.log("✅ FastAPI app created successfully")
 
             return True
@@ -336,11 +336,11 @@ class LocalDeploymentSimulator:
 
             # Simulation phase
             self.simulate_service_startup()
-            health_data = self.create_mock_health_endpoint()
-            operation_results = self.simulate_memory_operations()
+            self.create_mock_health_endpoint()
+            self.simulate_memory_operations()
 
             # Report generation
-            report = self.generate_deployment_report()
+            self.generate_deployment_report()
 
             duration = time.time() - start_time
 
