@@ -33,16 +33,16 @@ coverage.xml
 *.seed
 *.pid.lock
 .DS_Store
-<<<<<<< Updated upstream
+
+# Environment variables
+.env
+.env.*
+!.env.example
 
 # Local test outputs
 ingest_output.txt
 query_output.txt
 CoreNexusInfo.txt
-=======
-.env
-.env.*
-!.env.example
 
 # IDE
 .vscode/
@@ -93,4 +93,3 @@ chroma_db/
 memory_cache/
 vector_indexes/
 graph_data/
->>>>>>> Stashed changes

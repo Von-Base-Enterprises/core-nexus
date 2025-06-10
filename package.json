@@ -2,6 +2,7 @@
   "name": "core-nexus",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "packageManager": "yarn@4.0.2",
   "type": "module",
   "workspaces": [
