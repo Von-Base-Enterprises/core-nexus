@@ -29,12 +29,12 @@ def setup_papertrail_logging(
         papertrail_host = os.getenv('PAPERTRAIL_HOST', 'logs.papertrailapp.com')
     if not papertrail_port:
         papertrail_port = int(os.getenv('PAPERTRAIL_PORT', '34949'))
-    
+
     # Skip if no valid configuration
     if not papertrail_host or not papertrail_port:
         logging.warning("Papertrail configuration not found, using local logging only")
         return False
-    
+
     try:
         # Create syslog handler for Papertrail
         handler = logging.handlers.SysLogHandler(
@@ -42,27 +42,27 @@ def setup_papertrail_logging(
             facility=logging.handlers.SysLogHandler.LOG_LOCAL0,
             socktype=socket.SOCK_DGRAM
         )
-        
+
         # Format for Papertrail - includes hostname and app name
         hostname = socket.gethostname()
         formatter = logging.Formatter(
             f'{hostname} {app_name}: %(name)s - %(levelname)s - %(message)s'
         )
         handler.setFormatter(formatter)
-        
+
         # Add to root logger
         root_logger = logging.getLogger()
         root_logger.addHandler(handler)
         root_logger.setLevel(logging.INFO)
-        
+
         # Also add to specific loggers
         app_logger = logging.getLogger('memory_service')
         app_logger.addHandler(handler)
-        
+
         # Log successful setup
         logging.info(f"Papertrail logging configured: {papertrail_host}:{papertrail_port}")
         return True
-        
+
     except Exception as e:
         logging.error(f"Failed to configure Papertrail logging: {e}")
         return False
@@ -79,19 +79,19 @@ def setup_logging():
     """
     # Basic configuration
     log_level = os.getenv('LOG_LEVEL', 'INFO')
-    
+
     # Console handler - always enabled
     console_handler = logging.StreamHandler(sys.stdout)
     console_formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     console_handler.setFormatter(console_formatter)
-    
+
     # Configure root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper()))
     root_logger.addHandler(console_handler)
-    
+
     # File handler - optional
     log_file = os.getenv('LOG_FILE')
     if log_file:
@@ -106,10 +106,10 @@ def setup_logging():
             logging.info(f"File logging enabled: {log_file}")
         except Exception as e:
             logging.error(f"Failed to setup file logging: {e}")
-    
+
     # Papertrail handler - optional
     setup_papertrail_logging()
-    
+
     # Log startup
     logging.info("=" * 60)
     logging.info("Core Nexus Memory Service Starting")

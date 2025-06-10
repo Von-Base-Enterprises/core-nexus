@@ -1,0 +1,65 @@
+{
+  "timestamp": "2025-06-10T05:16:37.889086",
+  "service_url": "https://core-nexus-memory-service.onrender.com",
+  "steps": {
+    "health_check": "PASS",
+    "create_memory": "PASS",
+    "retrieve_memory": "FAIL",
+    "search_memory": "PASS",
+    "verify_embedding": "PASS",
+    "cleanup": "N/A"
+  },
+  "response_times": {
+    "health_check": "642ms",
+    "create_memory": "1498ms",
+    "retrieve_memory": "493ms",
+    "search_memory": "1269ms",
+    "verify_embedding": "514ms"
+  },
+  "errors": [
+    "Memory 23b0c1fe-8dc9-43f1-9a46-a44e302692f6 not found among 0 memories"
+  ],
+  "summary": {
+    "health_status": {
+      "status": "healthy",
+      "providers": {
+        "pgvector": {
+          "status": "healthy",
+          "details": {
+            "status": "healthy",
+            "details": {
+              "total_vectors": 1019,
+              "pgvector_enabled": true,
+              "table_name": "vector_memories",
+              "pool_size": 5
+            }
+          },
+          "primary": true
+        },
+        "chromadb": {
+          "status": "healthy",
+          "details": {
+            "status": "healthy",
+            "details": {
+              "total_vectors": 0,
+              "collection_name": "core_nexus_memories"
+            }
+          },
+          "primary": false
+        },
+        "graph": {
+          "status": "unhealthy",
+          "error": "GraphProvider requires either connection_pool or connection_string",
+          "primary": false
+        }
+      },
+      "total_memories": 0,
+      "avg_query_time_ms": 357.27787017822266,
+      "uptime_seconds": 41.32089018821716
+    },
+    "created_memory_id": "23b0c1fe-8dc9-43f1-9a46-a44e302692f6",
+    "total_memories": 0,
+    "store_retrieve_cycle_ms": 1991.0,
+    "overall_status": "FAILED"
+  }
+}

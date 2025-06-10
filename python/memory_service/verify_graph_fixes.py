@@ -12,7 +12,7 @@ print("🔍 Verifying GraphProvider Deployment Fixes\n")
 # Check 1: GraphProvider initialization in API
 print("1. Checking API startup integration...")
 api_file = Path("src/memory_service/api.py")
-with open(api_file, 'r') as f:
+with open(api_file) as f:
     api_content = f.read()
 
 # Look for GraphProvider initialization
@@ -34,7 +34,7 @@ else:
 # Check 2: Lazy pool initialization
 print("\n2. Checking lazy pool initialization...")
 providers_file = Path("src/memory_service/providers.py")
-with open(providers_file, 'r') as f:
+with open(providers_file) as f:
     providers_content = f.read()
 
 if "async def _ensure_pool(self):" in providers_content:
@@ -77,7 +77,7 @@ else:
 # Check 5: Requirements update
 print("\n5. Checking requirements.txt...")
 req_file = Path("requirements.txt")
-with open(req_file, 'r') as f:
+with open(req_file) as f:
     req_content = f.read()
 
 if "spacy>=" in req_content:

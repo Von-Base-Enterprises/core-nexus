@@ -9,16 +9,16 @@ Agent 2 Backend - Optimized for massive context processing
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import time
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-import logging
+from typing import Any
 from uuid import uuid4
 
-import google.generativeai as genai
 import asyncpg
+import google.generativeai as genai
 from asyncpg.pool import Pool
 
 # Setup logging
@@ -113,9 +113,9 @@ MEGA_BATCH_SCHEMA = {
 
 class GeminiMegaContextExtractor:
     """Leverages Gemini's 1M token context for batch processing."""
-    
+
     def __init__(self):
-        self.db_pool: Optional[Pool] = None
+        self.db_pool: Pool | None = None
         self.model = model
         self.stats = {
             'batches_processed': 0,
@@ -126,7 +126,7 @@ class GeminiMegaContextExtractor:
             'tokens_processed': 0,
             'api_calls': 0
         }
-    
+
     async def init_database_pool(self):
         """Initialize database connection pool."""
         if not self.db_pool:
@@ -143,22 +143,22 @@ class GeminiMegaContextExtractor:
                 max_size=20
             )
             logger.info("✅ Database connection pool initialized")
-    
-    def estimate_tokens(self, memories: List[Dict[str, Any]]) -> int:
+
+    def estimate_tokens(self, memories: list[dict[str, Any]]) -> int:
         """Estimate token count for a batch of memories."""
         # Rough estimation: 1 token ≈ 4 characters
         total_chars = sum(len(m['content']) + len(json.dumps(m['metadata'])) for m in memories)
         return total_chars // 4
-    
-    def create_optimal_batches(self, memories: List[Dict[str, Any]], max_tokens: int = 800000) -> List[List[Dict[str, Any]]]:
+
+    def create_optimal_batches(self, memories: list[dict[str, Any]], max_tokens: int = 800000) -> list[list[dict[str, Any]]]:
         """Create optimal batches that fit within token limits while maximizing context."""
         batches = []
         current_batch = []
         current_tokens = 0
-        
+
         for memory in memories:
             memory_tokens = self.estimate_tokens([memory])
-            
+
             if current_tokens + memory_tokens > max_tokens and current_batch:
                 # Current batch is full, start a new one
                 batches.append(current_batch)
@@ -168,21 +168,21 @@ class GeminiMegaContextExtractor:
                 # Add to current batch
                 current_batch.append(memory)
                 current_tokens += memory_tokens
-        
+
         if current_batch:
             batches.append(current_batch)
-        
+
         logger.info(f"📦 Created {len(batches)} optimal batches from {len(memories)} memories")
         for i, batch in enumerate(batches):
             batch_tokens = self.estimate_tokens(batch)
             logger.info(f"  Batch {i+1}: {len(batch)} memories, ~{batch_tokens:,} tokens")
-        
+
         return batches
-    
-    async def process_mega_batch(self, memories: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+    async def process_mega_batch(self, memories: list[dict[str, Any]]) -> dict[str, Any]:
         """Process a large batch of memories in a single Gemini call."""
         logger.info(f"🚀 Processing mega-batch of {len(memories)} memories...")
-        
+
         # Prepare memories for prompt
         memories_data = []
         for memory in memories:
@@ -193,16 +193,16 @@ class GeminiMegaContextExtractor:
                 'created_at': memory.get('created_at'),
                 'importance_score': memory.get('importance_score', 0.5)
             })
-        
+
         # Create the prompt
         prompt = MEGA_BATCH_EXTRACTION_PROMPT.format(
             memories_json=json.dumps(memories_data, indent=2)
         )
-        
+
         # Estimate tokens
         prompt_tokens = len(prompt) // 4
         logger.info(f"📊 Prompt size: ~{prompt_tokens:,} tokens")
-        
+
         try:
             # Generate with structured output
             response = model.generate_content(
@@ -215,36 +215,36 @@ class GeminiMegaContextExtractor:
                     response_schema=MEGA_BATCH_SCHEMA
                 )
             )
-            
+
             self.stats['api_calls'] += 1
             self.stats['tokens_processed'] += prompt_tokens
-            
+
             if response.text:
                 result = json.loads(response.text)
-                
+
                 # Update stats
                 self.stats['entities_extracted'] += len(result.get('entities', []))
                 self.stats['relationships_found'] += len(result.get('relationships', []))
                 self.stats['patterns_discovered'] += len(result.get('patterns', []))
                 self.stats['memories_processed'] += len(memories)
-                
+
                 logger.info(f"✅ Extracted {len(result.get('entities', []))} entities")
                 logger.info(f"✅ Found {len(result.get('relationships', []))} relationships")
                 logger.info(f"✅ Discovered {len(result.get('patterns', []))} patterns")
-                
+
                 return result
             else:
                 raise ValueError("Empty response from Gemini")
-                
+
         except Exception as e:
             logger.error(f"❌ Mega-batch processing failed: {e}")
             raise
-    
-    async def insert_batch_results(self, extraction_results: Dict[str, Any]):
+
+    async def insert_batch_results(self, extraction_results: dict[str, Any]):
         """Insert mega-batch extraction results into the database."""
         if not self.db_pool:
             await self.init_database_pool()
-        
+
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
                 try:
@@ -253,7 +253,7 @@ class GeminiMegaContextExtractor:
                     for entity in extraction_results.get('entities', []):
                         entity_id = entity.get('id', str(uuid4()))
                         entity_id_map[entity['name']] = entity_id
-                        
+
                         await conn.execute("""
                             INSERT INTO graph_nodes (
                                 id, entity_type, entity_name, properties,
@@ -276,12 +276,12 @@ class GeminiMegaContextExtractor:
                             datetime.fromisoformat(entity.get('last_seen', datetime.now().isoformat())),
                             entity.get('memory_count', 1)
                         )
-                    
+
                     # Insert relationships with cross-memory context
                     for relationship in extraction_results.get('relationships', []):
                         source_id = entity_id_map.get(relationship['source'])
                         target_id = entity_id_map.get(relationship['target'])
-                        
+
                         if source_id and target_id:
                             await conn.execute("""
                                 INSERT INTO graph_relationships (
@@ -304,7 +304,7 @@ class GeminiMegaContextExtractor:
                                 }),
                                 len(relationship.get('memory_ids', []))
                             )
-                    
+
                     # Create memory-entity mappings
                     entity_memory_map = extraction_results.get('entity_memory_map', {})
                     for entity_name, memory_ids in entity_memory_map.items():
@@ -317,23 +317,23 @@ class GeminiMegaContextExtractor:
                                     ) VALUES ($1, $2, 0.9)
                                     ON CONFLICT DO NOTHING
                                 """, memory_id, entity_id)
-                    
+
                     # Store discovered patterns as metadata
                     for pattern in extraction_results.get('patterns', []):
                         logger.info(f"🔍 Pattern discovered: {pattern['pattern']}")
                         # Could store patterns in a separate table or as graph metadata
-                    
-                    logger.info(f"✅ Batch results inserted successfully")
-                    
+
+                    logger.info("✅ Batch results inserted successfully")
+
                 except Exception as e:
                     logger.error(f"❌ Database insertion failed: {e}")
                     raise
-    
-    async def fetch_all_memories(self) -> List[Dict[str, Any]]:
+
+    async def fetch_all_memories(self) -> list[dict[str, Any]]:
         """Fetch all memories from the database."""
         if not self.db_pool:
             await self.init_database_pool()
-        
+
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT id, content, metadata,
@@ -344,7 +344,7 @@ class GeminiMegaContextExtractor:
                 FROM vector_memories
                 ORDER BY created_at DESC
             """)
-            
+
             memories = []
             for row in rows:
                 memories.append({
@@ -356,51 +356,51 @@ class GeminiMegaContextExtractor:
                     'importance_score': float(row['importance_score']) if row['importance_score'] else 0.5,
                     'created_at': row['created_at'].isoformat() if row['created_at'] else None
                 })
-            
+
             logger.info(f"📊 Fetched {len(memories)} memories from database")
             return memories
-    
+
     async def run_mega_context_extraction(self):
         """Run the mega-context extraction pipeline."""
         logger.info("🚀 Starting Gemini Mega-Context Entity Extraction Pipeline")
         logger.info("🧠 Leveraging 1 million token context window for holistic analysis")
         start_time = time.time()
-        
+
         try:
             # Initialize database
             await self.init_database_pool()
-            
+
             # Fetch all memories
             memories = await self.fetch_all_memories()
-            
+
             if not memories:
                 logger.warning("⚠️ No memories found to process")
                 return
-            
+
             # Create optimal batches
             batches = self.create_optimal_batches(memories, max_tokens=800000)
-            
+
             # Process each batch
             for i, batch in enumerate(batches):
                 logger.info(f"\n{'='*60}")
                 logger.info(f"Processing batch {i+1}/{len(batches)}")
                 logger.info(f"{'='*60}")
-                
+
                 # Extract entities and relationships
                 extraction_results = await self.process_mega_batch(batch)
-                
+
                 # Insert results
                 await self.insert_batch_results(extraction_results)
-                
+
                 self.stats['batches_processed'] += 1
-                
+
                 # Brief pause between batches
                 if i < len(batches) - 1:
                     await asyncio.sleep(2)
-            
+
             # Final statistics
             duration = time.time() - start_time
-            
+
             logger.info("\n🎉 Mega-Context Extraction Complete!")
             logger.info(f"⏱️ Duration: {duration:.2f} seconds")
             logger.info(f"📦 Batches processed: {self.stats['batches_processed']}")
@@ -411,7 +411,7 @@ class GeminiMegaContextExtractor:
             logger.info(f"🪙 Tokens processed: {self.stats['tokens_processed']:,}")
             logger.info(f"📞 API calls made: {self.stats['api_calls']}")
             logger.info(f"💰 Estimated cost: ${self.stats['api_calls'] * 0.21 / 1000:.4f}")
-            
+
             # Save report
             report = {
                 'timestamp': datetime.now().isoformat(),
@@ -423,16 +423,16 @@ class GeminiMegaContextExtractor:
                     'cost_per_memory': (self.stats['api_calls'] * 0.21 / 1000) / max(1, self.stats['memories_processed'])
                 }
             }
-            
+
             with open('gemini_mega_context_report.json', 'w') as f:
                 json.dump(report, f, indent=2)
-            
+
             logger.info("📋 Report saved to gemini_mega_context_report.json")
-            
+
         except Exception as e:
             logger.error(f"❌ Pipeline failed: {e}")
             raise
-        
+
         finally:
             if self.db_pool:
                 await self.db_pool.close()
@@ -445,15 +445,15 @@ async def main():
     print("🧠 Leveraging 1 million token context window")
     print("📊 Processing all 1,005 memories with holistic analysis")
     print("=" * 80)
-    
+
     # Check environment
     if not os.getenv("PGVECTOR_PASSWORD"):
         logger.error("❌ PGVECTOR_PASSWORD environment variable required")
         return 1
-    
+
     # Run the pipeline
     extractor = GeminiMegaContextExtractor()
-    
+
     try:
         await extractor.run_mega_context_extraction()
         return 0

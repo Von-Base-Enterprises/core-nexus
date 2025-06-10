@@ -6,9 +6,10 @@ Agent 2 Implementation
 """
 
 import asyncio
-import aiohttp
-from datetime import datetime
 import logging
+from datetime import datetime
+
+import aiohttp
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class CoreNexusKeepAlive:
             "last_success": None,
             "uptime_percentage": 100.0
         }
-    
+
     async def heartbeat(self):
         """Send heartbeat to keep service warm."""
         try:
@@ -40,42 +41,42 @@ class CoreNexusKeepAlive:
             self.stats["failures"] += 1
             logger.warning(f"💔 Heartbeat failed: {e}")
             return False
-    
+
     async def keep_warm(self):
         """Main loop to keep service warm."""
         logger.info("🔥 Starting Core Nexus Keep-Alive Service...")
-        
+
         while True:
             success = await self.heartbeat()
-            
+
             # Calculate uptime
             total = self.stats["heartbeats_sent"] + self.stats["failures"]
             if total > 0:
                 self.stats["uptime_percentage"] = (self.stats["heartbeats_sent"] / total) * 100
-            
+
             # Log stats every 10 heartbeats
             if total % 10 == 0:
                 logger.info(f"📊 Stats: {self.stats}")
-            
+
             # Wait 5 minutes before next heartbeat
             await asyncio.sleep(300)
-    
+
     async def aggressive_warmup(self):
         """Aggressive warmup for cold service."""
         logger.info("🔥🔥🔥 AGGRESSIVE WARMUP MODE!")
-        
+
         for i in range(5):
             await self.heartbeat()
             await asyncio.sleep(10)  # Every 10 seconds for first minute
-        
+
         logger.info("✅ Warmup complete, switching to normal mode")
 
 async def main():
     keeper = CoreNexusKeepAlive()
-    
+
     # First do aggressive warmup
     await keeper.aggressive_warmup()
-    
+
     # Then maintain warmth
     await keeper.keep_warm()
 

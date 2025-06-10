@@ -4,15 +4,15 @@ Day-1 Vertical Slice: Query stored documents
 Usage: python scripts/query_one.py [query_text]
 """
 
-import sys
-import os
-import time
 import hashlib
+import os
+import sys
+import time
 
 # Add the python package to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
 
-from core_memory_slice import LiteVectorStore, LiteGraphStore
+from core_memory_slice import LiteGraphStore, LiteVectorStore
 
 
 def create_mock_embedding(text: str, dim: int = 1536) -> list[float]:
@@ -28,17 +28,17 @@ def create_mock_embedding(text: str, dim: int = 1536) -> list[float]:
 def query_documents(query: str, data_dir: str = "./slice_data", k: int = 3) -> dict:
     """Query hybrid storage for relevant documents"""
     start_time = time.perf_counter()
-    
+
     # Initialize stores
     vector_store = LiteVectorStore(f"{data_dir}/vectors.json")
     graph_store = LiteGraphStore(f"{data_dir}/graph.db")
-    
+
     # Generate query embedding
     query_embedding = create_mock_embedding(query)
-    
+
     # Search vector store
     vector_results = vector_store.search(query_embedding, k=k)
-    
+
     # Enhance with graph data
     results = []
     for doc_id, similarity, metadata in vector_results:
@@ -52,9 +52,9 @@ def query_documents(query: str, data_dir: str = "./slice_data", k: int = 3) -> d
                 "graph_metadata": graph_node["metadata"],
                 "created_at": graph_node.get("created_at")
             })
-    
+
     latency_ms = (time.perf_counter() - start_time) * 1000
-    
+
     return {
         "query": query,
         "results": results,
@@ -67,33 +67,33 @@ def query_documents(query: str, data_dir: str = "./slice_data", k: int = 3) -> d
 def main():
     # Default test query
     default_query = "crop stress report sector 7"
-    
+
     # Use command line argument or default
     query = sys.argv[1] if len(sys.argv) > 1 else default_query
-    
+
     print("🔍 Core Nexus Day-1 Slice - Document Query")
     print("=" * 50)
-    
+
     # Check if data exists
     data_dir = "./slice_data"
     if not os.path.exists(f"{data_dir}/vectors.json") or not os.path.exists(f"{data_dir}/graph.db"):
         print("❌ No data found! Please run 'python scripts/ingest_one.py' first.")
         sys.exit(1)
-    
+
     try:
         result = query_documents(query)
-        
+
         print(f"🎯 Query: {result['query']}")
         print(f"⚡ Query latency: {result['latency_ms']:.2f} ms")
         print(f"📊 Searched {result['total_vectors']} vectors, {result['total_nodes']} nodes")
         print(f"📝 Found {len(result['results'])} results")
-        
+
         # Performance check
         if result['latency_ms'] < 500:
             print(f"🎯 SUCCESS: Query latency {result['latency_ms']:.2f}ms < 500ms target")
         else:
             print(f"❌ FAIL: Query latency {result['latency_ms']:.2f}ms >= 500ms target")
-        
+
         if result['results']:
             print("\n--- Top Results ---")
             for i, res in enumerate(result['results'][:3], 1):
@@ -103,7 +103,7 @@ def main():
                 print(f"   Created: {res['created_at']}")
         else:
             print("\n❌ No results found! Check if documents are ingested correctly.")
-            
+
     except Exception as e:
         print(f"❌ Error during query: {e}")
         sys.exit(1)

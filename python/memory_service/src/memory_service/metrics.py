@@ -2,11 +2,18 @@
 Prometheus metrics for Core Nexus Memory Service
 """
 
-import time
 import logging
-from typing import Dict, Any, Optional
+import time
 from functools import wraps
-from prometheus_client import Counter, Histogram, Gauge, Info, generate_latest, CONTENT_TYPE_LATEST
+from typing import Any
+
+from prometheus_client import (
+    Counter,
+    Gauge,
+    Histogram,
+    Info,
+    generate_latest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +206,7 @@ def time_db_query(query_type: str):
         return wrapper
     return decorator
 
-def set_service_info(version: str, config: Dict[str, Any]):
+def set_service_info(version: str, config: dict[str, Any]):
     """Set service information metrics"""
     info_dict = {
         'version': version,
@@ -218,28 +225,28 @@ def get_metrics() -> str:
 
 class MetricsCollector:
     """Centralized metrics collection and reporting"""
-    
+
     def __init__(self):
         self.start_time = time.time()
         set_service_start_time()
-    
-    async def collect_service_metrics(self, unified_store) -> Dict[str, Any]:
+
+    async def collect_service_metrics(self, unified_store) -> dict[str, Any]:
         """Collect comprehensive service metrics"""
         try:
             # Get memory count
             if unified_store:
                 stats = await unified_store.get_stats()
                 update_memory_count(stats.get('total_memories', 0))
-                
+
                 # Update provider health
                 providers = stats.get('providers', {})
                 for provider_name, provider_info in providers.items():
                     is_healthy = provider_info.get('status') == 'healthy'
                     update_provider_health(provider_name, is_healthy)
-            
+
             # Calculate uptime
             uptime_seconds = time.time() - self.start_time
-            
+
             return {
                 'uptime_seconds': uptime_seconds,
                 'metrics_collected': True

@@ -2,15 +2,16 @@
 """
 Monitor the entity extraction progress
 """
-import time
 import subprocess
 import threading
+import time
+
 
 def monitor_progress():
     """Monitor extraction progress in a separate thread."""
     print("\n📊 EXTRACTION PROGRESS MONITOR")
     print("=" * 60)
-    
+
     start_time = time.time()
     while True:
         elapsed = time.time() - start_time
@@ -24,7 +25,7 @@ monitor_thread.start()
 
 # Run the extraction
 cmd = [
-    "poetry", "run", "python", 
+    "poetry", "run", "python",
     "python/memory_service/gemini_mega_context_pipeline.py"
 ]
 
@@ -37,7 +38,7 @@ env = {
 }
 
 # Execute and capture output
-process = subprocess.Popen(cmd, env={**subprocess.os.environ, **env}, 
+process = subprocess.Popen(cmd, env={**subprocess.os.environ, **env},
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           universal_newlines=True)
 

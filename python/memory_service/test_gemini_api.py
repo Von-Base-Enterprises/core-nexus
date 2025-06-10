@@ -3,8 +3,9 @@
 Quick test script to verify Gemini API is working
 """
 
-import google.generativeai as genai
 import json
+
+import google.generativeai as genai
 
 # Configure API
 GEMINI_API_KEY = "AIzaSyAIl8F81WwFfx5_62y19KuO12ermaDC6FQ"
@@ -47,21 +48,21 @@ try:
     response = model.generate_content(prompt)
     print("\n✅ API Response received!")
     print(f"📊 Response text:\n{response.text}")
-    
+
     # Try to parse as JSON
     try:
         data = json.loads(response.text)
-        print(f"\n✅ Valid JSON response!")
+        print("\n✅ Valid JSON response!")
         print(f"🔍 Entities found: {len(data.get('entities', []))}")
         print(f"🔗 Relationships found: {len(data.get('relationships', []))}")
-        
+
         print("\nEntities:")
         for entity in data.get('entities', []):
             print(f"  - {entity['name']} ({entity['type']})")
-            
+
     except json.JSONDecodeError:
         print("⚠️ Response is not valid JSON, but API is working")
-        
+
 except Exception as e:
     print(f"❌ API Error: {e}")
     print("\nTroubleshooting:")

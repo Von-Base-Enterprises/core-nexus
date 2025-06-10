@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import urllib.request
 import json
+import urllib.request
 
 API_URL = "https://core-nexus-memory-service.onrender.com"
 
@@ -26,15 +26,15 @@ try:
         result = json.loads(response.read())
         memories_count = len(result.get('memories', []))
         total_found = result.get('total_found', 0)
-        
+
         print(f"Memories returned: {memories_count}")
         print(f"Total found: {total_found}")
-        
+
         if memories_count <= 3:
             print("❌ STILL BROKEN: Only returning 3 or fewer memories!")
         else:
             print("✅ FIXED: Returning more than 3 memories!")
-            
+
         if 'trust_metrics' in result:
             print(f"Fix applied: {result['trust_metrics'].get('fix_applied', False)}")
 except Exception as e:
@@ -47,7 +47,7 @@ try:
         stats = json.loads(response.read())
         total = stats.get('total_memories', 0)
         print(f"Total memories reported: {total}")
-        
+
         if total <= 3:
             print("❌ PROBLEM: Stats show only 3 memories!")
             print("The fix hasn't been deployed yet!")

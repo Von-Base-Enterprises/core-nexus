@@ -1,0 +1,19 @@
+{
+  "steps": {
+    "create": "PASS",
+    "retrieve": "FAIL",
+    "search": "FAIL",
+    "cleanup": "N/A"
+  },
+  "response_times": {
+    "create": "3152ms",
+    "retrieve": "458ms",
+    "search": "1005ms",
+    "embedding": "369ms"
+  },
+  "errors": [
+    "Memory not found by ID",
+    "Memory not in top 5 search results"
+  ],
+  "total_memory_count": null
+}

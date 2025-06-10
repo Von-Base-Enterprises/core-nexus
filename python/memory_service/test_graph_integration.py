@@ -5,16 +5,16 @@ Agent 2 - Testing graph functionality with production memory service
 """
 
 import json
-from datetime import datetime
-import urllib.request
-import urllib.parse
 import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
 
 
 def test_production_api():
     """Test connection to production memory service."""
     print("=== Testing Production Memory Service Connection ===")
-    
+
     # Test health endpoint
     try:
         response = urllib.request.urlopen("https://core-nexus-memory-service.onrender.com/health")
@@ -25,7 +25,7 @@ def test_production_api():
             print(f"Providers: {list(health_data.get('providers', {}).keys())}")
     except urllib.error.HTTPError as e:
         print(f"Health Check Failed: {e.code}")
-    
+
     # Test memory stats
     try:
         response = urllib.request.urlopen("https://core-nexus-memory-service.onrender.com/memories/stats")
@@ -41,9 +41,9 @@ def test_production_api():
 def test_graph_endpoints():
     """Test the new graph endpoints."""
     print("\n=== Testing Graph Endpoints ===")
-    
+
     base_url = "https://core-nexus-memory-service.onrender.com"
-    
+
     # Test graph stats
     print("\n1. Testing /graph/stats endpoint...")
     try:
@@ -58,7 +58,7 @@ def test_graph_endpoints():
             print(f"Graph Stats Failed: {e.code}")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # Test entity exploration
     print("\n2. Testing /graph/explore endpoint...")
     try:
@@ -74,7 +74,7 @@ def test_graph_endpoints():
             print(f"Entity Explore Failed: {e.code}")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # Test graph query
     print("\n3. Testing /graph/query endpoint...")
     try:
@@ -83,7 +83,7 @@ def test_graph_endpoints():
             "limit": 10,
             "min_strength": 0.5
         }
-        
+
         req = urllib.request.Request(
             f"{base_url}/graph/query",
             data=json.dumps(query_data).encode('utf-8'),
@@ -105,7 +105,7 @@ def test_graph_endpoints():
 def demonstrate_graph_provider():
     """Demonstrate the GraphProvider implementation."""
     print("\n=== GraphProvider Implementation Summary ===")
-    
+
     features = {
         "Entity Extraction": [
             "✓ Automatic entity extraction from memory content",
@@ -135,7 +135,7 @@ def demonstrate_graph_provider():
             "✓ POST /graph/query - Advanced graph queries"
         ]
     }
-    
+
     for category, items in features.items():
         print(f"\n{category}:")
         for item in items:
@@ -145,7 +145,7 @@ def demonstrate_graph_provider():
 def show_integration_example():
     """Show how the graph integrates with existing memory service."""
     print("\n=== Integration Example ===")
-    
+
     example_code = '''
 # When a memory is stored, the GraphProvider automatically:
 
@@ -173,7 +173,7 @@ The result: Memories are now connected through a knowledge graph!
 def show_next_steps():
     """Show recommended next steps for full integration."""
     print("\n=== Next Steps for Full Integration ===")
-    
+
     steps = [
         "1. Add GraphProvider to production configuration",
         "2. Run init-db.sql to create graph tables",
@@ -183,7 +183,7 @@ def show_next_steps():
         "6. Monitor performance and adjust indexes",
         "7. Implement advanced graph algorithms (shortest path, community detection)"
     ]
-    
+
     for step in steps:
         print(f"  {step}")
 
@@ -194,22 +194,22 @@ def main():
     print("=" * 50)
     print(f"Timestamp: {datetime.now().isoformat()}")
     print("Agent: 2 (Knowledge Graph Specialist)")
-    
+
     # Test production API
     test_production_api()
-    
+
     # Test graph endpoints
     test_graph_endpoints()
-    
+
     # Show implementation details
     demonstrate_graph_provider()
-    
+
     # Show integration example
     show_integration_example()
-    
+
     # Show next steps
     show_next_steps()
-    
+
     print("\n✅ Knowledge Graph Integration Complete!")
     print("The Core Nexus memory system now has relationship understanding!")
 

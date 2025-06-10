@@ -3,37 +3,37 @@
 EMERGENCY: Test Core Nexus search functionality
 """
 
-import urllib.request
 import json
+import urllib.request
 
 API_URL = "https://core-nexus-memory-service.onrender.com"
 
 def test_search(query_text, limit=10):
     """Test search with specific query"""
     print(f"\n🔍 Testing search for: '{query_text}'")
-    
+
     data = json.dumps({
         "query": query_text,
         "limit": limit,
         "min_similarity": 0.3  # Low threshold to catch anything
     }).encode('utf-8')
-    
+
     req = urllib.request.Request(
         f"{API_URL}/memories/query",
         data=data,
         headers={'Content-Type': 'application/json'}
     )
-    
+
     try:
         with urllib.request.urlopen(req) as response:
             result = json.loads(response.read())
             memories_count = len(result.get('memories', []))
             total_found = result.get('total_found', 0)
-            
-            print(f"✅ Response received")
+
+            print("✅ Response received")
             print(f"📊 Memories returned: {memories_count}")
             print(f"📊 Total found: {total_found}")
-            
+
             if memories_count > 0:
                 print("\n📝 First result:")
                 first = result['memories'][0]
@@ -41,7 +41,7 @@ def test_search(query_text, limit=10):
                 print(f"  Similarity: {first.get('similarity_score', 'N/A')}")
             else:
                 print("❌ NO RESULTS RETURNED!")
-                
+
             return result
     except Exception as e:
         print(f"❌ Error: {e}")

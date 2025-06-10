@@ -5,6 +5,7 @@ Tests for the UserService class.
 from uuid import uuid4
 
 import pytest
+
 from example_service.models import CreateUserRequest, UpdateUserRequest
 from example_service.service import DuplicateEmailError, UserNotFoundError, UserService
 

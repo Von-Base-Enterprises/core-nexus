@@ -2,7 +2,6 @@
 FastAPI application for the example service.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query
@@ -162,7 +161,7 @@ async def delete_user(user_id: UUID) -> None:
 
 @app.get("/users", response_model=UserListResponse)
 async def list_users(
-    limit: Optional[int] = Query(None, ge=1, le=100, description="Maximum number of users to return"),
+    limit: int | None = Query(None, ge=1, le=100, description="Maximum number of users to return"),
     offset: int = Query(0, ge=0, description="Number of users to skip"),
     active_only: bool = Query(False, description="Return only active users")
 ) -> UserListResponse:

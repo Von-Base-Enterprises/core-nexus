@@ -13,18 +13,25 @@ This service leverages existing implementations:
 __version__ = "0.1.0"
 __author__ = "Core Nexus Team"
 
-from .models import (
-    MemoryRequest, MemoryResponse, QueryRequest, QueryResponse,
-    GraphNode, GraphRelationship, GraphQuery, GraphResponse, EntityInsights
-)
-from .unified_store import UnifiedVectorStore
-from .providers import PineconeProvider, ChromaProvider, PgVectorProvider, GraphProvider
-from .temporal import TemporalMemoryStore
 from .api import create_memory_app
+from .models import (
+    EntityInsights,
+    GraphNode,
+    GraphQuery,
+    GraphRelationship,
+    GraphResponse,
+    MemoryRequest,
+    MemoryResponse,
+    QueryRequest,
+    QueryResponse,
+)
+from .providers import ChromaProvider, GraphProvider, PgVectorProvider, PineconeProvider
+from .temporal import TemporalMemoryStore
+from .unified_store import UnifiedVectorStore
 
 __all__ = [
     "UnifiedVectorStore",
-    "MemoryRequest", 
+    "MemoryRequest",
     "MemoryResponse",
     "QueryRequest",
     "QueryResponse",
@@ -34,7 +41,7 @@ __all__ = [
     "GraphResponse",
     "EntityInsights",
     "PineconeProvider",
-    "ChromaProvider", 
+    "ChromaProvider",
     "PgVectorProvider",
     "GraphProvider",
     "TemporalMemoryStore",

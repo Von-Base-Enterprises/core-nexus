@@ -3,9 +3,8 @@
 EMERGENCY: Check production data status
 """
 
-import urllib.request
 import json
-import sys
+import urllib.request
 
 API_URL = "https://core-nexus-memory-service.onrender.com"
 
@@ -21,7 +20,7 @@ try:
         print("\nMemories by provider:")
         for provider, count in stats.get('memories_by_provider', {}).items():
             print(f"  - {provider}: {count}")
-            
+
         if stats.get('total_memories', 0) == 0:
             print("\n❌ CRITICAL: NO MEMORIES IN PRODUCTION!")
         else:
@@ -68,7 +67,7 @@ try:
         total_found = result.get('total_found', 0)
         print(f"Query returned: {memories} memories")
         print(f"Total found: {total_found}")
-        
+
         if total_found == 0:
             print("\n❌ QUERIES RETURNING NO DATA!")
 except Exception as e:
@@ -85,7 +84,7 @@ try:
         print(f"  Database: {pg_config.get('PGVECTOR_DATABASE', 'UNKNOWN')}")
         print(f"  User: {pg_config.get('PGVECTOR_USER', 'UNKNOWN')}")
         print(f"  Password present: {pg_config.get('PGVECTOR_PASSWORD', {}).get('present', False)}")
-        
+
         print(f"\nPrimary provider: {env.get('primary_provider', 'UNKNOWN')}")
         print(f"Embedding model: {env.get('embedding_model', 'UNKNOWN')}")
 except Exception as e:
@@ -98,11 +97,11 @@ try:
         logs = json.loads(response.read())
         print(f"Service status: {logs.get('service_status', 'UNKNOWN')}")
         print(f"Uptime: {logs.get('uptime_seconds', 0):.1f} seconds")
-        
+
         print("\nProvider status:")
         for provider, status in logs.get('providers', {}).items():
             print(f"  {provider}: {status.get('status', 'UNKNOWN')} (enabled: {status.get('enabled', False)})")
-            
+
         if logs.get('initialization_errors'):
             print("\n⚠️ Initialization errors:")
             for error in logs['initialization_errors']:
@@ -118,7 +117,7 @@ try:
     with urllib.request.urlopen(f"{API_URL}/memories/stats") as response:
         stats = json.loads(response.read())
         total = stats.get('total_memories', 0)
-        
+
         if total == 0:
             print("🚨 CRITICAL: PRODUCTION HAS NO DATA!")
             print("\nPossible causes:")

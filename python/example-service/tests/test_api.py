@@ -5,8 +5,9 @@ Tests for the FastAPI application.
 from uuid import uuid4
 
 import pytest
-from example_service.main import app, user_service
 from fastapi.testclient import TestClient
+
+from example_service.main import app, user_service
 
 
 @pytest.fixture

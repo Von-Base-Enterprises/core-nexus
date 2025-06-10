@@ -2,7 +2,6 @@
 User service implementation for the example service.
 """
 
-from typing import Optional
 from uuid import UUID
 
 from .models import CreateUserRequest, UpdateUserRequest, User
@@ -113,7 +112,7 @@ class UserService:
 
     async def list_users(
         self,
-        limit: Optional[int] = None,
+        limit: int | None = None,
         offset: int = 0,
         active_only: bool = False
     ) -> tuple[list[User], int]:

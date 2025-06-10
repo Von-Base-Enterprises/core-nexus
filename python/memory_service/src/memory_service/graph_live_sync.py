@@ -3,10 +3,8 @@ Live sync endpoints for Agent 3 dashboard
 Add these to api.py to enable real-time graph stats
 """
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
-from datetime import datetime
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +17,12 @@ async def get_graph_live_stats(conn):
         entity_count = await conn.fetchval(
             "SELECT COUNT(*) FROM graph_nodes"
         )
-        
+
         # Get relationship count
         rel_count = await conn.fetchval(
             "SELECT COUNT(*) FROM graph_relationships"
         )
-        
+
         # Get top entities by connections
         top_entities = await conn.fetch("""
             SELECT n.entity_name, n.entity_type, n.importance_score,
@@ -36,7 +34,7 @@ async def get_graph_live_stats(conn):
             ORDER BY connections DESC, n.importance_score DESC
             LIMIT 10
         """)
-        
+
         # Get entity type distribution
         type_dist = await conn.fetch("""
             SELECT entity_type, COUNT(*) as count
@@ -44,7 +42,7 @@ async def get_graph_live_stats(conn):
             GROUP BY entity_type
             ORDER BY count DESC
         """)
-        
+
         return {
             "entity_count": entity_count,
             "relationship_count": rel_count,
@@ -58,7 +56,7 @@ async def get_graph_live_stats(conn):
                 for e in top_entities
             ],
             "entity_types": {
-                row["entity_type"]: row["count"] 
+                row["entity_type"]: row["count"]
                 for row in type_dist
             },
             "last_updated": datetime.utcnow().isoformat(),

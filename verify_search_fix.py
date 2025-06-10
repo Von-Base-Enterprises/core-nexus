@@ -3,27 +3,27 @@
 Verify the emergency search fix is working
 """
 
-import urllib.request
 import json
 import time
+import urllib.request
 
 API_URL = "https://core-nexus-memory-service.onrender.com"
 
 def test_empty_query():
     """Test that empty queries now work"""
     print("\n🔍 Testing empty query (was broken, should work now)...")
-    
+
     data = json.dumps({
         "query": "",
         "limit": 10
     }).encode('utf-8')
-    
+
     req = urllib.request.Request(
         f"{API_URL}/memories/query",
         data=data,
         headers={'Content-Type': 'application/json'}
     )
-    
+
     try:
         with urllib.request.urlopen(req) as response:
             result = json.loads(response.read())
@@ -40,21 +40,21 @@ def test_empty_query():
 def test_normal_search():
     """Test that normal searches still work"""
     print("\n🔍 Testing normal search...")
-    
+
     test_queries = ["VBE", "AI", "memory", "test"]
-    
+
     for query in test_queries:
         data = json.dumps({
             "query": query,
             "limit": 5
         }).encode('utf-8')
-        
+
         req = urllib.request.Request(
             f"{API_URL}/memories/query",
             data=data,
             headers={'Content-Type': 'application/json'}
         )
-        
+
         try:
             with urllib.request.urlopen(req) as response:
                 result = json.loads(response.read())
@@ -74,7 +74,7 @@ empty_works = test_empty_query()
 if not empty_works:
     print("\n⏳ Fix not deployed yet. Waiting for deployment...")
     print("(This typically takes 2-5 minutes)")
-    
+
     # Wait and retry
     for i in range(30):  # Try for 5 minutes
         time.sleep(10)

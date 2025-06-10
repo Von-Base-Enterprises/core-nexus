@@ -3,7 +3,6 @@ Data models for the example service.
 """
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, EmailStr, Field, validator
@@ -74,17 +73,17 @@ class CreateUserRequest(BaseModel):
 class UpdateUserRequest(BaseModel):
     """Request model for updating a user."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100, description="User's full name")
-    email: Optional[EmailStr] = Field(None, description="User's email address")
-    is_active: Optional[bool] = Field(None, description="Whether the user is active")
+    name: str | None = Field(None, min_length=1, max_length=100, description="User's full name")
+    email: EmailStr | None = Field(None, description="User's email address")
+    is_active: bool | None = Field(None, description="Whether the user is active")
 
     @validator('name')
-    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+    def validate_name(cls, v: str | None) -> str | None:
         """Validate and normalize the name."""
         return v.strip() if v else v
 
     @validator('email')
-    def validate_email(cls, v: Optional[EmailStr]) -> Optional[EmailStr]:
+    def validate_email(cls, v: EmailStr | None) -> EmailStr | None:
         """Validate and normalize the email."""
         return v.lower().strip() if v else v
 
@@ -103,7 +102,7 @@ class UserListResponse(BaseModel):
 
     users: list[User] = Field(..., description="List of users")
     total: int = Field(..., description="Total number of users")
-    limit: Optional[int] = Field(None, description="Limit applied to the query")
+    limit: int | None = Field(None, description="Limit applied to the query")
     offset: int = Field(default=0, description="Offset applied to the query")
 
     class Config:
@@ -130,7 +129,7 @@ class ErrorResponse(BaseModel):
     """Error response model."""
 
     error: str = Field(..., description="Error message")
-    detail: Optional[str] = Field(None, description="Detailed error information")
+    detail: str | None = Field(None, description="Detailed error information")
 
     class Config:
         """Pydantic configuration."""

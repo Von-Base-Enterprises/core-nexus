@@ -2,13 +2,13 @@
 Database monitoring and telemetry for Core Nexus Memory Service
 """
 
-import asyncio
-import asyncpg
 import logging
-import time
-from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
-from .metrics import update_db_pool_metrics, time_db_query
+from typing import Any
+
+import asyncpg
+
+from .metrics import time_db_query, update_db_pool_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +35,12 @@ class DatabaseMonitor:
     """
     Monitors PostgreSQL database performance and connection pool health
     """
-    
+
     def __init__(self, connection_string: str):
         self.connection_string = connection_string
-        self.pool: Optional[asyncpg.Pool] = None
+        self.pool: asyncpg.Pool | None = None
         self._monitoring_enabled = False
-        
+
     async def initialize_pool(self, min_size: int = 5, max_size: int = 20) -> asyncpg.Pool:
         """Initialize connection pool with monitoring"""
         try:
@@ -54,16 +54,16 @@ class DatabaseMonitor:
                     'shared_preload_libraries': 'pg_stat_statements'
                 }
             )
-            
+
             # Enable pg_stat_statements if available
             await self._enable_query_monitoring()
             logger.info(f"Database pool initialized: {min_size}-{max_size} connections")
             return self.pool
-            
+
         except Exception as e:
             logger.error(f"Failed to initialize database pool: {e}")
             raise
-    
+
     async def _enable_query_monitoring(self):
         """Enable pg_stat_statements for query monitoring"""
         try:
@@ -72,7 +72,7 @@ class DatabaseMonitor:
                 result = await conn.fetchval(
                     "SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'"
                 )
-                
+
                 if result:
                     # Reset statistics to start fresh
                     await conn.execute("SELECT pg_stat_statements_reset()")
@@ -80,25 +80,25 @@ class DatabaseMonitor:
                     logger.info("pg_stat_statements monitoring enabled")
                 else:
                     logger.warning("pg_stat_statements extension not available")
-                    
+
         except Exception as e:
             logger.warning(f"Could not enable query monitoring: {e}")
-    
+
     async def get_pool_stats(self) -> PoolStats:
         """Get current connection pool statistics"""
         if not self.pool:
             return PoolStats(0, 0, 0, 0, 0)
-        
+
         try:
             # Get pool statistics
             size = self.pool.get_size()
             used = size - self.pool.get_idle_size()
             free = self.pool.get_idle_size()
             max_size = self.pool.get_max_size()
-            
+
             # Update Prometheus metrics
             update_db_pool_metrics(size, used)
-            
+
             return PoolStats(
                 size=size,
                 used=used,
@@ -106,16 +106,16 @@ class DatabaseMonitor:
                 waiting=0,  # asyncpg doesn't expose waiting connections
                 max_size=max_size
             )
-            
+
         except Exception as e:
             logger.error(f"Error getting pool stats: {e}")
             return PoolStats(0, 0, 0, 0, 0)
-    
-    async def get_slow_queries(self, limit: int = 10) -> List[SlowQuery]:
+
+    async def get_slow_queries(self, limit: int = 10) -> list[SlowQuery]:
         """Get slowest queries from pg_stat_statements"""
         if not self.pool or not self._monitoring_enabled:
             return []
-        
+
         try:
             async with self.pool.acquire() as conn:
                 query = """
@@ -132,9 +132,9 @@ class DatabaseMonitor:
                 ORDER BY total_exec_time DESC 
                 LIMIT $1
                 """
-                
+
                 rows = await conn.fetch(query, limit)
-                
+
                 slow_queries = []
                 for row in rows:
                     slow_queries.append(SlowQuery(
@@ -145,18 +145,18 @@ class DatabaseMonitor:
                         max_time=float(row['max_time']),
                         stddev_time=float(row['stddev_time'])
                     ))
-                
+
                 return slow_queries
-                
+
         except Exception as e:
             logger.error(f"Error getting slow queries: {e}")
             return []
-    
-    async def get_database_stats(self) -> Dict[str, Any]:
+
+    async def get_database_stats(self) -> dict[str, Any]:
         """Get comprehensive database statistics"""
         if not self.pool:
             return {}
-        
+
         try:
             async with self.pool.acquire() as conn:
                 # Get basic database info
@@ -176,7 +176,7 @@ class DatabaseMonitor:
                     FROM pg_stat_database 
                     WHERE datname = current_database()
                 """)
-                
+
                 # Get active connections
                 active_connections = await conn.fetchval("""
                     SELECT count(*) 
@@ -184,12 +184,12 @@ class DatabaseMonitor:
                     WHERE state = 'active' 
                       AND datname = current_database()
                 """)
-                
+
                 # Get cache hit ratio
                 cache_hit_ratio = 0
                 if db_info['blks_read'] + db_info['blks_hit'] > 0:
                     cache_hit_ratio = db_info['blks_hit'] / (db_info['blks_read'] + db_info['blks_hit'])
-                
+
                 return {
                     "database_name": db_info['datname'],
                     "active_connections": active_connections,
@@ -207,39 +207,39 @@ class DatabaseMonitor:
                         "deleted": db_info['tup_deleted']
                     }
                 }
-                
+
         except Exception as e:
             logger.error(f"Error getting database stats: {e}")
             return {}
-    
+
     @time_db_query("vector_search")
-    async def execute_vector_query(self, query: str, *args) -> List[Dict]:
+    async def execute_vector_query(self, query: str, *args) -> list[dict]:
         """Execute a vector search query with timing"""
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
-        
+
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *args)
             return [dict(row) for row in rows]
-    
+
     @time_db_query("memory_insert")
     async def execute_memory_insert(self, query: str, *args) -> str:
         """Execute a memory insert query with timing"""
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
-        
+
         async with self.pool.acquire() as conn:
             return await conn.fetchval(query, *args)
-    
+
     @time_db_query("general")
     async def execute_query(self, query: str, *args) -> Any:
         """Execute a general query with timing"""
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
-        
+
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, *args)
-    
+
     async def close(self):
         """Close the connection pool"""
         if self.pool:
@@ -248,9 +248,9 @@ class DatabaseMonitor:
             logger.info("Database pool closed")
 
 # Global database monitor instance
-db_monitor: Optional[DatabaseMonitor] = None
+db_monitor: DatabaseMonitor | None = None
 
-def get_db_monitor() -> Optional[DatabaseMonitor]:
+def get_db_monitor() -> DatabaseMonitor | None:
     """Get the global database monitor instance"""
     return db_monitor
 
@@ -260,24 +260,24 @@ def initialize_db_monitor(connection_string: str) -> DatabaseMonitor:
     db_monitor = DatabaseMonitor(connection_string)
     return db_monitor
 
-async def get_database_health() -> Dict[str, Any]:
+async def get_database_health() -> dict[str, Any]:
     """Get database health status for API endpoint"""
     if not db_monitor or not db_monitor.pool:
         return {
             "status": "disconnected",
             "error": "Database monitor not initialized"
         }
-    
+
     try:
         # Test connection
         async with db_monitor.pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
-        
+
         # Get statistics
         pool_stats = await db_monitor.get_pool_stats()
         db_stats = await db_monitor.get_database_stats()
         slow_queries = await db_monitor.get_slow_queries(5)
-        
+
         return {
             "status": "healthy",
             "pool": {
@@ -298,7 +298,7 @@ async def get_database_health() -> Dict[str, Any]:
                 for sq in slow_queries
             ]
         }
-        
+
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return {

@@ -5,28 +5,28 @@ Priority #1: Fix the trust crisis by cleaning entities
 """
 
 import asyncio
-import asyncpg
 import json
 import logging
-from typing import Dict, List
 from datetime import datetime
+
+import asyncpg
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("deduplication")
 
 class EntityDeduplicator:
     """Clean up duplicate entities and create canonical forms"""
-    
+
     def __init__(self, db_conn):
         self.conn = db_conn
         self.rules = {
             # Company variations
-            "Von Base Enterprises": ["VBE", "Von Base", "von base", "Von Base Enterprises (VBE)", 
+            "Von Base Enterprises": ["VBE", "Von Base", "von base", "Von Base Enterprises (VBE)",
                                    "VBE (Von Base Enterprises)", "VBE XR Labs", "Von Base Enterprises (VBE)"],
             "Nike": ["nike", "NIKE"],
             "OpenAI": ["openai", "Open AI"],
             "Microsoft": ["microsoft", "MSFT"],
-            
+
             # Technology variations
             "Artificial Intelligence": ["AI", "artificial intelligence"],
             "GPT-4": ["gpt-4", "GPT4"],
@@ -38,16 +38,16 @@ class EntityDeduplicator:
             "Pinecone": ["pinecone"],
             "Python": ["python"],
             "Langchain": ["langchain", "LangChain"],
-            
+
             # Clean up test/generic entries
             "Testing": ["The", "test", "testing"]  # Remove these
         }
-    
-    async def get_current_stats(self) -> Dict:
+
+    async def get_current_stats(self) -> dict:
         """Get current database statistics"""
         entity_count = await self.conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
         rel_count = await self.conn.fetchval("SELECT COUNT(*) FROM graph_relationships")
-        
+
         # Get entity type distribution
         type_dist = await self.conn.fetch("""
             SELECT entity_type, COUNT(*) as count 
@@ -55,17 +55,17 @@ class EntityDeduplicator:
             GROUP BY entity_type 
             ORDER BY count DESC
         """)
-        
+
         return {
             "total_entities": entity_count,
             "total_relationships": rel_count,
             "type_distribution": {row['entity_type']: row['count'] for row in type_dist}
         }
-    
+
     async def create_canonicalization_table(self):
         """Create table to track entity canonicalization"""
         logger.info("📋 Creating canonicalization table...")
-        
+
         await self.conn.execute("""
             CREATE TABLE IF NOT EXISTS entity_canonicalization (
                 alias VARCHAR(255) PRIMARY KEY,
@@ -74,58 +74,58 @@ class EntityDeduplicator:
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-    
-    async def deduplicate_simple(self) -> Dict[str, int]:
+
+    async def deduplicate_simple(self) -> dict[str, int]:
         """Simple deduplication based on rules"""
         logger.info("🚀 Starting simple deduplication...")
-        
+
         # Create canonicalization table
         await self.create_canonicalization_table()
-        
+
         # Get all entities
         all_entities = await self.conn.fetch("""
             SELECT id, entity_name, entity_type, importance_score, mention_count
             FROM graph_nodes
             ORDER BY entity_name
         """)
-        
+
         logger.info(f"📊 Found {len(all_entities)} total entities")
-        
+
         merged_count = 0
         deleted_ids = set()
-        
+
         # Process each rule
         for canonical_name, aliases in self.rules.items():
             # Find all matching entities
             matching_entities = []
             all_names = [canonical_name] + aliases
-            
+
             for entity in all_entities:
                 if entity['id'] in deleted_ids:
                     continue
-                    
+
                 entity_name = entity['entity_name']
                 # Case-insensitive match
                 if any(entity_name.lower() == name.lower() for name in all_names):
                     matching_entities.append(entity)
-            
+
             if len(matching_entities) > 1:
                 logger.info(f"🔄 Merging {len(matching_entities)} variations of '{canonical_name}'")
-                
+
                 # Keep the one with highest importance * mentions
-                best = max(matching_entities, 
+                best = max(matching_entities,
                           key=lambda e: (e['importance_score'] or 0.5) * (e['mention_count'] or 1))
-                
+
                 # Update the best one to canonical name
                 await self.conn.execute("""
                     UPDATE graph_nodes 
                     SET entity_name = $1,
                         mention_count = $2
                     WHERE id = $3
-                """, canonical_name, 
+                """, canonical_name,
                     sum(e['mention_count'] or 1 for e in matching_entities),
                     best['id'])
-                
+
                 # Merge relationships and delete others
                 for entity in matching_entities:
                     if entity['id'] != best['id']:
@@ -135,13 +135,13 @@ class EntityDeduplicator:
                             SET from_node_id = $1 
                             WHERE from_node_id = $2
                         """, best['id'], entity['id'])
-                        
+
                         await self.conn.execute("""
                             UPDATE graph_relationships 
                             SET to_node_id = $1 
                             WHERE to_node_id = $2
                         """, best['id'], entity['id'])
-                        
+
                         # Record canonicalization
                         try:
                             await self.conn.execute("""
@@ -151,19 +151,19 @@ class EntityDeduplicator:
                             """, entity['entity_name'], canonical_name, best['id'])
                         except:
                             pass
-                        
+
                         # Delete duplicate
                         await self.conn.execute("DELETE FROM graph_nodes WHERE id = $1", entity['id'])
                         deleted_ids.add(entity['id'])
                         merged_count += 1
-            
+
             elif matching_entities and canonical_name == "Testing":
                 # Delete test entities
                 for entity in matching_entities:
                     await self.conn.execute("DELETE FROM graph_nodes WHERE id = $1", entity['id'])
                     deleted_ids.add(entity['id'])
                     merged_count += 1
-        
+
         # Remove duplicate relationships
         await self.conn.execute("""
             DELETE FROM graph_relationships a
@@ -173,10 +173,10 @@ class EntityDeduplicator:
             AND a.to_node_id = b.to_node_id
             AND a.relationship_type = b.relationship_type
         """)
-        
+
         # Get final stats
         final_stats = await self.get_current_stats()
-        
+
         return {
             "entities_merged": merged_count,
             "final_stats": final_stats
@@ -185,7 +185,7 @@ class EntityDeduplicator:
 
 async def add_sync_endpoints_to_api():
     """Generate code to add sync endpoints to api.py"""
-    
+
     code = '''
 # Add these endpoints to memory_service/src/memory_service/api.py
 
@@ -242,10 +242,10 @@ async def force_refresh():
         "timestamp": datetime.utcnow().isoformat()
     })
 '''
-    
+
     with open('add_to_api.py', 'w') as f:
         f.write(code)
-    
+
     logger.info("📝 Sync endpoint code saved to 'add_to_api.py'")
 
 
@@ -254,22 +254,22 @@ async def main():
     logger.info("="*60)
     logger.info("🎯 FIXING TRUST CRISIS: Entity Deduplication")
     logger.info("="*60)
-    
+
     # Connect to database
     conn = await asyncpg.connect(
-        f"postgresql://nexus_memory_db_user:2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V@"
-        f"dpg-d12n0np5pdvs73ctmm40-a.ohio-postgres.render.com:5432/nexus_memory_db"
+        "postgresql://nexus_memory_db_user:2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V@"
+        "dpg-d12n0np5pdvs73ctmm40-a.ohio-postgres.render.com:5432/nexus_memory_db"
     )
-    
+
     try:
         # Get before stats
         before_stats = await EntityDeduplicator(conn).get_current_stats()
         logger.info(f"📊 BEFORE: {before_stats['total_entities']} entities, {before_stats['total_relationships']} relationships")
-        
+
         # Run deduplication
         deduplicator = EntityDeduplicator(conn)
         results = await deduplicator.deduplicate_simple()
-        
+
         # Show results
         print("\n" + "="*60)
         print("✅ DEDUPLICATION COMPLETE!")
@@ -278,7 +278,7 @@ async def main():
         print(f"📊 Final entity count: {results['final_stats']['total_entities']}")
         print(f"📊 Final relationship count: {results['final_stats']['total_relationships']}")
         print(f"📊 Reduction: {before_stats['total_entities'] - results['final_stats']['total_entities']} entities removed")
-        
+
         # Show top entities
         print("\n🏆 TOP ENTITIES (CLEAN & DEDUPLICATED):")
         top_entities = await conn.fetch("""
@@ -288,15 +288,15 @@ async def main():
             ORDER BY importance_score * COALESCE(mention_count, 1) DESC
             LIMIT 15
         """)
-        
+
         for i, entity in enumerate(top_entities, 1):
             score = entity['importance_score'] * (entity['mention_count'] or 1)
             mentions = entity['mention_count'] or 1
             print(f"{i:2d}. {entity['entity_name']} ({entity['entity_type']}) - Score: {score:.2f}, Mentions: {mentions}")
-        
+
         # Generate sync endpoints
         await add_sync_endpoints_to_api()
-        
+
         # Create summary for Agent 3
         summary = {
             "status": "DEDUPLICATION_COMPLETE",
@@ -313,15 +313,15 @@ async def main():
             "trust_crisis_resolved": True,
             "ready_for_dashboard": True
         }
-        
+
         with open('deduplication_complete.json', 'w') as f:
             json.dump(summary, f, indent=2)
-        
+
         print("\n🎉 TRUST CRISIS RESOLVED!")
         print(f"✅ Agent 3 can now show {results['final_stats']['total_entities']} clean entities")
         print("✅ No more duplicates - data is trustworthy")
         print("📝 Next: Add sync endpoints from 'add_to_api.py' to enable live updates")
-        
+
     finally:
         await conn.close()
 

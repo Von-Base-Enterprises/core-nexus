@@ -7,11 +7,12 @@ Render's free tier has a 15-minute idle timeout, so this keeps the service warm.
 """
 
 import asyncio
-import httpx
+import logging
 import os
 import time
-import logging
 from datetime import datetime
+
+import httpx
 
 # Configure logging
 logging.basicConfig(
@@ -31,11 +32,11 @@ RETRY_COUNT = int(os.getenv("PING_RETRIES", "3"))
 async def ping_health_endpoint(client: httpx.AsyncClient) -> tuple[int, float, str]:
     """Ping the health endpoint and return status code, response time, and details."""
     t0 = time.perf_counter()
-    
+
     try:
         response = await client.get(f"{API_URL}/health", timeout=TIMEOUT)
         dt = (time.perf_counter() - t0) * 1000
-        
+
         if response.status_code == 200:
             data = response.json()
             status = data.get('status', 'unknown')
@@ -43,7 +44,7 @@ async def ping_health_endpoint(client: httpx.AsyncClient) -> tuple[int, float, s
             return response.status_code, dt, f"status={status}, providers={providers}"
         else:
             return response.status_code, dt, f"HTTP {response.status_code}"
-            
+
     except httpx.TimeoutException:
         dt = (time.perf_counter() - t0) * 1000
         return 0, dt, "TIMEOUT"
@@ -57,23 +58,23 @@ async def ping_health_endpoint(client: httpx.AsyncClient) -> tuple[int, float, s
 
 async def keep_alive_loop():
     """Main keep-alive loop."""
-    logger.info(f"🔥 Core Nexus Keep-Alive Worker Starting")
+    logger.info("🔥 Core Nexus Keep-Alive Worker Starting")
     logger.info(f"📍 Target: {API_URL}")
     logger.info(f"⏰ Ping interval: {PING_INTERVAL}s ({PING_INTERVAL/60:.1f} minutes)")
     logger.info(f"🔄 Timeout: {TIMEOUT}s, Retries: {RETRY_COUNT}")
-    
+
     ping_count = 0
     success_count = 0
-    
+
     async with httpx.AsyncClient() as client:
         while True:
             ping_count += 1
             timestamp = datetime.now().strftime("%H:%M:%S")
-            
+
             # Try pinging with retries
             for attempt in range(1, RETRY_COUNT + 1):
                 status_code, response_time, details = await ping_health_endpoint(client)
-                
+
                 if status_code == 200:
                     success_count += 1
                     success_rate = (success_count / ping_count) * 100
@@ -96,7 +97,7 @@ async def keep_alive_loop():
                         f"({response_time:5.1f}ms) | Failed after {RETRY_COUNT} attempts | "
                         f"Success: {success_rate:.1f}%"
                     )
-            
+
             # Log summary every 12 pings (1 hour)
             if ping_count % 12 == 0:
                 success_rate = (success_count / ping_count) * 100
@@ -105,7 +106,7 @@ async def keep_alive_loop():
                     f"📊 SUMMARY: {ping_count} pings over {uptime_hours:.1f}h, "
                     f"success rate: {success_rate:.1f}% ({success_count}/{ping_count})"
                 )
-            
+
             # Wait for next ping
             await asyncio.sleep(PING_INTERVAL)
 

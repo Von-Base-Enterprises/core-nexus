@@ -2,21 +2,23 @@
 """Quick deduplication - just delete duplicates"""
 
 import asyncio
+
 import asyncpg
+
 
 async def quick_dedup():
     conn = await asyncpg.connect(
         'postgresql://nexus_memory_db_user:2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V@'
         'dpg-d12n0np5pdvs73ctmm40-a.ohio-postgres.render.com:5432/nexus_memory_db'
     )
-    
+
     print("🧹 Quick Entity Deduplication")
     print("="*50)
-    
+
     # Get initial count
     before = await conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
     print(f"Before: {before} entities")
-    
+
     # Delete specific duplicates we know about
     deletions = [
         # VBE variants
@@ -26,20 +28,20 @@ async def quick_dedup():
         ("VBE (Von Base Enterprises)", "Von Base Enterprises"),
         ("Von Base Enterprises (VBE)", "Von Base Enterprises"),
         ("VBE XR Labs", "Von Base Enterprises"),
-        
+
         # AI variants
         ("AI", "Artificial Intelligence"),
         ("artificial intelligence", "Artificial Intelligence"),
-        
+
         # Database variants
         ("Postgres", "PostgreSQL"),
         ("postgres", "PostgreSQL"),
-        
+
         # Test/junk entries
         ("The", None),
         ("Testing", None),
         ("test", None),
-        
+
         # Other duplicates
         ("drones", "Drone Technology"),
         ("drone technology", "Drone Technology"),
@@ -54,7 +56,7 @@ async def quick_dedup():
         ("core nexus", "Core Nexus"),
         ("gpt-4", "GPT-4")
     ]
-    
+
     deleted = 0
     for old_name, canonical in deletions:
         try:
@@ -70,23 +72,23 @@ async def quick_dedup():
                     "DELETE FROM graph_nodes WHERE entity_name = $1",
                     old_name
                 )
-            
+
             count = int(result.split()[-1])
             if count > 0:
                 deleted += count
                 print(f"  ✓ Deleted '{old_name}' ({count} rows)")
-        except Exception as e:
+        except Exception:
             # Ignore if already deleted or doesn't exist
             pass
-    
+
     # Get final count
     after = await conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
-    
-    print(f"\n✅ Deduplication Complete!")
+
+    print("\n✅ Deduplication Complete!")
     print(f"Before: {before} entities")
     print(f"After: {after} entities")
     print(f"Removed: {before - after} duplicates")
-    
+
     await conn.close()
     return after
 

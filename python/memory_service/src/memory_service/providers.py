@@ -8,16 +8,16 @@ from the Core Nexus codebase while preparing for pgvector integration.
 import asyncio
 import json
 import logging
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
+
 try:
     from typing import UUID
 except ImportError:
     from uuid import UUID
 
-from .unified_store import VectorProvider
 from .models import MemoryResponse, ProviderConfig
+from .unified_store import VectorProvider
 
 logger = logging.getLogger(__name__)
 
@@ -28,42 +28,42 @@ class PineconeProvider(VectorProvider):
     
     Leverages existing cloud-scale vector storage with added resilience.
     """
-    
+
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         # TODO: Initialize Pinecone client with config
         self.enabled = False  # Disabled until Pinecone integration is complete
-        
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """Store vector in Pinecone."""
         if not self.enabled:
             raise RuntimeError("Pinecone provider not enabled")
-            
+
         # TODO: Implement Pinecone storage
         # This will wrap existing functionality from the current codebase
         memory_id = uuid4()
-        
+
         logger.info(f"Stored in Pinecone: {memory_id}")
         return memory_id
-        
-    async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
+
+    async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query Pinecone for similar vectors."""
         if not self.enabled:
             return []
-            
+
         # TODO: Implement Pinecone query
         # This will wrap existing functionality from the current codebase
-        
+
         return []
-        
-    async def health_check(self) -> Dict[str, Any]:
+
+    async def health_check(self) -> dict[str, Any]:
         """Check Pinecone health."""
         return {
             'status': 'disabled',
             'reason': 'Pinecone integration pending'
         }
-        
-    async def get_stats(self) -> Dict[str, Any]:
+
+    async def get_stats(self) -> dict[str, Any]:
         """Get Pinecone statistics."""
         return {
             'provider': 'pinecone',
@@ -78,18 +78,18 @@ class ChromaProvider(VectorProvider):
     
     Fast, embedded solution perfect for development and edge deployments.
     """
-    
+
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.collection = None
         self._initialize_chroma(config.config)
-        
-    def _initialize_chroma(self, config: Dict[str, Any]):
+
+    def _initialize_chroma(self, config: dict[str, Any]):
         """Initialize ChromaDB collection."""
         try:
             import chromadb
             from chromadb.config import Settings
-            
+
             # Initialize ChromaDB client
             persist_dir = config.get('persist_directory', './chroma_db')
             self.client = chromadb.PersistentClient(
@@ -99,7 +99,7 @@ class ChromaProvider(VectorProvider):
                     allow_reset=True
                 )
             )
-            
+
             # Get or create collection
             collection_name = config.get('collection_name', 'core_nexus_memories')
             try:
@@ -111,7 +111,7 @@ class ChromaProvider(VectorProvider):
                     metadata={"hnsw:space": "cosine"}
                 )
                 logger.info(f"Created new ChromaDB collection: {collection_name}")
-                
+
         except ImportError:
             logger.error("ChromaDB not installed. Install with: pip install chromadb")
             self.enabled = False
@@ -120,18 +120,17 @@ class ChromaProvider(VectorProvider):
             logger.error(f"Failed to initialize ChromaDB: {e}")
             self.enabled = False
             raise
-            
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """Store vector in ChromaDB."""
         if not self.collection:
             raise RuntimeError("ChromaDB not initialized")
-            
+
         memory_id = uuid4()
-        
+
         # ChromaDB is synchronous, so we run in executor
-        import asyncio
         loop = asyncio.get_event_loop()
-        
+
         def _store():
             self.collection.add(
                 embeddings=[embedding],
@@ -139,20 +138,19 @@ class ChromaProvider(VectorProvider):
                 metadatas=[metadata],
                 ids=[str(memory_id)]
             )
-            
+
         await loop.run_in_executor(None, _store)
-        
+
         logger.debug(f"Stored in ChromaDB: {memory_id}")
         return memory_id
-        
-    async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
+
+    async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query ChromaDB for similar vectors."""
         if not self.collection:
             return []
-            
-        import asyncio
+
         loop = asyncio.get_event_loop()
-        
+
         def _query():
             # Apply filters if provided
             where_clause = {}
@@ -162,18 +160,18 @@ class ChromaProvider(VectorProvider):
                 for key, value in filters.items():
                     if key not in ['limit', 'offset']:  # Skip non-metadata filters
                         where_clause[key] = value
-                        
+
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=limit,
                 where=where_clause if where_clause else None,
                 include=['metadatas', 'documents', 'distances']
             )
-            
+
             return results
-            
+
         results = await loop.run_in_executor(None, _query)
-        
+
         # Convert ChromaDB results to MemoryResponse objects
         memories = []
         if results and results['ids'] and len(results['ids'][0]) > 0:
@@ -188,10 +186,10 @@ class ChromaProvider(VectorProvider):
                     created_at=results['metadatas'][0][i].get('created_at', '')
                 )
                 memories.append(memory)
-                
+
         return memories
-        
-    async def health_check(self) -> Dict[str, Any]:
+
+    async def health_check(self) -> dict[str, Any]:
         """Check ChromaDB health."""
         try:
             if self.collection:
@@ -213,8 +211,8 @@ class ChromaProvider(VectorProvider):
                 'status': 'unhealthy',
                 'error': str(e)
             }
-            
-    async def get_stats(self) -> Dict[str, Any]:
+
+    async def get_stats(self) -> dict[str, Any]:
         """Get ChromaDB statistics."""
         try:
             if self.collection:
@@ -244,39 +242,38 @@ class PgVectorProvider(VectorProvider):
     Combines the reliability of PostgreSQL with vector similarity search.
     Perfect for unified queries across structured and vector data.
     """
-    
+
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.connection_pool = None
         self.table_name = config.config.get('table_name', 'vector_memories')
         self.embedding_dim = config.config.get('embedding_dim', 1536)
         self._initialize_pool(config.config)
-        
-    def _initialize_pool(self, config: Dict[str, Any]):
+
+    def _initialize_pool(self, config: dict[str, Any]):
         """Initialize async connection pool."""
-        import asyncio
-        
+
         async def init_pool():
             try:
                 import asyncpg
-                
+
                 # Build connection string
                 conn_str = (
                     f"postgresql://{config['user']}:{config['password']}@"
                     f"{config['host']}:{config['port']}/{config['database']}"
                 )
-                
+
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
                     min_size=5,
                     max_size=20,
                     command_timeout=60
                 )
-                
+
                 # Ensure pgvector extension is enabled
                 async with self.connection_pool.acquire() as conn:
                     await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                    
+
                     # Create table if not exists
                     await conn.execute(f"""
                         CREATE TABLE IF NOT EXISTS {self.table_name} (
@@ -289,7 +286,7 @@ class PgVectorProvider(VectorProvider):
                             updated_at TIMESTAMP DEFAULT NOW()
                         )
                     """)
-                    
+
                     # Create indexes
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding 
@@ -297,20 +294,20 @@ class PgVectorProvider(VectorProvider):
                         USING ivfflat (embedding vector_cosine_ops)
                         WITH (lists = 100)
                     """)
-                    
+
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_metadata 
                         ON {self.table_name} 
                         USING GIN (metadata)
                     """)
-                    
+
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_importance 
                         ON {self.table_name} (importance_score DESC)
                     """)
-                    
+
                 logger.info("PgVector provider initialized successfully")
-                
+
             except ImportError:
                 logger.error("asyncpg not installed. Install with: pip install asyncpg")
                 self.enabled = False
@@ -319,7 +316,7 @@ class PgVectorProvider(VectorProvider):
                 logger.error(f"Failed to initialize PgVector: {e}")
                 self.enabled = False
                 raise
-                
+
         # Run initialization
         try:
             loop = asyncio.get_event_loop()
@@ -332,47 +329,47 @@ class PgVectorProvider(VectorProvider):
         except RuntimeError:
             # No event loop, create one
             asyncio.run(init_pool())
-            
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """Store vector in PostgreSQL."""
         if not self.connection_pool:
             raise RuntimeError("PgVector not initialized")
-            
+
         memory_id = uuid4()
-        
+
         async with self.connection_pool.acquire() as conn:
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
-            
+
             # Serialize metadata to JSON string for PostgreSQL JSONB column
             metadata_json = json.dumps(metadata) if metadata else '{}'
-            
+
             await conn.execute(f"""
                 INSERT INTO {self.table_name} 
                 (id, content, embedding, metadata, importance_score)
                 VALUES ($1, $2, $3::vector, $4::jsonb, $5)
-            """, 
-                memory_id, 
-                content, 
+            """,
+                memory_id,
+                content,
                 embedding_str,
                 metadata_json,
                 metadata.get('importance_score', 0.5)
             )
-            
+
         logger.debug(f"Stored in PgVector: {memory_id}")
         return memory_id
-        
-    async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
+
+    async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query PostgreSQL for similar vectors."""
         if not self.connection_pool:
             return []
-            
+
         async with self.connection_pool.acquire() as conn:
             # Build query with filters
             where_clauses = []
             params = []
             param_count = 2  # $1 is embedding, $2 is limit
-            
+
             # Add metadata filters
             if filters:
                 for key, value in filters.items():
@@ -380,12 +377,12 @@ class PgVectorProvider(VectorProvider):
                         where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
                         params.append(str(value))
                         param_count += 1
-                        
+
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-            
+
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
-            
+
             # Query with cosine similarity
             query = f"""
                 SELECT 
@@ -400,9 +397,9 @@ class PgVectorProvider(VectorProvider):
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2
             """
-            
+
             rows = await conn.fetch(query, embedding_str, limit, *params)
-            
+
             # Convert to MemoryResponse objects
             memories = []
             for row in rows:
@@ -416,34 +413,34 @@ class PgVectorProvider(VectorProvider):
                     created_at=row['created_at'].isoformat() if row['created_at'] else ''
                 )
                 memories.append(memory)
-                
+
         return memories
-        
-    async def health_check(self) -> Dict[str, Any]:
+
+    async def health_check(self) -> dict[str, Any]:
         """Check PostgreSQL health."""
         if not self.connection_pool:
             return {
                 'status': 'unhealthy',
                 'error': 'Connection pool not initialized'
             }
-            
+
         try:
             async with self.connection_pool.acquire() as conn:
                 # Check connection
                 await conn.fetchval("SELECT 1")
-                
+
                 # Get table stats
                 count = await conn.fetchval(
                     f"SELECT COUNT(*) FROM {self.table_name}"
                 )
-                
+
                 # Check if pgvector is enabled
                 pgvector_enabled = await conn.fetchval("""
                     SELECT COUNT(*) > 0 
                     FROM pg_extension 
                     WHERE extname = 'vector'
                 """)
-                
+
                 return {
                     'status': 'healthy',
                     'details': {
@@ -458,15 +455,15 @@ class PgVectorProvider(VectorProvider):
                 'status': 'unhealthy',
                 'error': str(e)
             }
-            
-    async def get_stats(self) -> Dict[str, Any]:
+
+    async def get_stats(self) -> dict[str, Any]:
         """Get PgVector statistics."""
         if not self.connection_pool:
             return {
                 'provider': 'pgvector',
                 'error': 'Connection pool not initialized'
             }
-            
+
         try:
             async with self.connection_pool.acquire() as conn:
                 stats = await conn.fetchrow(f"""
@@ -478,7 +475,7 @@ class PgVectorProvider(VectorProvider):
                         pg_size_pretty(pg_total_relation_size('{self.table_name}')) as table_size
                     FROM {self.table_name}
                 """)
-                
+
                 return {
                     'provider': 'pgvector',
                     'total_memories': stats['total_memories'],
@@ -494,12 +491,12 @@ class PgVectorProvider(VectorProvider):
                 'provider': 'pgvector',
                 'error': str(e)
             }
-            
+
     async def delete(self, memory_id: UUID) -> bool:
         """Delete a memory from PgVector."""
         if not self.connection_pool:
             return False
-            
+
         try:
             async with self.connection_pool.acquire() as conn:
                 result = await conn.execute(
@@ -510,12 +507,12 @@ class PgVectorProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
             return False
-            
+
     async def update_importance(self, memory_id: UUID, importance_score: float) -> bool:
         """Update importance score for a memory."""
         if not self.connection_pool:
             return False
-            
+
         try:
             async with self.connection_pool.acquire() as conn:
                 result = await conn.execute(f"""
@@ -527,7 +524,7 @@ class PgVectorProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to update importance for {memory_id}: {e}")
             return False
-            
+
     async def close(self):
         """Close the connection pool."""
         if self.connection_pool:
@@ -547,7 +544,7 @@ class GraphProvider(VectorProvider):
     Extends the existing provider pattern to add relationship understanding
     to memories, transforming isolated data into connected intelligence.
     """
-    
+
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.connection_pool = config.config.get('connection_pool')  # Reuse existing pool
@@ -555,7 +552,7 @@ class GraphProvider(VectorProvider):
         self.table_prefix = config.config.get('table_prefix', 'graph')
         self.entity_extractor = None  # Will be initialized lazily
         self._pool_initialized = bool(self.connection_pool)  # Already initialized if pool provided
-    
+
     async def _ensure_pool(self):
         """Ensure connection pool is initialized (lazy initialization)."""
         if not self._pool_initialized:
@@ -567,7 +564,7 @@ class GraphProvider(VectorProvider):
                 # Create new pool from connection string (fallback)
                 try:
                     import asyncpg
-                    
+
                     self.connection_pool = await asyncpg.create_pool(
                         self.connection_string,
                         min_size=2,
@@ -576,14 +573,14 @@ class GraphProvider(VectorProvider):
                     )
                     self._pool_initialized = True
                     logger.info("Graph provider created new connection pool")
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to initialize graph provider pool: {e}")
                     self.enabled = False
                     raise
             else:
                 raise RuntimeError("GraphProvider requires either connection_pool or connection_string")
-    
+
     async def _get_or_create_embedding_model(self):
         """Get or create the embedding model for entity embeddings."""
         if not hasattr(self, '_embedding_model') or self._embedding_model is None:
@@ -595,11 +592,11 @@ class GraphProvider(VectorProvider):
                 logger.warning("sentence-transformers not available, using mock embeddings")
                 self._embedding_model = None
         return self._embedding_model
-    
-    async def _extract_entities(self, content: str) -> List[Dict[str, Any]]:
+
+    async def _extract_entities(self, content: str) -> list[dict[str, Any]]:
         """Extract entities from memory content using NLP."""
         entities = []
-        
+
         try:
             # Try to use spaCy for entity extraction
             if self.entity_extractor is None:
@@ -609,7 +606,7 @@ class GraphProvider(VectorProvider):
                 except:
                     logger.warning("spaCy not available, using simple pattern matching")
                     self.entity_extractor = "simple"
-            
+
             if self.entity_extractor != "simple":
                 # Use spaCy NER
                 doc = self.entity_extractor(content)
@@ -635,12 +632,12 @@ class GraphProvider(VectorProvider):
                         'end': match.end(),
                         'confidence': 0.5
                     })
-            
+
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
-        
+
         return entities
-    
+
     def _map_spacy_to_entity_type(self, spacy_label: str) -> str:
         """Map spaCy entity labels to our entity types."""
         mapping = {
@@ -662,29 +659,29 @@ class GraphProvider(VectorProvider):
             'PERCENT': 'concept'
         }
         return mapping.get(spacy_label, 'other')
-    
-    async def _infer_relationships(self, entities: List[Dict[str, Any]], content: str) -> List[Dict[str, Any]]:
+
+    async def _infer_relationships(self, entities: list[dict[str, Any]], content: str) -> list[dict[str, Any]]:
         """Infer relationships between entities based on context."""
         relationships = []
-        
+
         # Simple co-occurrence based relationships
         for i, entity1 in enumerate(entities):
             for j, entity2 in enumerate(entities):
                 if i >= j:  # Avoid duplicates and self-relationships
                     continue
-                
+
                 # Calculate distance between entities
                 distance = abs(entity1['start'] - entity2['start'])
-                
+
                 # If entities are close in text, they're likely related
                 if distance < 200:  # Within ~200 characters
                     strength = 1.0 - (distance / 200.0)  # Closer = stronger
-                    
+
                     # Determine relationship type based on entity types
                     rel_type = self._determine_relationship_type(
                         entity1['type'], entity2['type'], content[entity1['start']:entity2['end']]
                     )
-                    
+
                     relationships.append({
                         'from_entity': entity1['name'],
                         'to_entity': entity2['name'],
@@ -692,14 +689,14 @@ class GraphProvider(VectorProvider):
                         'strength': strength,
                         'confidence': min(entity1['confidence'], entity2['confidence'])
                     })
-        
+
         return relationships
-    
+
     def _determine_relationship_type(self, type1: str, type2: str, context: str) -> str:
         """Determine relationship type based on entity types and context."""
         # Simple heuristics for relationship type
         context_lower = context.lower()
-        
+
         if 'work' in context_lower or 'employ' in context_lower:
             return 'works_at'
         elif 'develop' in context_lower or 'create' in context_lower or 'build' in context_lower:
@@ -714,8 +711,8 @@ class GraphProvider(VectorProvider):
             return 'located_at'
         else:
             return 'relates_to'  # Default relationship
-    
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """
         Store memory and extract knowledge graph components.
         
@@ -727,20 +724,20 @@ class GraphProvider(VectorProvider):
         """
         # Ensure pool is initialized
         await self._ensure_pool()
-        
+
         if not self.connection_pool:
             raise RuntimeError("Graph provider not initialized")
-        
+
         memory_id = uuid4()
-        
+
         async with self.connection_pool.acquire() as conn:
             try:
                 # Extract entities from content
                 entities = await self._extract_entities(content)
-                
+
                 # Get embedding model
                 embedding_model = await self._get_or_create_embedding_model()
-                
+
                 # Store entities as graph nodes
                 entity_ids = {}
                 for entity in entities:
@@ -748,13 +745,13 @@ class GraphProvider(VectorProvider):
                     entity_embedding = None
                     if embedding_model:
                         entity_embedding = embedding_model.encode(entity['name']).tolist()
-                    
+
                     # Check if entity already exists
                     existing = await conn.fetchrow("""
                         SELECT id, mention_count FROM graph_nodes 
                         WHERE entity_name = $1 AND entity_type = $2
                     """, entity['name'], entity['type'])
-                    
+
                     if existing:
                         # Update existing entity
                         entity_id = existing['id']
@@ -769,31 +766,31 @@ class GraphProvider(VectorProvider):
                         # Create new entity
                         entity_id = uuid4()
                         embedding_str = '[' + ','.join(map(str, entity_embedding)) + ']' if entity_embedding else None
-                        
+
                         await conn.execute("""
                             INSERT INTO graph_nodes 
                             (id, entity_type, entity_name, embedding, importance_score)
                             VALUES ($1, $2, $3, $4::vector, $5)
-                        """, entity_id, entity['type'], entity['name'], 
+                        """, entity_id, entity['type'], entity['name'],
                             embedding_str, metadata.get('importance_score', 0.5))
-                    
+
                     entity_ids[entity['name']] = entity_id
-                    
+
                     # Link entity to memory
                     await conn.execute("""
                         INSERT INTO memory_entity_map (memory_id, entity_id)
                         VALUES ($1, $2)
                         ON CONFLICT DO NOTHING
                     """, memory_id, entity_id)
-                
+
                 # Infer and store relationships
                 relationships = await self._infer_relationships(entities, content)
-                
+
                 for rel in relationships:
                     if rel['from_entity'] in entity_ids and rel['to_entity'] in entity_ids:
                         # Calculate ADM score for relationship
                         adm_score = rel['strength'] * rel['confidence'] * metadata.get('importance_score', 0.5)
-                        
+
                         await conn.execute("""
                             INSERT INTO graph_relationships 
                             (from_node_id, to_node_id, relationship_type, strength, confidence, adm_score, metadata)
@@ -805,16 +802,16 @@ class GraphProvider(VectorProvider):
                         """, entity_ids[rel['from_entity']], entity_ids[rel['to_entity']],
                             rel['type'], rel['strength'], rel['confidence'],
                             {'context': content[entities[0]['start']:entities[-1]['end']][:200]})
-                
+
                 logger.info(f"Stored memory {memory_id} with {len(entities)} entities and {len(relationships)} relationships")
-                
+
             except Exception as e:
                 logger.error(f"Failed to process graph data: {e}")
                 # Don't fail the whole operation if graph processing fails
-        
+
         return memory_id
-    
-    async def query(self, query_embedding: List[float], limit: int, filters: Dict[str, Any]) -> List[MemoryResponse]:
+
+    async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """
         Query memories using graph relationships.
         
@@ -825,18 +822,18 @@ class GraphProvider(VectorProvider):
         """
         # Ensure pool is initialized
         await self._ensure_pool()
-        
+
         if not self.connection_pool:
             return []
-        
+
         memories = []
-        
+
         async with self.connection_pool.acquire() as conn:
             try:
                 # If entity_name filter is provided, use graph traversal
                 if filters.get('entity_name'):
                     entity_name = filters['entity_name']
-                    
+
                     # Find memories connected to this entity through the graph
                     rows = await conn.fetch("""
                         WITH entity_memories AS (
@@ -858,7 +855,7 @@ class GraphProvider(VectorProvider):
                         ORDER BY em.relationship_strength DESC NULLS LAST
                         LIMIT $2
                     """, entity_name, limit)
-                    
+
                     for row in rows:
                         memories.append(MemoryResponse(
                             id=row['id'],
@@ -868,22 +865,22 @@ class GraphProvider(VectorProvider):
                             similarity_score=float(row['relationship_strength']),
                             created_at=row['created_at']
                         ))
-                
+
             except Exception as e:
                 logger.error(f"Graph query failed: {e}")
-        
+
         return memories
-    
-    async def get_relationships(self, node_id: UUID) -> List[Dict[str, Any]]:
+
+    async def get_relationships(self, node_id: UUID) -> list[dict[str, Any]]:
         """Get all relationships for a specific node."""
         # Ensure pool is initialized
         await self._ensure_pool()
-        
+
         if not self.connection_pool:
             return []
-        
+
         relationships = []
-        
+
         async with self.connection_pool.acquire() as conn:
             try:
                 rows = await conn.fetch("""
@@ -899,7 +896,7 @@ class GraphProvider(VectorProvider):
                     WHERE gr.from_node_id = $1 OR gr.to_node_id = $1
                     ORDER BY gr.strength DESC
                 """, node_id)
-                
+
                 for row in rows:
                     relationships.append({
                         'id': row['id'],
@@ -918,33 +915,33 @@ class GraphProvider(VectorProvider):
                         'confidence': float(row['confidence']),
                         'occurrences': row['occurrence_count']
                     })
-                    
+
             except Exception as e:
                 logger.error(f"Failed to get relationships: {e}")
-        
+
         return relationships
-    
-    async def health_check(self) -> Dict[str, Any]:
+
+    async def health_check(self) -> dict[str, Any]:
         """Check health of the graph provider."""
         # Ensure pool is initialized
         await self._ensure_pool()
-        
+
         if not self.connection_pool:
             return {
                 'status': 'unhealthy',
                 'error': 'Connection pool not initialized',
                 'details': {}
             }
-        
+
         try:
             async with self.connection_pool.acquire() as conn:
                 # Check database connection
                 await conn.fetchval("SELECT 1")
-                
+
                 # Get graph statistics
                 node_count = await conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
                 relationship_count = await conn.fetchval("SELECT COUNT(*) FROM graph_relationships")
-                
+
                 return {
                     'status': 'healthy',
                     'details': {
@@ -961,15 +958,15 @@ class GraphProvider(VectorProvider):
                 'error': str(e),
                 'details': {}
             }
-    
-    async def get_stats(self) -> Dict[str, Any]:
+
+    async def get_stats(self) -> dict[str, Any]:
         """Get statistics for the graph provider."""
         # Ensure pool is initialized
         await self._ensure_pool()
-        
+
         if not self.connection_pool:
             return {'error': 'Provider not initialized'}
-        
+
         try:
             async with self.connection_pool.acquire() as conn:
                 stats = await conn.fetchrow("""
@@ -981,7 +978,7 @@ class GraphProvider(VectorProvider):
                         (SELECT AVG(mention_count) FROM graph_nodes) as avg_mentions_per_entity,
                         (SELECT AVG(occurrence_count) FROM graph_relationships) as avg_occurrences_per_relationship
                 """)
-                
+
                 return {
                     'total_nodes': stats['total_nodes'],
                     'total_relationships': stats['total_relationships'],
