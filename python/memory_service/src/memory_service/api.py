@@ -70,11 +70,11 @@ async def lifespan(app: FastAPI):
     # Use Render PostgreSQL internal hostname for better performance
     pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
     
-    # Validate required password is set
-    pgvector_password = os.getenv("PGVECTOR_PASSWORD")
+    # Validate required password is set (check both possible env var names)
+    pgvector_password = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
     if not pgvector_password:
-        logger.error("PGVECTOR_PASSWORD environment variable is required but not set")
-        raise ValueError("PGVECTOR_PASSWORD must be set in environment variables")
+        logger.error("PGPASSWORD or PGVECTOR_PASSWORD environment variable is required but not set")
+        raise ValueError("PGPASSWORD or PGVECTOR_PASSWORD must be set in environment variables")
     
     pgvector_config = ProviderConfig(
         name="pgvector",
