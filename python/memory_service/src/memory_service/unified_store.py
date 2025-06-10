@@ -406,8 +406,33 @@ class UnifiedVectorStore:
 
     async def _query_provider(self, provider: VectorProvider, query_embedding: list[float],
                              request: QueryRequest) -> list[MemoryResponse]:
-        """Query a single provider."""
-        return await provider.query(query_embedding, request.limit * 2, request.filters)
+        """Query a single provider with proper error handling."""
+        try:
+            # Check if this is an empty query (zero vector)
+            is_empty_query = all(v == 0.0 for v in query_embedding)
+            
+            if is_empty_query:
+                # Use get_recent_memories if available (currently only PgVectorProvider)
+                if hasattr(provider, 'get_recent_memories'):
+                    logger.info(f"Using get_recent_memories for empty query on {provider.name}")
+                    results = await provider.get_recent_memories(request.limit * 2, request.filters)
+                else:
+                    # Fall back to regular query for providers without get_recent_memories
+                    logger.info(f"Provider {provider.name} doesn't support get_recent_memories, using regular query")
+                    results = await provider.query(query_embedding, request.limit * 2, request.filters)
+            else:
+                # Regular vector similarity query
+                results = await provider.query(query_embedding, request.limit * 2, request.filters)
+            
+            # Update provider usage stats
+            self.stats['provider_usage'][provider.name] = self.stats['provider_usage'].get(provider.name, 0) + 1
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Query failed for provider {provider.name}: {e}")
+            # Re-raise the exception to be handled by _query_multiple_providers
+            raise
 
     async def _query_multiple_providers(self, providers: list[VectorProvider],
                                        query_embedding: list[float], request: QueryRequest) -> tuple[list[MemoryResponse], list[str]]:

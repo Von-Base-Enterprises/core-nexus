@@ -416,6 +416,66 @@ class PgVectorProvider(VectorProvider):
 
         return memories
 
+    async def get_recent_memories(self, limit: int, filters: dict[str, Any] | None = None) -> list[MemoryResponse]:
+        """
+        Get recent memories without vector similarity search.
+        
+        This method bypasses the vector similarity calculation entirely,
+        returning memories ordered by creation date (newest first).
+        Perfect for "get all" queries where relevance isn't needed.
+        """
+        if not self.connection_pool:
+            return []
+        
+        async with self.connection_pool.acquire() as conn:
+            # Build query with filters
+            where_clauses = []
+            params = []
+            param_count = 1  # $1 is limit
+            
+            # Add metadata filters
+            if filters:
+                for key, value in filters.items():
+                    if key not in ['limit', 'offset']:
+                        where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                        params.append(str(value))
+                        param_count += 1
+            
+            where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            
+            # Query WITHOUT vector similarity - just get recent memories
+            query = f"""
+                SELECT
+                    id,
+                    content,
+                    metadata,
+                    importance_score,
+                    created_at
+                FROM {self.table_name}
+                {where_clause}
+                ORDER BY created_at DESC
+                LIMIT $1
+            """
+            
+            rows = await conn.fetch(query, limit, *params)
+            
+            # Convert to MemoryResponse objects
+            memories = []
+            for row in rows:
+                memory = MemoryResponse(
+                    id=row['id'],
+                    content=row['content'],
+                    metadata=row['metadata'] if isinstance(row['metadata'], dict) else {},
+                    embedding=[],  # Don't return full embeddings
+                    importance_score=float(row['importance_score']),
+                    similarity_score=1.0,  # Default high score since no similarity calc
+                    created_at=row['created_at'].isoformat() if row['created_at'] else ''
+                )
+                memories.append(memory)
+        
+        logger.debug(f"Retrieved {len(memories)} recent memories from PgVector")
+        return memories
+
     async def health_check(self) -> dict[str, Any]:
         """Check PostgreSQL health."""
         if not self.connection_pool:
