@@ -55,8 +55,8 @@ logger = get_logger("api")
 
 # Global instances
 unified_store: UnifiedVectorStore | None = None
-usage_collector: Optional['UsageCollector'] = None
-memory_dashboard: Optional['MemoryDashboard'] = None
+usage_collector: Any = None  # Type: UsageCollector when implemented
+memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
 bulk_import_service: BulkImportService | None = None
 memory_export_service: MemoryExportService | None = None
 
