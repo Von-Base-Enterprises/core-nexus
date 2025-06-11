@@ -6,6 +6,7 @@ wrapping the UnifiedVectorStore with proper error handling and validation.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -1565,6 +1566,192 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Feedback recording failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to record feedback")
+
+    # =====================================================
+    # DEDUPLICATION ENDPOINTS (Enterprise Features)
+    # =====================================================
+
+    @app.get("/dedup/stats")
+    async def get_deduplication_stats(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Get comprehensive deduplication statistics.
+
+        Shows duplicate detection rates, storage savings, and performance metrics.
+        """
+        try:
+            if not store.deduplication_service:
+                return {
+                    "status": "disabled",
+                    "message": "Deduplication service not enabled",
+                    "enable_instructions": "Set DEDUPLICATION_MODE to 'log_only' or 'active'"
+                }
+            
+            stats = await store.deduplication_service.get_stats()
+            
+            # Add unified store stats
+            stats['store_stats'] = {
+                'duplicates_prevented': store.stats.get('duplicates_prevented', 0),
+                'storage_saved_bytes': store.stats.get('storage_saved_bytes', 0),
+                'storage_saved_mb': round(store.stats.get('storage_saved_bytes', 0) / (1024 * 1024), 2)
+            }
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Failed to get deduplication stats: {e}")
+            raise HTTPException(status_code=500, detail="Failed to get deduplication statistics")
+
+    @app.post("/dedup/check")
+    async def check_duplicate_content(
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Check if content would be considered a duplicate.
+
+        Useful for pre-checking before storing memories.
+        """
+        try:
+            if not store.deduplication_service:
+                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
+            
+            result = await store.deduplication_service.check_duplicate(content, metadata)
+            
+            return {
+                "is_duplicate": result.is_duplicate,
+                "confidence_score": result.confidence_score,
+                "decision": result.decision.value,
+                "reason": result.reason,
+                "existing_memory_id": str(result.existing_memory.id) if result.existing_memory else None,
+                "content_hash": result.content_hash,
+                "similarity_score": result.similarity_score
+            }
+            
+        except Exception as e:
+            logger.error(f"Duplicate check failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to check for duplicates")
+
+    @app.post("/dedup/review/{memory_id}")
+    async def mark_false_positive(
+        memory_id: str,
+        actual_unique_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Mark a deduplication decision as false positive.
+
+        This helps improve the deduplication system over time.
+        """
+        try:
+            if not store.deduplication_service:
+                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
+            
+            from uuid import UUID
+            await store.deduplication_service.mark_false_positive(
+                UUID(memory_id), 
+                UUID(actual_unique_id)
+            )
+            
+            return {
+                "status": "success",
+                "message": "False positive recorded successfully",
+                "impact": "Future deduplication accuracy will be improved"
+            }
+            
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid UUID format")
+        except Exception as e:
+            logger.error(f"Failed to mark false positive: {e}")
+            raise HTTPException(status_code=500, detail="Failed to record false positive")
+
+    @app.delete("/dedup/cleanup")
+    async def cleanup_orphaned_hashes(
+        days: int = 90,
+        admin_key: str | None = None,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Clean up orphaned content hashes from deleted memories.
+
+        Requires admin key for safety.
+        """
+        # Simple security check
+        if admin_key != os.getenv("ADMIN_KEY", "dedup-cleanup-2025"):
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            if not store.deduplication_service:
+                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
+            
+            deleted_count = await store.deduplication_service.cleanup_old_hashes(days)
+            
+            return {
+                "status": "success",
+                "deleted_hashes": deleted_count,
+                "message": f"Cleaned up {deleted_count} orphaned hashes older than {days} days"
+            }
+            
+        except Exception as e:
+            logger.error(f"Cleanup failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to cleanup orphaned hashes")
+
+    @app.post("/dedup/backfill")
+    async def backfill_content_hashes(
+        limit: int = 1000,
+        admin_key: str | None = None,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Backfill content hashes for existing memories.
+
+        Useful when enabling deduplication on existing data.
+        """
+        # Simple security check
+        if admin_key != os.getenv("ADMIN_KEY", "dedup-backfill-2025"):
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            # Get pgvector provider
+            pgvector = store.providers.get('pgvector')
+            if not pgvector or not pgvector.enabled:
+                raise HTTPException(status_code=503, detail="PgVector provider not available")
+            
+            async with pgvector.connection_pool.acquire() as conn:
+                # Find memories without hashes
+                rows = await conn.fetch("""
+                    SELECT vm.id, vm.content
+                    FROM vector_memories vm
+                    LEFT JOIN memory_content_hashes mch ON vm.id = mch.memory_id
+                    WHERE mch.id IS NULL
+                    ORDER BY vm.created_at DESC
+                    LIMIT $1
+                """, limit)
+                
+                # Hash and insert
+                hashed_count = 0
+                for row in rows:
+                    try:
+                        content_hash = hashlib.sha256(row['content'].encode()).hexdigest()
+                        await conn.execute("""
+                            INSERT INTO memory_content_hashes (content_hash, memory_id, content_length)
+                            VALUES ($1, $2, $3)
+                            ON CONFLICT (content_hash, memory_id) DO NOTHING
+                        """, content_hash, row['id'], len(row['content']))
+                        hashed_count += 1
+                    except Exception as e:
+                        logger.error(f"Failed to hash memory {row['id']}: {e}")
+                
+                return {
+                    "status": "success",
+                    "memories_processed": len(rows),
+                    "hashes_created": hashed_count,
+                    "message": f"Backfilled {hashed_count} content hashes"
+                }
+                
+        except Exception as e:
+            logger.error(f"Backfill failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to backfill content hashes")
 
     # =====================================================
     # KNOWLEDGE GRAPH ENDPOINTS (Added by Agent 2)

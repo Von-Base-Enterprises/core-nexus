@@ -354,6 +354,107 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- =====================================================
+-- DEDUPLICATION TABLES (Enterprise-Grade)
+-- =====================================================
+
+-- Content hash table for exact duplicate detection
+CREATE TABLE IF NOT EXISTS memory_content_hashes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    content_hash VARCHAR(64) UNIQUE NOT NULL,
+    memory_id UUID REFERENCES vector_memories(id) ON DELETE CASCADE,
+    content_length INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_hash_memory UNIQUE (content_hash, memory_id)
+);
+
+-- Indexes for fast hash lookups
+CREATE INDEX IF NOT EXISTS idx_content_hash ON memory_content_hashes(content_hash);
+CREATE INDEX IF NOT EXISTS idx_content_hash_memory ON memory_content_hashes(memory_id);
+CREATE INDEX IF NOT EXISTS idx_content_hash_created ON memory_content_hashes(created_at DESC);
+
+-- Deduplication review table for tracking decisions
+CREATE TABLE IF NOT EXISTS deduplication_reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    candidate_id UUID REFERENCES vector_memories(id) ON DELETE CASCADE,
+    existing_id UUID REFERENCES vector_memories(id) ON DELETE CASCADE,
+    similarity_score FLOAT NOT NULL,
+    content_hash_match BOOLEAN DEFAULT FALSE,
+    vector_similarity_score FLOAT,
+    decision VARCHAR(20) NOT NULL CHECK (decision IN ('duplicate', 'unique', 'review_needed')),
+    decision_reason TEXT,
+    auto_decision BOOLEAN DEFAULT TRUE,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMP DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}',
+    CONSTRAINT unique_review UNIQUE (candidate_id, existing_id)
+);
+
+-- Indexes for deduplication reviews
+CREATE INDEX IF NOT EXISTS idx_dedup_reviews_candidate ON deduplication_reviews(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_dedup_reviews_existing ON deduplication_reviews(existing_id);
+CREATE INDEX IF NOT EXISTS idx_dedup_reviews_decision ON deduplication_reviews(decision);
+CREATE INDEX IF NOT EXISTS idx_dedup_reviews_similarity ON deduplication_reviews(similarity_score DESC);
+CREATE INDEX IF NOT EXISTS idx_dedup_reviews_reviewed_at ON deduplication_reviews(reviewed_at DESC);
+
+-- Deduplication metrics table for monitoring
+CREATE TABLE IF NOT EXISTS deduplication_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    metric_type VARCHAR(50) NOT NULL,
+    metric_value FLOAT NOT NULL,
+    metric_metadata JSONB DEFAULT '{}',
+    recorded_at TIMESTAMP DEFAULT NOW()
+) PARTITION BY RANGE (recorded_at);
+
+-- Create monthly partitions for metrics
+CREATE TABLE deduplication_metrics_2025_01 PARTITION OF deduplication_metrics
+    FOR VALUES FROM ('2025-01-01') TO ('2025-02-01');
+CREATE TABLE deduplication_metrics_2025_02 PARTITION OF deduplication_metrics
+    FOR VALUES FROM ('2025-02-01') TO ('2025-03-01');
+
+-- Create view for deduplication statistics
+CREATE OR REPLACE VIEW deduplication_stats AS
+SELECT 
+    COUNT(DISTINCT mch.content_hash) as unique_contents,
+    COUNT(DISTINCT mch.memory_id) as total_memories,
+    COUNT(DISTINCT mch.memory_id) - COUNT(DISTINCT mch.content_hash) as duplicates_found,
+    AVG(dr.similarity_score) as avg_similarity_score,
+    COUNT(CASE WHEN dr.decision = 'duplicate' THEN 1 END) as confirmed_duplicates,
+    COUNT(CASE WHEN dr.decision = 'unique' THEN 1 END) as confirmed_unique,
+    COUNT(CASE WHEN dr.decision = 'review_needed' THEN 1 END) as pending_review
+FROM memory_content_hashes mch
+LEFT JOIN deduplication_reviews dr ON mch.memory_id = dr.candidate_id
+WHERE mch.created_at >= CURRENT_DATE - INTERVAL '30 days';
+
+-- Function to calculate content hash
+CREATE OR REPLACE FUNCTION calculate_content_hash(content TEXT)
+RETURNS VARCHAR(64) AS $$
+BEGIN
+    RETURN encode(digest(content, 'sha256'), 'hex');
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Trigger to automatically hash new memories
+CREATE OR REPLACE FUNCTION auto_hash_memory()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO memory_content_hashes (content_hash, memory_id, content_length)
+    VALUES (
+        calculate_content_hash(NEW.content),
+        NEW.id,
+        LENGTH(NEW.content)
+    ) ON CONFLICT (content_hash, memory_id) DO NOTHING;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply trigger to vector_memories table
+CREATE TRIGGER trigger_auto_hash_memory
+AFTER INSERT ON vector_memories
+FOR EACH ROW
+EXECUTE FUNCTION auto_hash_memory();
+
 -- Display initialization success
 SELECT 'Core Nexus Memory Service database initialized successfully!' as status;
 SELECT 'Knowledge Graph tables added successfully!' as graph_status;
+SELECT 'Enterprise Deduplication system initialized successfully!' as dedup_status;

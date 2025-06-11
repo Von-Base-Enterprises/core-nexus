@@ -33,6 +33,15 @@ services:
         value: ""
       # OPENAI_API_KEY should be set in Render.com dashboard for security
       # Do not hardcode API keys in render.yaml
+      # Deduplication Configuration
+      - key: DEDUPLICATION_MODE
+        value: "off"  # Options: off, log_only, active - Start with 'off' for safety
+      - key: DEDUP_SIMILARITY_THRESHOLD
+        value: "0.95"  # 95% similarity threshold for semantic duplicates
+      - key: DEDUP_EXACT_MATCH_ONLY
+        value: "false"  # Enable semantic similarity checking
+      - key: ADMIN_KEY
+        sync: false  # Set this in Render dashboard for security
       - key: PGVECTOR_HOST
         value: dpg-d12n0np5pdvs73ctmm40-a
       - key: PGVECTOR_DATABASE
