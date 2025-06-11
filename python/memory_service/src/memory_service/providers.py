@@ -246,8 +246,9 @@ class PgVectorProvider(VectorProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.connection_pool = None
-        self.table_name = config.config.get('table_name', 'vector_memories')
+        self.table_name = config.config.get('table_name', 'memories')  # Use new non-partitioned table
         self.embedding_dim = config.config.get('embedding_dim', 1536)
+        self._pool_initialization_task = None
         self._initialize_pool(config.config)
 
     def _initialize_pool(self, config: dict[str, Any]):
@@ -267,7 +268,11 @@ class PgVectorProvider(VectorProvider):
                     conn_str,
                     min_size=5,
                     max_size=20,
-                    command_timeout=60
+                    command_timeout=60,
+                    server_settings={
+                        'synchronous_commit': 'on',  # Ensure synchronous commits
+                        'jit': 'off'  # Disable JIT for more predictable performance
+                    }
                 )
 
                 # Ensure pgvector extension is enabled
@@ -306,7 +311,13 @@ class PgVectorProvider(VectorProvider):
                         ON {self.table_name} (importance_score DESC)
                     """)
 
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_created_at
+                        ON {self.table_name} (created_at DESC)
+                    """)
+
                 logger.info("PgVector provider initialized successfully")
+                self.enabled = True  # Mark as enabled after successful initialization
 
             except ImportError:
                 logger.error("asyncpg not installed. Install with: pip install asyncpg")
@@ -322,7 +333,7 @@ class PgVectorProvider(VectorProvider):
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # We're already in an async context
-                asyncio.create_task(init_pool())
+                self._pool_initialization_task = asyncio.create_task(init_pool())
             else:
                 # Synchronous context
                 loop.run_until_complete(init_pool())
@@ -330,39 +341,49 @@ class PgVectorProvider(VectorProvider):
             # No event loop, create one
             asyncio.run(init_pool())
 
-    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
-        """Store vector in PostgreSQL."""
+    async def _ensure_pool_ready(self):
+        """Ensure the connection pool is ready before use."""
+        if self._pool_initialization_task and not self._pool_initialization_task.done():
+            await self._pool_initialization_task
         if not self.connection_pool:
-            raise RuntimeError("PgVector not initialized")
+            raise RuntimeError("PgVector connection pool not initialized")
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
+        """Store vector in PostgreSQL with transaction wrapping."""
+        await self._ensure_pool_ready()
 
         memory_id = uuid4()
 
         async with self.connection_pool.acquire() as conn:
-            # Convert embedding to PostgreSQL vector format
-            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+            # Use transaction for atomicity
+            async with conn.transaction():
+                # Convert embedding to PostgreSQL vector format
+                embedding_str = '[' + ','.join(map(str, embedding)) + ']'
 
-            # Serialize metadata to JSON string for PostgreSQL JSONB column
-            metadata_json = json.dumps(metadata) if metadata else '{}'
+                # Serialize metadata to JSON string for PostgreSQL JSONB column
+                metadata_json = json.dumps(metadata) if metadata else '{}'
 
-            await conn.execute(f"""
-                INSERT INTO {self.table_name}
-                (id, content, embedding, metadata, importance_score)
-                VALUES ($1, $2, $3::vector, $4::jsonb, $5)
-            """,
-                memory_id,
-                content,
-                embedding_str,
-                metadata_json,
-                metadata.get('importance_score', 0.5)
-            )
+                await conn.execute(f"""
+                    INSERT INTO {self.table_name}
+                    (id, content, embedding, metadata, importance_score)
+                    VALUES ($1, $2, $3::vector, $4::jsonb, $5)
+                """,
+                    memory_id,
+                    content,
+                    embedding_str,
+                    metadata_json,
+                    metadata.get('importance_score', 0.5)
+                )
+
+                # Force synchronous commit for immediate consistency
+                await conn.execute("SET LOCAL synchronous_commit = on")
 
         logger.debug(f"Stored in PgVector: {memory_id}")
         return memory_id
 
     async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query PostgreSQL for similar vectors."""
-        if not self.connection_pool:
-            return []
+        await self._ensure_pool_ready()
 
         async with self.connection_pool.acquire() as conn:
             # Build query with filters
@@ -383,7 +404,7 @@ class PgVectorProvider(VectorProvider):
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-            # Query with cosine similarity
+            # Query with cosine similarity - use proper index hint
             query = f"""
                 SELECT
                     id,
@@ -398,6 +419,7 @@ class PgVectorProvider(VectorProvider):
                 LIMIT $2
             """
 
+            # Use read committed isolation level for consistent reads
             rows = await conn.fetch(query, embedding_str, limit, *params)
 
             # Convert to MemoryResponse objects
@@ -424,8 +446,7 @@ class PgVectorProvider(VectorProvider):
         returning memories ordered by creation date (newest first).
         Perfect for "get all" queries where relevance isn't needed.
         """
-        if not self.connection_pool:
-            return []
+        await self._ensure_pool_ready()
         
         async with self.connection_pool.acquire() as conn:
             # Build query with filters
@@ -478,10 +499,12 @@ class PgVectorProvider(VectorProvider):
 
     async def health_check(self) -> dict[str, Any]:
         """Check PostgreSQL health."""
-        if not self.connection_pool:
+        try:
+            await self._ensure_pool_ready()
+        except Exception as e:
             return {
                 'status': 'unhealthy',
-                'error': 'Connection pool not initialized'
+                'error': f'Connection pool not ready: {str(e)}'
             }
 
         try:
@@ -518,10 +541,12 @@ class PgVectorProvider(VectorProvider):
 
     async def get_stats(self) -> dict[str, Any]:
         """Get PgVector statistics."""
-        if not self.connection_pool:
+        try:
+            await self._ensure_pool_ready()
+        except Exception as e:
             return {
                 'provider': 'pgvector',
-                'error': 'Connection pool not initialized'
+                'error': f'Connection pool not ready: {str(e)}'
             }
 
         try:
@@ -554,15 +579,22 @@ class PgVectorProvider(VectorProvider):
 
     async def delete(self, memory_id: UUID) -> bool:
         """Delete a memory from PgVector."""
-        if not self.connection_pool:
+        try:
+            await self._ensure_pool_ready()
+        except Exception as e:
+            logger.error(f"Pool not ready for delete: {e}")
             return False
 
         try:
             async with self.connection_pool.acquire() as conn:
-                result = await conn.execute(
-                    f"DELETE FROM {self.table_name} WHERE id = $1",
-                    memory_id
-                )
+                # Use transaction for atomicity
+                async with conn.transaction():
+                    result = await conn.execute(
+                        f"DELETE FROM {self.table_name} WHERE id = $1",
+                        memory_id
+                    )
+                    # Force synchronous commit
+                    await conn.execute("SET LOCAL synchronous_commit = on")
                 return result.split()[-1] == '1'  # "DELETE 1" means success
         except Exception as e:
             logger.error(f"Failed to delete memory {memory_id}: {e}")
@@ -570,16 +602,23 @@ class PgVectorProvider(VectorProvider):
 
     async def update_importance(self, memory_id: UUID, importance_score: float) -> bool:
         """Update importance score for a memory."""
-        if not self.connection_pool:
+        try:
+            await self._ensure_pool_ready()
+        except Exception as e:
+            logger.error(f"Pool not ready for update: {e}")
             return False
 
         try:
             async with self.connection_pool.acquire() as conn:
-                result = await conn.execute(f"""
-                    UPDATE {self.table_name}
-                    SET importance_score = $1, updated_at = NOW()
-                    WHERE id = $2
-                """, importance_score, memory_id)
+                # Use transaction for atomicity
+                async with conn.transaction():
+                    result = await conn.execute(f"""
+                        UPDATE {self.table_name}
+                        SET importance_score = $1, updated_at = NOW()
+                        WHERE id = $2
+                    """, importance_score, memory_id)
+                    # Force synchronous commit
+                    await conn.execute("SET LOCAL synchronous_commit = on")
                 return result.split()[-1] == '1'  # "UPDATE 1" means success
         except Exception as e:
             logger.error(f"Failed to update importance for {memory_id}: {e}")

@@ -1,0 +1,73 @@
+{
+  "test_script": "test_production_fixes.py",
+  "purpose": "Verify both production fixes are working correctly",
+  "fixes_tested": [
+    {
+      "fix": "Empty Query Bug",
+      "description": "Empty queries were only returning 3 memories instead of all memories",
+      "expected_result": "Empty queries should return all memories up to the specified limit",
+      "test_method": "POST /memories/query with empty string and check if more than 3 results returned"
+    },
+    {
+      "fix": "GraphProvider Initialization",
+      "description": "GraphProvider was failing to initialize due to async pool timing issues",
+      "expected_result": "GraphProvider should show as 'healthy' in the health check",
+      "test_method": "GET /health and check providers.graph.status == 'healthy'"
+    }
+  ],
+  "usage": {
+    "production": "python test_production_fixes.py",
+    "local": "Edit BASE_URL in the script to 'http://localhost:8000' then run",
+    "requirements": "pip install aiohttp"
+  },
+  "tests_included": [
+    {
+      "name": "Health Endpoint & GraphProvider Status",
+      "checks": [
+        "Overall service health",
+        "PgVector provider status",
+        "GraphProvider status and initialization",
+        "Graph node and relationship counts"
+      ]
+    },
+    {
+      "name": "Empty Query Fix",
+      "checks": [
+        "Stores 10 test memories",
+        "Queries with empty string",
+        "Verifies more than 3 results returned",
+        "Checks trust_metrics confirm fix applied"
+      ]
+    },
+    {
+      "name": "GET /memories Endpoint",
+      "checks": [
+        "Alternative endpoint for getting all memories",
+        "Should return more than 3 memories",
+        "Verifies the fix from a different angle"
+      ]
+    },
+    {
+      "name": "Knowledge Graph Endpoints",
+      "checks": [
+        "/graph/stats - Graph statistics",
+        "/graph/query - Query functionality",
+        "/graph/explore/{entity} - Entity exploration",
+        "Determines if Graph is operational or intentionally disabled"
+      ]
+    },
+    {
+      "name": "Memory Statistics",
+      "checks": [
+        "Total memory count",
+        "Provider distribution",
+        "Overall data integrity"
+      ]
+    }
+  ],
+  "expected_output": {
+    "all_pass": "🎉 All tests passed! Both production fixes are working correctly.",
+    "some_fail": "⚠️  Some tests failed. Please investigate the issues above.",
+    "diagnostics": "Additional environment information shown if any tests fail"
+  }
+}
