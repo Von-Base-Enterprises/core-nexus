@@ -12,7 +12,7 @@ GEMINI_API_KEY = "AIzaSyAIl8F81WwFfx5_62y19KuO12ermaDC6FQ"
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Test with a simple prompt
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 # Test memory content
 test_memory = """

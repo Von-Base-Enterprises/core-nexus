@@ -152,16 +152,24 @@ async def lifespan(app: FastAPI):
     if os.getenv("GRAPH_ENABLED", "false").lower() == "true":
         logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
 
-        # Reuse pgvector's connection pool for security and efficiency
+        # Check if pgvector is available to share the same database
         pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
-        if pgvector_provider and hasattr(pgvector_provider, 'connection_pool'):
+        if pgvector_provider:
             try:
+                # Build connection string from pgvector config
+                # This avoids timing issues with async pool initialization
+                pg_config = pgvector_config.config
+                connection_string = (
+                    f"postgresql://{pg_config['user']}:{pg_config['password']}@"
+                    f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
+                )
+                
                 graph_config = ProviderConfig(
                     name="graph",
                     enabled=True,
                     primary=False,
                     config={
-                        "connection_pool": pgvector_provider.connection_pool,  # Share pool
+                        "connection_string": connection_string,  # Pass connection string instead of pool
                         "table_prefix": "graph"
                     }
                 )

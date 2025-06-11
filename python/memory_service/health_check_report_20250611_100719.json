@@ -1,0 +1,141 @@
+{
+  "timestamp": "2025-06-11T10:07:19.831652",
+  "base_url": "https://core-nexus-memory-service.onrender.com",
+  "summary": {
+    "overall_status": "\u26a0\ufe0f  DEGRADED",
+    "total_checks": 8,
+    "healthy_count": 5,
+    "degraded_count": 3,
+    "critical_count": 0,
+    "unknown_count": 0,
+    "avg_response_time": 512.6817524433136,
+    "critical_issues": [],
+    "warnings": [
+      "GET /memories/f70fac9f-9370-41bc-8898-8e16a42e65a1: Test memory not found (may have been cleaned up)",
+      "/providers: Providers endpoint returned 500",
+      "DELETE /memories/f70fac9f-9370-41bc-8898-8e16a42e65a1: Cleanup returned status 404"
+    ]
+  },
+  "results": [
+    {
+      "endpoint": "/health",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 337.6157283782959,
+      "message": "Health check returned status: healthy",
+      "details": {
+        "status": "healthy",
+        "providers": {
+          "pgvector": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 1031,
+                "pgvector_enabled": true,
+                "table_name": "vector_memories",
+                "pool_size": 3
+              }
+            },
+            "primary": true
+          },
+          "chromadb": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 0,
+                "collection_name": "core_nexus_memories"
+              }
+            },
+            "primary": false
+          },
+          "graph": {
+            "status": "unhealthy",
+            "error": "GraphProvider requires either connection_pool or connection_string",
+            "primary": false
+          }
+        },
+        "total_memories": 1,
+        "avg_query_time_ms": 0.0,
+        "uptime_seconds": 84964.2631931305
+      },
+      "error": null
+    },
+    {
+      "endpoint": "POST /memories",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 1021.9309329986572,
+      "message": "Successfully created test memory with ID: f70fac9f-9370-41bc-8898-8e16a42e65a1",
+      "details": {
+        "memory_id": "f70fac9f-9370-41bc-8898-8e16a42e65a1"
+      },
+      "error": null
+    },
+    {
+      "endpoint": "POST /memories/query (empty)",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 746.8841075897217,
+      "message": "Empty query returned 100 memories",
+      "details": {
+        "memory_count": 100,
+        "total": 200
+      },
+      "error": null
+    },
+    {
+      "endpoint": "POST /memories/query",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 892.7664756774902,
+      "message": "Search returned 10 memories",
+      "details": {
+        "memory_count": 10,
+        "found_test_memory": true,
+        "query": "health check test memory"
+      },
+      "error": null
+    },
+    {
+      "endpoint": "GET /memories/f70fac9f-9370-41bc-8898-8e16a42e65a1",
+      "status": "HealthStatus.DEGRADED",
+      "response_time_ms": 176.97405815124512,
+      "message": "Test memory not found (may have been cleaned up)",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/memories/stats",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 308.7730407714844,
+      "message": "Stats endpoint working",
+      "details": {
+        "total_memories": 2,
+        "memories_by_provider": {
+          "pgvector": 0,
+          "chromadb": 0,
+          "graph": 0
+        },
+        "avg_importance_score": 0.5,
+        "most_recent_memory": null,
+        "queries_last_hour": 2,
+        "avg_query_time_ms": 618.5578107833862
+      },
+      "error": null
+    },
+    {
+      "endpoint": "/providers",
+      "status": "HealthStatus.DEGRADED",
+      "response_time_ms": 457.3037624359131,
+      "message": "Providers endpoint returned 500",
+      "details": null,
+      "error": "{\"detail\":\"Internal server error\"}"
+    },
+    {
+      "endpoint": "DELETE /memories/f70fac9f-9370-41bc-8898-8e16a42e65a1",
+      "status": "HealthStatus.DEGRADED",
+      "response_time_ms": 159.20591354370117,
+      "message": "Cleanup returned status 404",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+{
+  "timestamp": "2025-06-11T10:04:54.447468",
+  "base_url": "https://core-nexus-memory-service.onrender.com",
+  "summary": {
+    "overall_status": "\u274c CRITICAL",
+    "total_checks": 8,
+    "healthy_count": 1,
+    "degraded_count": 2,
+    "critical_count": 3,
+    "unknown_count": 2,
+    "avg_response_time": 459.0439796447754,
+    "critical_issues": [
+      "POST /memories: Memory creation failed with status 200",
+      "GET /memories/search?query=: Empty query failed with status 404",
+      "GET /memories/search?query=health check test memory: Search query failed with status 404"
+    ],
+    "warnings": [
+      "/stats: Stats endpoint returned status 404",
+      "/providers/status: Providers status returned 404"
+    ]
+  },
+  "results": [
+    {
+      "endpoint": "/health",
+      "status": "HealthStatus.HEALTHY",
+      "response_time_ms": 301.42712593078613,
+      "message": "Health check returned status: healthy",
+      "details": {
+        "status": "healthy",
+        "providers": {
+          "pgvector": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 1030,
+                "pgvector_enabled": true,
+                "table_name": "vector_memories",
+                "pool_size": 3
+              }
+            },
+            "primary": true
+          },
+          "chromadb": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 0,
+                "collection_name": "core_nexus_memories"
+              }
+            },
+            "primary": false
+          },
+          "graph": {
+            "status": "unhealthy",
+            "error": "GraphProvider requires either connection_pool or connection_string",
+            "primary": false
+          }
+        },
+        "total_memories": 0,
+        "avg_query_time_ms": 0.0,
+        "uptime_seconds": 84820.19684576988
+      },
+      "error": null
+    },
+    {
+      "endpoint": "POST /memories",
+      "status": "HealthStatus.CRITICAL",
+      "response_time_ms": 1819.2470073699951,
+      "message": "Memory creation failed with status 200",
+      "details": null,
+      "error": "{\"id\":\"8863a997-26c8-4ff0-bf33-2a8cb480db60\",\"content\":\"Health check test memory created at 2025-06-11T10:04:51.989684\",\"metadata\":{\"type\":\"health_check\",\"timestamp\":\"2025-06-11T10:04:51.989694\",\"test_id\":\"health_check_1749636291\",\"user_id\":null,\"conversation_id\":null,\"importance_score\":0.3710377142857143,\"created_at\":1749636293.4367673,\"content_length\":62,\"adm_score\":0.3710377142857143,\"data_quality\":0.45584,\"data_relevance\":0.425,\"data_intelligence\":0.21428571428571425,\"adm_calculation_time\":0.20503997802734375},\"importance_score\":0.3710377142857143,\"similarity_score\":null,\"created_at\":\"2025-06-11T10:04:53.909357\",\"updated_at\":null}"
+    },
+    {
+      "endpoint": "GET /memories/search?query=",
+      "status": "HealthStatus.CRITICAL",
+      "response_time_ms": 141.9544219970703,
+      "message": "Empty query failed with status 404",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "GET /memories/search?query=health check test memory",
+      "status": "HealthStatus.CRITICAL",
+      "response_time_ms": 166.22614860534668,
+      "message": "Search query failed with status 404",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "GET /memories/{id}",
+      "status": "HealthStatus.UNKNOWN",
+      "response_time_ms": 0,
+      "message": "Skipped: No test memory ID available",
+      "details": null,
+      "error": null
+    },
+    {
+      "endpoint": "/stats",
+      "status": "HealthStatus.DEGRADED",
+      "response_time_ms": 161.57150268554688,
+      "message": "Stats endpoint returned status 404",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/providers/status",
+      "status": "HealthStatus.DEGRADED",
+      "response_time_ms": 163.83767127990723,
+      "message": "Providers status returned 404",
+      "details": null,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "DELETE /memories/{id}",
+      "status": "HealthStatus.UNKNOWN",
+      "response_time_ms": 0,
+      "message": "Skipped: No test memory to clean up",
+      "details": null,
+      "error": null
+    }
+  ]
+}
