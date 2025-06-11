@@ -7,6 +7,7 @@ while adding pgvector as a third option for maximum resilience and performance.
 
 import asyncio
 import logging
+import os
 import time
 from abc import ABC, abstractmethod
 from typing import Any
@@ -20,6 +21,7 @@ from .models import (
     QueryRequest,
     QueryResponse,
 )
+from .deduplication import DeduplicationService, DeduplicationMode
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +84,9 @@ class UnifiedVectorStore:
             'provider_usage': {p.name: 0 for p in providers},
             'avg_query_time': 0.0,
             'adm_calculations': 0,
-            'avg_adm_score': 0.0
+            'avg_adm_score': 0.0,
+            'duplicates_prevented': 0,
+            'storage_saved_bytes': 0
         }
 
         # Initialize ADM scoring if enabled
@@ -91,9 +95,29 @@ class UnifiedVectorStore:
         if adm_enabled:
             self._initialize_adm_engine()
 
+        # Initialize Deduplication Service
+        self.deduplication_service = None
+        dedup_mode = os.getenv('DEDUPLICATION_MODE', 'off').lower()
+        if dedup_mode != 'off':
+            try:
+                mode = DeduplicationMode(dedup_mode)
+                similarity_threshold = float(os.getenv('DEDUP_SIMILARITY_THRESHOLD', '0.95'))
+                exact_match_only = os.getenv('DEDUP_EXACT_MATCH_ONLY', 'false').lower() == 'true'
+                
+                self.deduplication_service = DeduplicationService(
+                    vector_store=self,
+                    mode=mode,
+                    similarity_threshold=similarity_threshold,
+                    exact_match_only=exact_match_only
+                )
+                logger.info(f"Initialized deduplication service in {mode.value} mode")
+            except Exception as e:
+                logger.error(f"Failed to initialize deduplication service: {e}")
+
         logger.info(f"Initialized UnifiedVectorStore with providers: {list(self.providers.keys())}")
         logger.info(f"Primary provider: {self.primary_provider.name}")
         logger.info(f"ADM scoring: {'enabled' if adm_enabled else 'disabled'}")
+        logger.info(f"Deduplication: {'enabled' if self.deduplication_service else 'disabled'}")
 
     def _initialize_adm_engine(self):
         """Initialize the ADM scoring engine."""
@@ -137,6 +161,23 @@ class UnifiedVectorStore:
         start_time = time.time()
 
         try:
+            # Check for duplicates first if deduplication is enabled
+            if self.deduplication_service:
+                dedup_result = await self.deduplication_service.check_duplicate(
+                    content=request.content,
+                    metadata=request.metadata
+                )
+                
+                if dedup_result.is_duplicate and dedup_result.existing_memory:
+                    # Update statistics
+                    self.stats['duplicates_prevented'] += 1
+                    self.stats['storage_saved_bytes'] += len(request.content)
+                    
+                    logger.info(f"Duplicate detected: {dedup_result.reason}")
+                    
+                    # Return existing memory instead of creating new one
+                    return dedup_result.existing_memory
+
             # Generate embedding if not provided
             embedding = request.embedding
             if not embedding and self.embedding_model:
