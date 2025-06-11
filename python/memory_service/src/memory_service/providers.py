@@ -404,17 +404,21 @@ class PgVectorProvider(VectorProvider):
             # Convert embedding to PostgreSQL vector format
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-            # Query with cosine similarity - use proper index hint
+            # Query with cosine similarity - handle NULL embeddings
             query = f"""
                 SELECT
                     id,
                     content,
                     metadata,
-                    importance_score,
-                    1 - (embedding <=> $1::vector) as similarity_score,
+                    COALESCE(importance_score, 0.5) as importance_score,
+                    CASE 
+                        WHEN embedding IS NULL THEN 0.0
+                        ELSE 1 - (embedding <=> $1::vector)
+                    END as similarity_score,
                     created_at
-                FROM {self.table_name}
+                FROM vector_memories
                 {where_clause}
+                WHERE embedding IS NOT NULL
                 ORDER BY embedding <=> $1::vector
                 LIMIT $2
             """
@@ -465,14 +469,15 @@ class PgVectorProvider(VectorProvider):
             where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
             
             # Query WITHOUT vector similarity - just get recent memories
+            # Use COALESCE to handle both partitioned and non-partitioned tables
             query = f"""
                 SELECT
                     id,
                     content,
                     metadata,
-                    importance_score,
+                    COALESCE(importance_score, 0.5) as importance_score,
                     created_at
-                FROM {self.table_name}
+                FROM vector_memories
                 {where_clause}
                 ORDER BY created_at DESC
                 LIMIT $1
