@@ -1,5 +1,5 @@
 ```markdown
-# Core Nexus - The AI Operating System for Enterprise Intelligence
+# Core Nexus - The AI Operating System for Enterprise Intelligence (trademark)
 
 Transform your business into an AI-native enterprise with the world's first self-evolving AI Operating System.
 
