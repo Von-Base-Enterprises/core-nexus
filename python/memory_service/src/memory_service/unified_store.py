@@ -238,36 +238,110 @@ class UnifiedVectorStore:
                     logger.debug(f"Cache hit for query: {request.query[:50]}...")
                     return cached_result['response']
 
-            # Generate query embedding
-            # For empty queries, use a zero vector to match all memories
+            # EMERGENCY FIX: If empty query, use direct database retrieval
             if not request.query or request.query.strip() == "":
-                query_embedding = [0.0] * 1536  # Use zero vector for "get all" queries
-                logger.info("Empty query detected - using zero vector to retrieve all memories")
-            else:
-                query_embedding = await self._generate_embedding(request.query)
+                logger.info("Empty query - using emergency direct retrieval")
+                
+                # Get pgvector provider for direct access
+                pgvector = self.providers.get('pgvector')
+                if pgvector and pgvector.enabled:
+                    # Import emergency search fix
+                    from .search_fix import EmergencySearchFix
+                    emergency_search = EmergencySearchFix(pgvector.connection_pool)
+                    
+                    # Get ALL memories directly
+                    memories = await emergency_search.emergency_search_all(limit=request.limit)
+                    
+                    response = QueryResponse(
+                        memories=memories[:request.limit],
+                        total_found=len(memories),
+                        query_time_ms=(time.time() - start_time) * 1000,
+                        providers_used=['pgvector_direct']
+                    )
+                    
+                    # Cache result
+                    self.query_cache[cache_key] = {
+                        'response': response,
+                        'timestamp': time.time()
+                    }
+                    
+                    logger.info(f"Emergency search returned {len(memories)} memories")
+                    return response
+            
+            # For non-empty queries, try multiple search strategies
+            query_embedding = None
+            memories = []
+            
+            # Strategy 1: Try embedding-based search if possible
+            try:
+                if self.embedding_model and request.query:
+                    query_embedding = await self._generate_embedding(request.query)
+                else:
+                    logger.warning("No embedding model available for query")
 
+            except Exception as e:
+                logger.error(f"Embedding generation failed: {e}")
+            
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
+            
+            # Try vector-based search first if we have embeddings
+            if query_embedding:
+                try:
+                    # Query providers (potentially in parallel for better performance)
+                    if len(providers_to_query) == 1:
+                        # Single provider query
+                        memories = await self._query_provider(
+                            providers_to_query[0],
+                            query_embedding,
+                            request
+                        )
+                        providers_used = [providers_to_query[0].name]
+                    else:
+                        # Multi-provider query with result aggregation
+                        memories, providers_used = await self._query_multiple_providers(
+                            providers_to_query,
+                            query_embedding,
+                            request
+                        )
+                except Exception as e:
+                    logger.error(f"Vector search failed: {e}")
+                    memories = []
+                    providers_used = []
+            
+            # EMERGENCY FIX: If vector search returns no results, use text search
+            if not memories and request.query:
+                logger.warning(f"Vector search returned 0 results for '{request.query}', trying text search")
+                
+                pgvector = self.providers.get('pgvector')
+                if pgvector and pgvector.enabled:
+                    from .search_fix import EmergencySearchFix
+                    emergency_search = EmergencySearchFix(pgvector.connection_pool)
+                    
+                    # Try full-text search
+                    memories = await emergency_search.text_search(request.query, limit=request.limit * 2)
+                    
+                    # If still no results, try fuzzy search
+                    if not memories:
+                        logger.warning("Text search failed, trying fuzzy search")
+                        memories = await emergency_search.fuzzy_search(request.query, limit=request.limit * 2)
+                    
+                    providers_used = ['text_search_fallback']
 
-            # Query providers (potentially in parallel for better performance)
-            if len(providers_to_query) == 1:
-                # Single provider query
-                memories = await self._query_provider(
-                    providers_to_query[0],
-                    query_embedding,
-                    request
-                )
-                providers_used = [providers_to_query[0].name]
+            # Filter and sort results - but be more lenient
+            if memories:
+                # Lower the similarity threshold to avoid filtering out all results
+                original_threshold = request.min_similarity
+                if len(memories) < request.limit / 2:
+                    request.min_similarity = 0.0  # Accept all results if we have too few
+                    logger.info(f"Lowered similarity threshold from {original_threshold} to 0.0")
+                
+                filtered_memories = self._filter_and_rank_memories(memories, request)
+                
+                # Restore original threshold
+                request.min_similarity = original_threshold
             else:
-                # Multi-provider query with result aggregation
-                memories, providers_used = await self._query_multiple_providers(
-                    providers_to_query,
-                    query_embedding,
-                    request
-                )
-
-            # Filter and sort results
-            filtered_memories = self._filter_and_rank_memories(memories, request)
+                filtered_memories = []
 
             query_time = (time.time() - start_time) * 1000  # Convert to ms
 

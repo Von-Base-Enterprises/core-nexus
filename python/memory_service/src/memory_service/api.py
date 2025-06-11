@@ -529,6 +529,95 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Failed to get memories: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
+    @app.get("/emergency/find-all-memories")
+    async def emergency_find_all_memories(
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        EMERGENCY: Find ALL memories in the database, regardless of embeddings.
+        
+        This endpoint bypasses all vector operations to ensure users can see their data.
+        """
+        try:
+            pgvector = store.providers.get('pgvector')
+            if not pgvector or not pgvector.enabled:
+                raise HTTPException(status_code=503, detail="PgVector provider not available")
+            
+            from .search_fix import EmergencySearchFix
+            emergency_search = EmergencySearchFix(pgvector.connection_pool)
+            
+            # Get diagnostic info
+            diagnostics = await emergency_search.ensure_all_memories_visible()
+            
+            # Get all memories
+            all_memories = await emergency_search.emergency_search_all(limit=10000)
+            
+            return {
+                "status": "emergency_retrieval",
+                "diagnostics": diagnostics,
+                "total_memories_found": len(all_memories),
+                "memories": [
+                    {
+                        "id": str(memory.id),
+                        "content": memory.content[:200] + "..." if len(memory.content) > 200 else memory.content,
+                        "created_at": memory.created_at,
+                        "has_embedding": "unknown"
+                    }
+                    for memory in all_memories[:100]  # Show first 100
+                ],
+                "message": f"Found {len(all_memories)} total memories. Showing first 100.",
+                "fix_instructions": "Use /memories/search/text?q=your_query for text-based search"
+            }
+            
+        except Exception as e:
+            logger.error(f"Emergency retrieval failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Emergency retrieval failed: {str(e)}")
+
+    @app.get("/memories/search/text")
+    async def text_search_memories(
+        q: str,
+        limit: int = 100,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Text-based search fallback when vector search fails.
+        
+        Uses PostgreSQL full-text search and fuzzy matching.
+        """
+        try:
+            pgvector = store.providers.get('pgvector')
+            if not pgvector or not pgvector.enabled:
+                raise HTTPException(status_code=503, detail="PgVector provider not available")
+            
+            from .search_fix import EmergencySearchFix
+            emergency_search = EmergencySearchFix(pgvector.connection_pool)
+            
+            # Try text search first
+            memories = await emergency_search.text_search(q, limit=limit)
+            
+            # If no results, try fuzzy search
+            if not memories:
+                memories = await emergency_search.fuzzy_search(q, limit=limit)
+            
+            return {
+                "query": q,
+                "results_found": len(memories),
+                "search_type": "text_based",
+                "memories": [
+                    {
+                        "id": str(memory.id),
+                        "content": memory.content,
+                        "relevance_score": memory.similarity_score,
+                        "created_at": memory.created_at
+                    }
+                    for memory in memories
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Text search failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Text search failed: {str(e)}")
+
     @app.get("/memories/stats", response_model=MemoryStats)
     async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
         """
