@@ -1,0 +1,80 @@
+# Prometheus Configuration for Core Nexus
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'core-nexus-prod'
+    monitor: 'observability'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - 'alertmanager:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alerts/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Core Nexus Memory Service
+  - job_name: 'core-nexus-memory'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'core-nexus-memory'
+  
+  # FastAPI Prometheus metrics
+  - job_name: 'core-nexus-fastapi'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/metrics/fastapi'
+    scrape_interval: 10s
+  
+  # PostgreSQL with pgvector
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+  
+  # OpenTelemetry Collector
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    scrape_interval: 10s
+  
+  # Grafana Tempo
+  - job_name: 'tempo'
+    static_configs:
+      - targets: ['tempo:3200']
+    scrape_interval: 15s
+  
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  
+  # Node exporter for system metrics
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):9100'
+        target_label: instance
+        replacement: '${1}'
+
+# Remote write for long-term storage (optional)
+# remote_write:
+#   - url: "https://prometheus-blocks-prod-us-central1.grafana.net/api/prom/push"
+#     basic_auth:
+#       username: <username>
+#       password: <api_key>

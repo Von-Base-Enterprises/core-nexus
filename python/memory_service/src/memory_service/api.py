@@ -42,6 +42,14 @@ from .models import (
 )
 from .providers import ChromaProvider, PgVectorProvider, PineconeProvider
 from .unified_store import UnifiedVectorStore
+from .observability import (
+    initialize_observability,
+    ObservabilityConfig,
+    TraceRequestMiddleware,
+    get_current_trace_id,
+    trace_operation,
+    record_metric
+)
 
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
@@ -69,6 +77,15 @@ async def lifespan(app: FastAPI):
 
     # Startup
     logger.info("Initializing Core Nexus Memory Service...")
+    
+    # Initialize OpenTelemetry observability
+    try:
+        observability_config = ObservabilityConfig()
+        initialize_observability(app, observability_config)
+        logger.info("OpenTelemetry observability initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize observability: {e}")
+        # Continue without observability rather than failing startup
 
     # Initialize providers based on environment/config
     providers = []
@@ -99,7 +116,14 @@ async def lifespan(app: FastAPI):
         }
     )
     try:
-        pgvector_provider = PgVectorProvider(pgvector_config)
+        # Use instrumented provider if observability is enabled
+        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+            from .providers_instrumented import InstrumentedPgVectorProvider
+            pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
+            logger.info("Using instrumented PgVector provider")
+        else:
+            pgvector_provider = PgVectorProvider(pgvector_config)
+        
         providers.append(pgvector_provider)
         pgvector_config.primary = True  # Make primary if successful
         logger.info("PgVector provider initialized as primary")
@@ -137,7 +161,14 @@ async def lifespan(app: FastAPI):
         }
     )
     try:
-        chroma_provider = ChromaProvider(chroma_config)
+        # Use instrumented provider if observability is enabled
+        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+            from .providers_instrumented import InstrumentedChromaProvider
+            chroma_provider = InstrumentedChromaProvider(chroma_config)
+            logger.info("Using instrumented ChromaDB provider")
+        else:
+            chroma_provider = ChromaProvider(chroma_config)
+        
         providers.append(chroma_provider)
         # If pgvector was successfully initialized, make it primary instead
         if any(p.name == "pgvector" and p.enabled for p in providers):
@@ -301,6 +332,10 @@ def create_memory_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Add OpenTelemetry request tracing middleware
+    if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+        app.middleware("http")(TraceRequestMiddleware(app))
 
     # FastAPI Prometheus Instrumentator for enhanced metrics
     instrumentator = Instrumentator(
@@ -409,6 +444,7 @@ def create_memory_app() -> FastAPI:
     #         raise HTTPException(status_code=500, detail="Database stats unavailable")
 
     @app.post("/memories", response_model=MemoryResponse)
+    @trace_operation("api.store_memory")
     async def store_memory(
         request: MemoryRequest,
         background_tasks: BackgroundTasks,
@@ -421,21 +457,34 @@ def create_memory_app() -> FastAPI:
         """
         try:
             start_time = time.time()
+            
+            # Add tracing context
+            trace_id = get_current_trace_id()
+            if trace_id:
+                logger.info(f"Storing memory with trace_id: {trace_id}")
+            
             memory = await store.store_memory(request)
 
-            # Log performance
+            # Log and record performance
             store_time = (time.time() - start_time) * 1000
             logger.info(f"Memory stored in {store_time:.1f}ms: {memory.id}")
+            
+            # Record metrics
+            record_metric("memory_operations_total", 1, {"operation": "store", "status": "success"})
+            record_metric("memory_operation_duration", store_time, {"operation": "store"})
 
             return memory
 
         except ValueError as e:
+            record_metric("memory_operations_total", 1, {"operation": "store", "status": "error", "error_type": "validation"})
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            record_metric("memory_operations_total", 1, {"operation": "store", "status": "error", "error_type": "internal"})
             logger.error(f"Failed to store memory: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     @app.post("/memories/query", response_model=QueryResponse)
+    @trace_operation("api.query_memories")
     async def query_memories(
         request: QueryRequest,
         store: UnifiedVectorStore = Depends(get_store)
@@ -448,6 +497,15 @@ def create_memory_app() -> FastAPI:
         """
         try:
             start_time = time.time()
+            
+            # Add tracing attributes
+            from opentelemetry import trace
+            span = trace.get_current_span()
+            if span:
+                span.set_attribute("query.text", request.query[:100] if request.query else "")
+                span.set_attribute("query.limit", request.limit)
+                span.set_attribute("query.min_similarity", request.min_similarity)
+                span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
 
             # Fix for empty query returning only 3 results
             if not request.query or request.query.strip() == "":
@@ -460,6 +518,17 @@ def create_memory_app() -> FastAPI:
             # Add request timing info
             total_time = (time.time() - start_time) * 1000
             logger.info(f"Query completed in {total_time:.1f}ms, found {response.total_found} memories, returned {len(response.memories)}")
+            
+            # Record metrics
+            record_metric("memory_operations_total", 1, {"operation": "query", "status": "success"})
+            record_metric("memory_operation_duration", total_time, {"operation": "query"})
+            record_metric("vector_search_results", len(response.memories))
+            
+            # Add span attributes for results
+            if span:
+                span.set_attribute("results.total_found", response.total_found)
+                span.set_attribute("results.returned", len(response.memories))
+                span.set_attribute("results.query_time_ms", total_time)
 
             # Add trust metrics to build confidence
             response.trust_metrics = {
@@ -480,8 +549,10 @@ def create_memory_app() -> FastAPI:
             return response
 
         except ValueError as e:
+            record_metric("memory_operations_total", 1, {"operation": "query", "status": "error", "error_type": "validation"})
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            record_metric("memory_operations_total", 1, {"operation": "query", "status": "error", "error_type": "internal"})
             logger.error(f"Query failed: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 

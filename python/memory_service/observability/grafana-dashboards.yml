@@ -1,0 +1,15 @@
+# Grafana Dashboard Provisioning Configuration
+
+apiVersion: 1
+
+providers:
+  - name: 'Core Nexus Dashboards'
+    orgId: 1
+    folder: 'Core Nexus'
+    folderUid: 'core-nexus'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
