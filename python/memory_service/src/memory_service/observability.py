@@ -134,7 +134,8 @@ def _setup_tracing(config: ObservabilityConfig, resource: Resource) -> TracerPro
             for header in config.otlp_headers.split(","):
                 if "=" in header:
                     key, value = header.split("=", 1)
-                    headers[key.strip()] = value.strip()
+                    # gRPC requires lowercase header keys
+                    headers[key.strip().lower()] = value.strip()
         
         otlp_exporter = OTLPSpanExporter(
             endpoint=config.otlp_endpoint,
@@ -170,7 +171,8 @@ def _setup_metrics(config: ObservabilityConfig, resource: Resource) -> MeterProv
             for header in config.otlp_headers.split(","):
                 if "=" in header:
                     key, value = header.split("=", 1)
-                    headers[key.strip()] = value.strip()
+                    # gRPC requires lowercase header keys
+                    headers[key.strip().lower()] = value.strip()
         
         otlp_exporter = OTLPMetricExporter(
             endpoint=config.otlp_endpoint,
