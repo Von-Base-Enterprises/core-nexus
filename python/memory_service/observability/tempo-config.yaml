@@ -1,0 +1,60 @@
+# Grafana Tempo Configuration
+
+stream_over_http_enabled: true
+server:
+  http_listen_port: 3200
+  log_level: info
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+    cache: inmemory
+    cache_inmemory:
+      max_size_mb: 100
+
+querier:
+  frontend_worker:
+    frontend_address: 127.0.0.1:9095
+
+# Limits configuration
+limits_config:
+  max_bytes_per_trace: 5000000
+  max_traces_per_user: 100000
+
+# Metrics generation for traces
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      service: core-nexus
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+# Overrides for specific tenants
+overrides:
+  defaults:
+    metrics_generator:
+      processors: ['service-graphs', 'span-metrics']
