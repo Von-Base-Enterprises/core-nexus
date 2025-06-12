@@ -127,9 +127,18 @@ def _setup_tracing(config: ObservabilityConfig, resource: Resource) -> TracerPro
     
     # OTLP exporter for production
     if config.otlp_endpoint:
+        # Parse headers from "key1=value1,key2=value2" format to dict
+        headers = None
+        if config.otlp_headers:
+            headers = {}
+            for header in config.otlp_headers.split(","):
+                if "=" in header:
+                    key, value = header.split("=", 1)
+                    headers[key.strip()] = value.strip()
+        
         otlp_exporter = OTLPSpanExporter(
             endpoint=config.otlp_endpoint,
-            headers=config.otlp_headers.split(",") if config.otlp_headers else None,
+            headers=headers,
             insecure=True  # For local development
         )
         tracer_provider.add_span_processor(
@@ -154,9 +163,18 @@ def _setup_metrics(config: ObservabilityConfig, resource: Resource) -> MeterProv
     
     # OTLP exporter for push-based metrics
     if config.otlp_endpoint:
+        # Parse headers from "key1=value1,key2=value2" format to dict
+        headers = None
+        if config.otlp_headers:
+            headers = {}
+            for header in config.otlp_headers.split(","):
+                if "=" in header:
+                    key, value = header.split("=", 1)
+                    headers[key.strip()] = value.strip()
+        
         otlp_exporter = OTLPMetricExporter(
             endpoint=config.otlp_endpoint,
-            headers=config.otlp_headers.split(",") if config.otlp_headers else None,
+            headers=headers,
             insecure=True
         )
         periodic_reader = PeriodicExportingMetricReader(
