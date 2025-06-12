@@ -47,6 +47,10 @@ class ObservabilityConfig:
         self.otlp_endpoint = os.getenv("OTLP_ENDPOINT", "localhost:4317")
         self.otlp_headers = os.getenv("OTLP_HEADERS", "")
         
+        # Disable OTLP in production if not explicitly configured
+        if self.environment == "production" and not os.getenv("OTLP_ENDPOINT"):
+            self.otlp_endpoint = None
+        
         # Feature flags
         self.enable_tracing = os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true"
         self.enable_metrics = os.getenv("OTEL_METRICS_ENABLED", "true").lower() == "true"
@@ -323,7 +327,10 @@ def record_metric(metric_name: str, value: float, attributes: Optional[dict] = N
         metric = meter.create_gauge(metric_name)
     
     # Record value
-    metric.add(value, attributes or {})
+    if hasattr(metric, 'add'):
+        metric.add(value, attributes or {})
+    elif hasattr(metric, 'record'):
+        metric.record(value, attributes or {})
 
 
 def get_current_trace_id() -> Optional[str]:
