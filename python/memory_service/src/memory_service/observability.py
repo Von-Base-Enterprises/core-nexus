@@ -5,6 +5,7 @@ Provides comprehensive instrumentation for the Core Nexus memory service
 with distributed tracing, metrics, and correlated logging.
 """
 
+import functools
 import logging
 import os
 import time
@@ -276,6 +277,7 @@ def trace_operation(operation_name: str, attributes: Optional[dict] = None):
         attributes: Optional attributes to add to the span
     """
     def decorator(func):
+        @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             if not tracer:
                 return await func(*args, **kwargs)
@@ -299,6 +301,7 @@ def trace_operation(operation_name: str, attributes: Optional[dict] = None):
                     span.record_exception(e)
                     raise
         
+        @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             if not tracer:
                 return func(*args, **kwargs)

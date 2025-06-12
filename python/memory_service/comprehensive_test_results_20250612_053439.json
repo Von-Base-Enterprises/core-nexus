@@ -1,0 +1,331 @@
+{
+  "timestamp": "2025-06-12T09:34:33.055077+00:00",
+  "service_url": "https://core-nexus-memory-service.onrender.com",
+  "tests": {
+    "api_accessibility": {
+      "status": "FAILED",
+      "message": "API is not accessible"
+    },
+    "health_endpoint": {
+      "status": "PASSED",
+      "message": "Health endpoint working",
+      "details": {
+        "status": "healthy",
+        "providers": {
+          "pgvector": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 1095,
+                "pgvector_enabled": true,
+                "table_name": "vector_memories",
+                "pool_size": 2
+              }
+            },
+            "primary": true
+          },
+          "chromadb": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 0,
+                "collection_name": "core_nexus_memories"
+              }
+            },
+            "primary": false
+          },
+          "graph": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "connection": "active",
+                "graph_nodes": 119,
+                "graph_relationships": 27,
+                "entity_extractor": "regex"
+              }
+            },
+            "primary": false
+          }
+        },
+        "total_memories": 0,
+        "avg_query_time_ms": 0.0,
+        "uptime_seconds": 1543.2056722640991
+      }
+    },
+    "database_connectivity": {
+      "status": "WARNING",
+      "message": "Database status unclear from health check",
+      "details": {}
+    },
+    "memory_storage": {
+      "status": "FAILED",
+      "message": "5 storage tests failed",
+      "test_cases": [
+        {
+          "case": "basic_storage",
+          "status": "FAILED",
+          "message": "Storage failed (status: No response)"
+        },
+        {
+          "case": "special_characters",
+          "status": "FAILED",
+          "message": "Failed to store memory with special characters"
+        },
+        {
+          "case": "large_content",
+          "status": "FAILED",
+          "message": "Failed to store large content"
+        },
+        {
+          "case": "minimal_memory",
+          "status": "FAILED",
+          "message": "Failed to store memory without metadata"
+        },
+        {
+          "case": "empty_content",
+          "status": "FAILED",
+          "message": "Unexpected response to empty content"
+        }
+      ]
+    },
+    "memory_retrieval": {
+      "status": "FAILED",
+      "message": "2 retrieval tests failed",
+      "test_cases": [
+        {
+          "case": "get_all_memories",
+          "status": "PASSED",
+          "message": "Retrieved 6 memories",
+          "count": 6
+        },
+        {
+          "case": "get_nonexistent_memory",
+          "status": "FAILED",
+          "message": "Improper handling of non-existent memory"
+        },
+        {
+          "case": "get_with_limit",
+          "status": "FAILED",
+          "message": "Limit not respected (returned 6 memories)"
+        }
+      ]
+    },
+    "vector_search": {
+      "status": "FAILED",
+      "message": "1 vector search tests failed",
+      "test_cases": [
+        {
+          "case": "vector_search_setup",
+          "status": "FAILED",
+          "message": "Failed to create test memory for search"
+        }
+      ]
+    },
+    "deduplication": {
+      "status": "PASSED",
+      "message": "Deduplication tests completed",
+      "test_cases": [
+        {
+          "case": "deduplication_setup",
+          "status": "FAILED",
+          "message": "Failed to create test memories for deduplication"
+        }
+      ]
+    },
+    "opentelemetry": {
+      "status": "INFO",
+      "message": "Metrics endpoint not available or not exposed"
+    },
+    "knowledge_graph": {
+      "status": "INFO",
+      "message": "Knowledge graph features not enabled or not exposed"
+    }
+  },
+  "overall_status": "CRITICAL",
+  "errors": [],
+  "warnings": [],
+  "performance_metrics": {
+    "/": [
+      {
+        "method": "GET",
+        "status_code": 404,
+        "response_time": 0.2322993278503418
+      }
+    ],
+    "/health": [
+      {
+        "method": "GET",
+        "status_code": 200,
+        "response_time": 0.6204867362976074
+      }
+    ],
+    "/memories": [
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.1908588409423828
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.1977531909942627
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.18229103088378906
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.19652199745178223
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.18036484718322754
+      },
+      {
+        "method": "GET",
+        "status_code": 200,
+        "response_time": 2.7344796657562256
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.1911296844482422
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.17819499969482422
+      },
+      {
+        "method": "POST",
+        "status_code": 422,
+        "response_time": 0.3461151123046875
+      }
+    ],
+    "/memories/1e93adc5-bd72-478b-a310-cf79fdb4ea8e": [
+      {
+        "method": "GET",
+        "status_code": 404,
+        "response_time": 0.17643284797668457
+      }
+    ],
+    "/memories?limit=5": [
+      {
+        "method": "GET",
+        "status_code": 200,
+        "response_time": 0.2504701614379883
+      }
+    ],
+    "/metrics": [
+      {
+        "method": "GET",
+        "status_code": 404,
+        "response_time": 0.19408750534057617
+      }
+    ],
+    "/graph/entities": [
+      {
+        "method": "GET",
+        "status_code": 404,
+        "response_time": 0.18152856826782227
+      }
+    ],
+    "/graph/relationships": [
+      {
+        "method": "GET",
+        "status_code": 404,
+        "response_time": 0.18732929229736328
+      }
+    ],
+    "/graph/query": [
+      {
+        "method": "GET",
+        "status_code": 405,
+        "response_time": 0.18713760375976562
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "priority": "CRITICAL",
+      "message": "Critical services failing: api_accessibility, memory_storage, vector_search. Immediate action required."
+    },
+    {
+      "priority": "HIGH",
+      "message": "Database connectivity issues detected. Check pgvector configuration."
+    },
+    {
+      "priority": "LOW",
+      "message": "OpenTelemetry metrics not fully configured. Consider enabling for better observability."
+    }
+  ],
+  "performance_summary": {
+    "/": {
+      "avg_response_time": 0.2322993278503418,
+      "max_response_time": 0.2322993278503418,
+      "min_response_time": 0.2322993278503418,
+      "request_count": 1
+    },
+    "/health": {
+      "avg_response_time": 0.6204867362976074,
+      "max_response_time": 0.6204867362976074,
+      "min_response_time": 0.6204867362976074,
+      "request_count": 1
+    },
+    "/memories": {
+      "avg_response_time": 0.4886343744066026,
+      "max_response_time": 2.7344796657562256,
+      "min_response_time": 0.17819499969482422,
+      "request_count": 9
+    },
+    "/memories/1e93adc5-bd72-478b-a310-cf79fdb4ea8e": {
+      "avg_response_time": 0.17643284797668457,
+      "max_response_time": 0.17643284797668457,
+      "min_response_time": 0.17643284797668457,
+      "request_count": 1
+    },
+    "/memories?limit=5": {
+      "avg_response_time": 0.2504701614379883,
+      "max_response_time": 0.2504701614379883,
+      "min_response_time": 0.2504701614379883,
+      "request_count": 1
+    },
+    "/metrics": {
+      "avg_response_time": 0.19408750534057617,
+      "max_response_time": 0.19408750534057617,
+      "min_response_time": 0.19408750534057617,
+      "request_count": 1
+    },
+    "/graph/entities": {
+      "avg_response_time": 0.18152856826782227,
+      "max_response_time": 0.18152856826782227,
+      "min_response_time": 0.18152856826782227,
+      "request_count": 1
+    },
+    "/graph/relationships": {
+      "avg_response_time": 0.18732929229736328,
+      "max_response_time": 0.18732929229736328,
+      "min_response_time": 0.18732929229736328,
+      "request_count": 1
+    },
+    "/graph/query": {
+      "avg_response_time": 0.18713760375976562,
+      "max_response_time": 0.18713760375976562,
+      "min_response_time": 0.18713760375976562,
+      "request_count": 1
+    }
+  },
+  "summary": {
+    "total_tests": 9,
+    "passed": 2,
+    "failed": 4,
+    "warnings": 1
+  }
+}
