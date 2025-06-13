@@ -48,7 +48,7 @@
   },
   "homepage": "https://github.com/vonbase/core-nexus/tree/main/packages/example-lib#readme",
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.0.1",
     "@typescript-eslint/eslint-plugin": "^8.34.0",
     "@typescript-eslint/parser": "^8.34.0",
     "@vitest/coverage-v8": "^3.2.3",
