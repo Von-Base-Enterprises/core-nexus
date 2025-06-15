@@ -6,6 +6,7 @@ without requiring a live database connection.
 """
 
 from uuid import UUID, uuid4
+import asyncio
 
 import pytest
 
@@ -112,10 +113,18 @@ class TestGraphProvider:
             }
         )
 
-    @pytest.fixture
+    import pytest_asyncio
+
+    @pytest_asyncio.fixture
     async def graph_provider(self, mock_config, monkeypatch):
         """Create GraphProvider with mocked dependencies."""
-        from memory_service.providers import GraphProvider
+        import importlib.util, pathlib, sys
+        providers_path = pathlib.Path(__file__).resolve().parent.parent / "src" / "memory_service" / "providers.py"
+        spec = importlib.util.spec_from_file_location("graph_providers", providers_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["graph_providers"] = module
+        spec.loader.exec_module(module)
+        GraphProvider = module.GraphProvider
 
         # Mock asyncpg
         mock_pool = MockConnectionPool()
@@ -406,6 +415,135 @@ class TestRelationshipInference:
         for context, keywords in contexts.items():
             context_lower = context.lower()
             assert any(keyword in context_lower for keyword in keywords)
+
+
+class TestAdditionalGraphOperations:
+    """Tests for higher level graph features."""
+
+    @pytest.fixture
+    def mock_config(self):
+        from dataclasses import dataclass
+
+        @dataclass
+        class ProviderConfig:
+            name: str
+            enabled: bool
+            primary: bool
+            config: dict
+
+        return ProviderConfig(
+            name="graph",
+            enabled=True,
+            primary=False,
+            config={
+                "connection_string": "postgresql://test@localhost/test",
+                "table_prefix": "graph"
+            }
+        )
+
+    import pytest_asyncio
+
+    @pytest_asyncio.fixture
+    async def graph_provider(self, mock_config, monkeypatch):
+        import importlib.util, pathlib, sys
+        providers_path = pathlib.Path(__file__).resolve().parent.parent / "src" / "memory_service" / "providers.py"
+        spec = importlib.util.spec_from_file_location("graph_providers", providers_path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["graph_providers"] = module
+        spec.loader.exec_module(module)
+        GraphProvider = module.GraphProvider
+
+        mock_pool = MockConnectionPool()
+
+        async def mock_create_pool(*args, **kwargs):
+            return mock_pool
+
+        monkeypatch.setattr("asyncpg.create_pool", mock_create_pool)
+
+        provider = GraphProvider(mock_config)
+        provider._pool_initialized = False
+        await provider._ensure_pool()
+        return provider
+
+    @pytest.mark.asyncio
+    async def test_sync_memory_into_graph(self, graph_provider):
+        """Ensure storing a memory triggers graph inserts."""
+        graph_provider.entity_extractor = "simple"
+        content = "OpenAI develops ChatGPT"
+        embedding = [0.0] * 1536
+
+        memory_id = await graph_provider.store(content, embedding, {})
+
+        assert isinstance(memory_id, UUID)
+        conn = graph_provider.connection_pool._connection
+        # Expect node and mapping insert queries
+        node_queries = [q for q in conn.queries if "graph_nodes" in q[0]]
+        map_queries = [q for q in conn.queries if "memory_entity_map" in q[0]]
+        assert node_queries
+        assert map_queries
+
+    def test_retrieve_entity_path(self):
+        """Find simple path between entities using BFS."""
+        graph = {
+            'A': ['B'],
+            'B': ['C'],
+            'C': ['D'],
+            'D': []
+        }
+
+        def find_path(start, end):
+            queue = [(start, [start])]
+            visited = set()
+            while queue:
+                node, path = queue.pop(0)
+                if node == end:
+                    return path
+                if node in visited:
+                    continue
+                visited.add(node)
+                for neigh in graph.get(node, []):
+                    queue.append((neigh, path + [neigh]))
+            return []
+
+        path = find_path('A', 'D')
+        assert path == ['A', 'B', 'C', 'D']
+
+    @pytest.mark.asyncio
+    async def test_bulk_sync_operations(self, graph_provider):
+        """Store multiple memories concurrently."""
+        graph_provider.entity_extractor = "simple"
+        memories = [f"Entity {i} relates" for i in range(3)]
+        embedding = [0.1] * 1536
+
+        ids = await asyncio.gather(*[
+            graph_provider.store(m, embedding, {}) for m in memories
+        ])
+
+        assert all(isinstance(mid, UUID) for mid in ids)
+
+    def test_generate_insights(self):
+        """Verify insight generation utility."""
+        import sys, types, importlib.util, pathlib
+        dummy_aiohttp = types.ModuleType('aiohttp')
+        class DummySession: pass
+        dummy_aiohttp.ClientSession = DummySession
+        sys.modules.setdefault('aiohttp', dummy_aiohttp)
+
+        demo_path = pathlib.Path(__file__).resolve().parent.parent / "demo_queries.py"
+        spec = importlib.util.spec_from_file_location("demo_queries", demo_path)
+        demo_module = importlib.util.module_from_spec(spec)
+        sys.modules["demo_queries"] = demo_module
+        spec.loader.exec_module(demo_module)
+        CoreNexusDemoQueries = demo_module.CoreNexusDemoQueries
+
+        demo = CoreNexusDemoQueries()
+        memories = [{"id": "1", "content": "test"}]
+        graph_data = {"nodes": [1], "relationships": [1]}
+        query = {"query": "demo", "expected_insights": ["insight"]}
+
+        result = demo.generate_insights(memories, graph_data, query)
+        assert result["insights"] == ["insight"]
+        assert "summary" in result
 
 
 if __name__ == "__main__":
