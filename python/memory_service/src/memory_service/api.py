@@ -1497,13 +1497,19 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
 
-            # TODO: Implement memory fetching and entity extraction
-            # This requires fetching the memory content from the primary provider
-            # and running it through the graph provider's entity extraction
-            raise HTTPException(
-                status_code=501,
-                detail="Memory sync not yet implemented. This endpoint will extract entities from existing memories."
-            )
+            from uuid import UUID
+
+            memory = await graph_provider.fetch_memory(UUID(memory_id))
+            if not memory:
+                raise HTTPException(status_code=404, detail="Memory not found")
+
+            entities, relationships = await graph_provider.sync_existing_memory(memory)
+
+            return {
+                "memory_id": memory_id,
+                "entities_added": entities,
+                "relationships_added": relationships,
+            }
 
         except Exception as e:
             logger.error(f"Graph sync failed: {e}")
@@ -1571,12 +1577,13 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
 
-            # TODO: Implement actual path finding
+            path = await graph_provider.find_path(from_entity, to_entity, max_depth)
+
             return {
                 "from": from_entity,
                 "to": to_entity,
-                "path_found": False,
-                "message": "Path finding not yet implemented"
+                "path": path,
+                "path_found": bool(path),
             }
 
         except Exception as e:
@@ -1598,22 +1605,11 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
 
-            # TODO: Implement actual insights gathering
-            # For now, return mock data
-            return {
-                "memory_id": memory_id,
-                "entity": {
-                    "id": memory_id,
-                    "entity_type": "concept",
-                    "entity_name": "placeholder",
-                    "properties": {},
-                    "importance_score": 0.5
-                },
-                "memory_count": 1,
-                "relationship_count": 0,
-                "top_relationships": [],
-                "co_occurring_entities": []
-            }
+            insights = await graph_provider.memory_insights(memory_id)
+            if not insights:
+                raise HTTPException(status_code=404, detail="Memory not found")
+
+            return insights
 
         except Exception as e:
             logger.error(f"Graph insights failed: {e}")
@@ -1634,11 +1630,13 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
 
-            # TODO: Implement bulk sync
+            from uuid import UUID
+            ids = [UUID(mid) for mid in memory_ids]
+            processed = await graph_provider.bulk_sync(ids)
+
             return {
                 "status": "success",
-                "memories_processed": len(memory_ids),
-                "message": "Bulk sync initiated (placeholder)"
+                "memories_processed": processed,
             }
 
         except Exception as e:
