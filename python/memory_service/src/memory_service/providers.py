@@ -1094,3 +1094,184 @@ class GraphProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to get graph stats: {e}")
             return {'error': str(e)}
+
+    # ------------------------------------------------------------------
+    # Helper utilities for API endpoints
+    # ------------------------------------------------------------------
+
+    async def fetch_memory(self, memory_id: UUID) -> MemoryResponse | None:
+        """Retrieve a memory record from the shared pgvector table."""
+        await self._ensure_pool()
+
+        if not self.connection_pool:
+            return None
+
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, content, metadata, importance_score, created_at
+                FROM vector_memories
+                WHERE id = $1
+                """,
+                memory_id,
+            )
+
+            if not row:
+                return None
+
+            return MemoryResponse(
+                id=row["id"],
+                content=row["content"],
+                metadata=dict(row["metadata"]) if row["metadata"] else {},
+                importance_score=float(row["importance_score"]),
+                similarity_score=1.0,
+                created_at=row["created_at"],
+            )
+
+    async def sync_existing_memory(self, memory: MemoryResponse) -> tuple[int, int]:
+        """Extract entities/relationships for a stored memory."""
+        await self._ensure_pool()
+
+        if not self.connection_pool:
+            return 0, 0
+
+        entities = await self._extract_entities(memory.content)
+        relationships = await self._infer_relationships(entities, memory.content)
+
+        entity_ids: dict[str, UUID] = {}
+
+        async with self.connection_pool.acquire() as conn:
+            embedding_model = await self._get_or_create_embedding_model()
+
+            for ent in entities:
+                entity_embedding = None
+                if embedding_model:
+                    entity_embedding = embedding_model.encode(ent["name"]).tolist()
+
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id FROM graph_nodes
+                    WHERE entity_name = $1 AND entity_type = $2
+                    """,
+                    ent["name"],
+                    ent["type"],
+                )
+
+                if existing:
+                    entity_id = existing["id"]
+                    await conn.execute(
+                        """
+                        UPDATE graph_nodes
+                        SET mention_count = mention_count + 1,
+                            last_seen = NOW()
+                        WHERE id = $1
+                        """,
+                        entity_id,
+                    )
+                else:
+                    entity_id = uuid4()
+                    embedding_str = (
+                        "[" + ",".join(map(str, entity_embedding)) + "]" if entity_embedding else None
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO graph_nodes (id, entity_type, entity_name, embedding)
+                        VALUES ($1, $2, $3, $4::vector)
+                        """,
+                        entity_id,
+                        ent["type"],
+                        ent["name"],
+                        embedding_str,
+                    )
+
+                entity_ids[ent["name"]] = entity_id
+                await conn.execute(
+                    """
+                    INSERT INTO memory_entity_map (memory_id, entity_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    memory.id,
+                    entity_id,
+                )
+
+            for rel in relationships:
+                if rel["from_entity"] not in entity_ids or rel["to_entity"] not in entity_ids:
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO graph_relationships
+                    (from_node_id, to_node_id, relationship_type, strength, confidence)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (from_node_id, to_node_id, relationship_type)
+                    DO UPDATE SET
+                        occurrence_count = graph_relationships.occurrence_count + 1,
+                        strength = GREATEST(graph_relationships.strength, EXCLUDED.strength),
+                        last_seen = NOW()
+                    """,
+                    entity_ids[rel["from_entity"]],
+                    entity_ids[rel["to_entity"]],
+                    rel["type"],
+                    rel["strength"],
+                    rel["confidence"],
+                )
+
+        return len(entities), len(relationships)
+
+    async def find_path(self, from_entity: str, to_entity: str, max_depth: int = 3) -> list[str]:
+        """Find a connection path between two entities."""
+        await self._ensure_pool()
+
+        if not self.connection_pool:
+            return []
+
+        async with self.connection_pool.acquire() as conn:
+            query = """
+                WITH RECURSIVE search_path(node_id, path, depth) AS (
+                    SELECT gn.id, ARRAY[gn.entity_name], 0
+                    FROM graph_nodes gn
+                    WHERE gn.entity_name = $1
+                    UNION ALL
+                    SELECT gr.to_node_id, sp.path || gn.entity_name, sp.depth + 1
+                    FROM search_path sp
+                    JOIN graph_relationships gr ON gr.from_node_id = sp.node_id
+                    JOIN graph_nodes gn ON gn.id = gr.to_node_id
+                    WHERE sp.depth < $3
+                )
+                SELECT path FROM search_path
+                JOIN graph_nodes gn ON gn.id = search_path.node_id
+                WHERE gn.entity_name = $2
+                ORDER BY array_length(path,1)
+                LIMIT 1
+            """
+
+            row = await conn.fetchrow(query, from_entity, to_entity, max_depth)
+            if row and row["path"]:
+                return row["path"]
+
+        return []
+
+    async def bulk_sync(self, memory_ids: list[UUID]) -> int:
+        """Synchronize multiple existing memories into the graph."""
+        count = 0
+        for mid in memory_ids:
+            memory = await self.fetch_memory(mid)
+            if memory:
+                await self.sync_existing_memory(memory)
+                count += 1
+        return count
+
+    async def memory_insights(self, memory_id: str) -> dict[str, Any] | None:
+        """Return basic graph insights for a memory."""
+        mem = await self.fetch_memory(UUID(memory_id))
+        if not mem:
+            return None
+
+        entities = await self._extract_entities(mem.content)
+        relationships = await self._infer_relationships(entities, mem.content)
+
+        return {
+            "memory_id": memory_id,
+            "entities": entities,
+            "relationships": relationships,
+        }
