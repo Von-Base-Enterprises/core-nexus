@@ -111,7 +111,7 @@ class EmergencySearchFix:
                     memory = MemoryResponse(
                         id=row['id'],
                         content=row['content'],
-                        metadata=dict(row['metadata']) if row['metadata'] else {},
+                        metadata=row['metadata'] if row['metadata'] else {},
                         embedding=[],
                         importance_score=float(row['importance_score'] or 0.5),
                         similarity_score=1.0,  # Default high score
@@ -156,7 +156,7 @@ class EmergencySearchFix:
                     memory = MemoryResponse(
                         id=row['id'],
                         content=row['content'],
-                        metadata=dict(row['metadata']) if row['metadata'] else {},
+                        metadata=row['metadata'] if row['metadata'] else {},
                         embedding=[],
                         importance_score=float(row['importance_score'] or 0.5),
                         similarity_score=float(row['rank']) if row['rank'] else 0.5,
@@ -211,7 +211,7 @@ class EmergencySearchFix:
                     memory = MemoryResponse(
                         id=row['id'],
                         content=row['content'],
-                        metadata=dict(row['metadata']) if row['metadata'] else {},
+                        metadata=row['metadata'] if row['metadata'] else {},
                         embedding=[],
                         importance_score=float(row['importance_score'] or 0.5),
                         similarity_score=relevance,
