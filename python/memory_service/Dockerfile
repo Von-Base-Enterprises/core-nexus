@@ -23,6 +23,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy source code
 COPY src/ ./src/
 COPY example_usage.py .
+COPY run_migrations.py .
+COPY startup.sh .
+COPY migrations/ ./migrations/
 
 # Production stage
 FROM python:3.11-slim as production
@@ -40,8 +43,9 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app .
 
-# Create necessary directories
+# Create necessary directories and set permissions
 RUN mkdir -p /app/chroma_db /app/logs && \
+    chmod +x /app/startup.sh && \
     chown -R memoryuser:memoryuser /app
 
 # Switch to non-root user
@@ -60,5 +64,5 @@ ENV PYTHONPATH=/app/src \
 # Expose port
 EXPOSE 8000
 
-# Start command
-CMD ["python", "-m", "uvicorn", "memory_service.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Start command - run migrations then start API
+CMD ["/app/startup.sh"]
