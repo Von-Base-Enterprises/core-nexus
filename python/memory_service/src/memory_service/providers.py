@@ -401,7 +401,9 @@ class PgVectorProvider(VectorProvider):
             
             # Build where clauses including embedding check
             where_clauses = ["embedding IS NOT NULL"]
-            params = [[float(x) for x in query_embedding]]  # Ensure floats
+            # Convert embedding to string format that PostgreSQL expects
+            embedding_str = '[' + ','.join([str(float(x)) for x in query_embedding]) + ']'
+            params = [embedding_str]  # First parameter is the embedding string
             param_count = 2  # $2 will be limit
 
             # Add metadata filters
@@ -452,7 +454,7 @@ class PgVectorProvider(VectorProvider):
                         ORDER BY embedding <=> $1::vector
                         LIMIT $2
                     """
-                    rows = await conn.fetch(fallback_query, [float(x) for x in query_embedding], limit)
+                    rows = await conn.fetch(fallback_query, embedding_str, limit)
             except Exception as e:
                 logger.error(f"Query failed: {e}")
                 logger.error(f"Query: {query}")
