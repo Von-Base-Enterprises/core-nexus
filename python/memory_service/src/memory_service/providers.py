@@ -367,8 +367,8 @@ class PgVectorProvider(VectorProvider):
         async with self.connection_pool.acquire() as conn:
             # Use transaction for atomicity
             async with conn.transaction():
-                # Convert embedding to PostgreSQL vector format
-                embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+                # CRITICAL FIX: Pass embedding as array directly, not string!
+                # asyncpg will handle the conversion to PostgreSQL vector format
 
                 # Serialize metadata to JSON string for PostgreSQL JSONB column
                 metadata_json = json.dumps(metadata) if metadata else '{}'
@@ -380,7 +380,7 @@ class PgVectorProvider(VectorProvider):
                 """,
                     memory_id,
                     content,
-                    embedding_str,
+                    embedding,  # Pass array directly!
                     metadata_json,
                     metadata.get('importance_score', 0.5)
                 )
@@ -401,9 +401,8 @@ class PgVectorProvider(VectorProvider):
             
             # Build where clauses including embedding check
             where_clauses = ["embedding IS NOT NULL"]
-            # Convert embedding to string format that PostgreSQL expects
-            embedding_str = '[' + ','.join([str(float(x)) for x in query_embedding]) + ']'
-            params = [embedding_str]  # First parameter is the embedding string
+            # CRITICAL FIX: Pass embedding as array directly, not string!
+            params = [query_embedding]  # First parameter is the embedding array
             param_count = 2  # $2 will be limit
 
             # Add metadata filters
