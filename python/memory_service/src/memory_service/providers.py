@@ -411,11 +411,11 @@ class PgVectorProvider(VectorProvider):
             if filters:
                 for key, value in filters.items():
                     if key not in ['limit', 'offset', 'user_id']:  # Handle user_id specially
-                        where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                        where_clauses.append(f"metadata->>'{key}' = ${param_count}")
                         params.append(str(value))
                         param_count += 1
                     elif key == 'user_id':
-                        where_clauses.append(f"user_id = ${param_count + 1}")
+                        where_clauses.append(f"user_id = ${param_count}")
                         params.append(value)
                         param_count += 1
 
@@ -455,7 +455,7 @@ class PgVectorProvider(VectorProvider):
                         ORDER BY embedding <=> $1::vector
                         LIMIT $2
                     """
-                    rows = await conn.fetch(fallback_query, query_embedding, limit)
+                    rows = await conn.fetch(fallback_query, embedding_str, limit)
             except Exception as e:
                 logger.error(f"Query failed: {e}")
                 logger.error(f"Query: {query}")
