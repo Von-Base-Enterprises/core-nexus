@@ -1,0 +1,159 @@
+{
+  "test_summary": {
+    "started_at": "2025-06-16T02:19:59-04:00",
+    "base_url": "https://core-nexus-memory-service.onrender.com"
+  },
+  "test_results": [
+    {
+      "test_name": "Health Check",
+      "method": "GET",
+      "endpoint": "/health",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 0.492977,
+      "timestamp": "2025-06-16T02:19:59-04:00",
+      "response_preview": "{\"status\":\"healthy\",\"providers\":{\"pgvector\":{\"status\":\"healthy\",\"details\":{\"status\":\"healthy\",\"details\":{\"total_vectors\":1100,\"pgvector_enabled\":true,\"table_name\":\"vector_memories\",\"pool_size\":5}},\"primary\":true},\"chromadb\":{\"status\":\"healthy\",\"details\":{\"status\":\"healthy\",\"details\":{\"total_vectors\":0,\"collection_name\":\"core_nexus_memories\"}},\"primary\":false},\"graph\":{\"status\":\"healthy\",\"details\":{\"status\":\"healthy\",\"details\":{\"
+    },
+    {
+      "test_name": "Memory Statistics",
+      "method": "GET",
+      "endpoint": "/memories/stats",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 0.923940,
+      "timestamp": "2025-06-16T02:20:00-04:00",
+      "response_preview": "{\"total_memories\":1100,\"memories_by_provider\":{\"pgvector\":0,\"chromadb\":0,\"graph\":0},\"avg_importance_score\":0.5,\"most_recent_memory\":null,\"queries_last_hour\":3,\"avg_query_time_ms\":4970.462640126546}"
+    },
+    {
+      "test_name": "Get All Memories",
+      "method": "GET",
+      "endpoint": "/memories?limit=5",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 0.366574,
+      "timestamp": "2025-06-16T02:20:01-04:00",
+      "response_preview": "{\"memories\":[],\"total_found\":0,\"query_time_ms\":227.10013389587402,\"providers_used\":[\"pgvector_direct\"],\"trust_metrics\":{\"confidence_score\":1.0,\"data_completeness\":0.0,\"endpoint\":\"GET /memories\",\"fix_applied\":true,\"note\":\"This endpoint was added to fix the 3-result bug\"},\"query_metadata\":{\"limit_requested\":5,\"offset\":0,\"actual_returned\":0,\"total_available\":0}}"
+    },
+    {
+      "test_name": "Create Memory",
+      "method": "POST",
+      "endpoint": "/memories",
+      "success": false,
+      "http_code": 500,
+      "response_time_seconds": 3.844079,
+      "timestamp": "2025-06-16T02:20:05-04:00",
+      "response_preview": "{\"detail\":\"Internal server error\"}"
+    },
+    {
+      "test_name": "Query Memories",
+      "method": "POST",
+      "endpoint": "/memories/query",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 6.668507,
+      "timestamp": "2025-06-16T02:20:12-04:00",
+      "response_preview": "{\"memories\":[],\"total_found\":0,\"query_time_ms\":6418.039083480835,\"providers_used\":[\"text_search_fallback\"],\"trust_metrics\":{\"confidence_score\":0.3,\"data_completeness\":0.0,\"query_type\":\"semantic_search\",\"fix_applied\":true,\"expected_behavior\":\"Returns all memories up to limit for empty queries\"},\"query_metadata\":{\"original_query\":\"test\",\"limit_requested\":5,\"actual_returned\":0,\"api_version\":\"1.1.0-fixed\"}}"
+    },
+    {
+      "test_name": "Empty Query Test",
+      "method": "POST",
+      "endpoint": "/memories/query",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 0.693133,
+      "timestamp": "2025-06-16T02:20:13-04:00",
+      "response_preview": "{\"memories\":[],\"total_found\":0,\"query_time_ms\":257.4124336242676,\"providers_used\":[\"pgvector_direct\"],\"trust_metrics\":{\"confidence_score\":0.3,\"data_completeness\":0.0,\"query_type\":\"empty_query\",\"fix_applied\":true,\"expected_behavior\":\"Returns all memories up to limit for empty queries\"},\"query_metadata\":{\"original_query\":\"\",\"limit_requested\":10,\"actual_returned\":0,\"api_version\":\"1.1.0-fixed\"}}"
+    },
+    {
+      "test_name": "Batch Create Memories",
+      "method": "POST",
+      "endpoint": "/memories/batch",
+      "success": false,
+      "http_code": 422,
+      "response_time_seconds": 0.573845,
+      "timestamp": "2025-06-16T02:20:14-04:00",
+      "response_preview": "{\"detail\":[{\"type\":\"list_type\",\"loc\":[\"body\"],\"msg\":\"Input should be a valid list\",\"input\":{\"memories\":[{\"content\":\"Batch test 1\",\"context\":\"Batch\"},{\"content\":\"Batch test 2\",\"context\":\"Batch\"}]},\"url\":\"https://errors.pydantic.dev/2.5/v/list_type\"}]}"
+    },
+    {
+      "test_name": "Text Search",
+      "method": "GET",
+      "endpoint": "/memories/search/text?q=test&limit=5",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 6.586003,
+      "timestamp": "2025-06-16T02:20:20-04:00",
+      "response_preview": "{\"query\":\"test\",\"results_found\":0,\"search_type\":\"text_based\",\"memories\":[]}"
+    },
+    {
+      "test_name": "Deduplication Check",
+      "method": "POST",
+      "endpoint": "/dedup/check",
+      "success": false,
+      "http_code": 422,
+      "response_time_seconds": 0.221010,
+      "timestamp": "2025-06-16T02:20:21-04:00",
+      "response_preview": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"content\"],\"msg\":\"Field required\",\"input\":null,\"url\":\"https://errors.pydantic.dev/2.5/v/missing\"}]}"
+    },
+    {
+      "test_name": "Dedup Statistics",
+      "method": "GET",
+      "endpoint": "/dedup/stats",
+      "success": true,
+      "http_code": 200,
+      "response_time_seconds": 0.414474,
+      "timestamp": "2025-06-16T02:20:21-04:00",
+      "response_preview": "{\"status\":\"disabled\",\"message\":\"Deduplication service not enabled\",\"enable_instructions\":\"Set DEDUPLICATION_MODE to 'log_only' or 'active'\"}"
+    },
+    {
+      "test_name": "Export CSV",
+      "method": "POST",
+      "endpoint": "/api/v1/memories/export",
+      "success": false,
+      "http_code": 500,
+      "response_time_seconds": 0.218368,
+      "timestamp": "2025-06-16T02:20:22-04:00",
+      "response_preview": "{\"detail\":\"Export failed\"}"
+    },
+    {
+      "test_name": "Export JSON",
+      "method": "POST",
+      "endpoint": "/api/v1/memories/export",
+      "success": false,
+      "http_code": 500,
+      "response_time_seconds": 0.380712,
+      "timestamp": "2025-06-16T02:20:22-04:00",
+      "response_preview": "{\"detail\":\"Export failed\"}"
+    },
+    {
+      "test_name": "Invalid Endpoint",
+      "method": "GET",
+      "endpoint": "/non-existent",
+      "success": true,
+      "http_code": 404,
+      "response_time_seconds": 0.217058,
+      "timestamp": "2025-06-16T02:20:23-04:00",
+      "response_preview": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "test_name": "Invalid Memory Creation",
+      "method": "POST",
+      "endpoint": "/memories",
+      "success": true,
+      "http_code": 422,
+      "response_time_seconds": 0.390344,
+      "timestamp": "2025-06-16T02:20:23-04:00",
+      "response_preview": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"content\"],\"msg\":\"Field required\",\"input\":{\"invalid_field\":\"test\"},\"url\":\"https://errors.pydantic.dev/2.5/v/missing\"}]}"
+    },
+    {
+      "test_name": "Invalid Query Limit",
+      "method": "POST",
+      "endpoint": "/memories/query",
+      "success": true,
+      "http_code": 422,
+      "response_time_seconds": 0.225600,
+      "timestamp": "2025-06-16T02:20:24-04:00",
+      "response_preview": "{\"detail\":[{\"type\":\"int_parsing\",\"loc\":[\"body\",\"limit\"],\"msg\":\"Input should be a valid integer, unable to parse string as an integer\",\"input\":\"invalid\",\"url\":\"https://errors.pydantic.dev/2.5/v/int_parsing\"}]}"
+    }
+  ],
+  "completed_at": "2025-06-16T02:20:24-04:00"
+}

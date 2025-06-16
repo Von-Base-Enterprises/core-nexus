@@ -1,0 +1,202 @@
+{
+  "timestamp": "2025-06-15T23:59:57.169002",
+  "base_url": "https://core-nexus-memory-service.onrender.com",
+  "tests": [
+    {
+      "endpoint": "/health",
+      "success": true,
+      "memory_count": 0,
+      "status": "healthy",
+      "data": {
+        "status": "healthy",
+        "providers": {
+          "pgvector": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 1096,
+                "pgvector_enabled": true,
+                "table_name": "vector_memories",
+                "pool_size": 2
+              }
+            },
+            "primary": true
+          },
+          "chromadb": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 0,
+                "collection_name": "core_nexus_memories"
+              }
+            },
+            "primary": false
+          },
+          "graph": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "connection": "active",
+                "graph_nodes": 120,
+                "graph_relationships": 27,
+                "entity_extractor": "regex"
+              }
+            },
+            "primary": false
+          }
+        },
+        "total_memories": 1096,
+        "avg_query_time_ms": 0.0,
+        "uptime_seconds": 1616.1625196933746
+      }
+    },
+    {
+      "endpoint": "/query",
+      "query": "",
+      "limit": 5,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "",
+      "limit": 50,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "",
+      "limit": 100,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "test",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "memory",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "data",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "embedding",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "vector",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "claude",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "ai",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/query",
+      "query": "knowledge",
+      "limit": 10,
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "GET /memories",
+      "limit": 10,
+      "success": true,
+      "count": 0,
+      "memories": []
+    },
+    {
+      "endpoint": "GET /memories",
+      "limit": 50,
+      "success": true,
+      "count": 0,
+      "memories": []
+    },
+    {
+      "endpoint": "GET /memories",
+      "limit": 100,
+      "success": true,
+      "count": 0,
+      "memories": []
+    },
+    {
+      "endpoint": "/memories/stats",
+      "success": true,
+      "stats": {
+        "total_memories": 1096,
+        "memories_by_provider": {
+          "pgvector": 0,
+          "chromadb": 0,
+          "graph": 0
+        },
+        "avg_importance_score": 0.5,
+        "most_recent_memory": null,
+        "queries_last_hour": 0,
+        "avg_query_time_ms": 0.0
+      }
+    },
+    {
+      "endpoint": "/memories/recent",
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/search",
+      "query": "test",
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/search",
+      "query": "memory",
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    },
+    {
+      "endpoint": "/search",
+      "query": "ai",
+      "success": false,
+      "error": "{\"detail\":\"Not Found\"}"
+    }
+  ],
+  "reported_memory_count": 0
+}

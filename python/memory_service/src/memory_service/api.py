@@ -482,7 +482,9 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             record_metric("memory_operations_total", 1, {"operation": "store", "status": "error", "error_type": "internal"})
             logger.error(f"Failed to store memory: {e}")
-            raise HTTPException(status_code=500, detail="Internal server error")
+            # Provide more detailed error in development/debug mode
+            error_detail = f"Memory creation failed: {str(e)}" if os.getenv("DEBUG_MODE") == "true" else "Internal server error"
+            raise HTTPException(status_code=500, detail=error_detail)
 
     @app.post("/memories/query", response_model=QueryResponse)
     @trace_operation("api.query_memories")

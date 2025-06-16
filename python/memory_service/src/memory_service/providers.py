@@ -485,41 +485,41 @@ class PgVectorProvider(VectorProvider):
                 )
                 memories.append(memory)
 
-        # Emergency fallback: if no memories found, try without vector operations
-        if not memories:
-            try:
-                logger.warning("No results from vector query, trying simple select")
-                rows = await conn.fetch(f"""
-                    SELECT id, content, metadata, importance_score, created_at, updated_at
-                    FROM {self.table_name}
-                    ORDER BY created_at DESC
-                    LIMIT $1
-                """, limit)
-                
-                for row in rows:
-                    metadata = row['metadata']
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except:
-                            metadata = {}
+            # Emergency fallback: if no memories found, try without vector operations
+            if not memories:
+                try:
+                    logger.warning("No results from vector query, trying simple select")
+                    rows = await conn.fetch(f"""
+                        SELECT id, content, metadata, importance_score, created_at, updated_at
+                        FROM {self.table_name}
+                        ORDER BY created_at DESC
+                        LIMIT $1
+                    """, limit)
                     
-                    memory = MemoryResponse(
-                        id=str(row['id']),
-                        content=row['content'],
-                        metadata=metadata,
-                        embedding=[],
-                        importance_score=float(row.get('importance_score', 0.5)),
-                        similarity_score=0.5,  # Default similarity for non-vector results
-                        created_at=row['created_at'].isoformat() if row['created_at'] else None,
-                        updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
-                    )
-                    memories.append(memory)
-                    
-                if memories:
-                    logger.info(f"Emergency fallback returned {len(memories)} results")
-            except Exception as e:
-                logger.error(f"Emergency fallback also failed: {e}")
+                    for row in rows:
+                        metadata = row['metadata']
+                        if isinstance(metadata, str):
+                            try:
+                                metadata = json.loads(metadata)
+                            except:
+                                metadata = {}
+                        
+                        memory = MemoryResponse(
+                            id=str(row['id']),
+                            content=row['content'],
+                            metadata=metadata,
+                            embedding=[],
+                            importance_score=float(row.get('importance_score', 0.5)),
+                            similarity_score=0.5,  # Default similarity for non-vector results
+                            created_at=row['created_at'].isoformat() if row['created_at'] else None,
+                            updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
+                        )
+                        memories.append(memory)
+                        
+                    if memories:
+                        logger.info(f"Emergency fallback returned {len(memories)} results")
+                except Exception as e:
+                    logger.error(f"Emergency fallback also failed: {e}")
 
         return memories
 
