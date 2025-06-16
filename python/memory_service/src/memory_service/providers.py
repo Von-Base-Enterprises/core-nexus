@@ -367,8 +367,8 @@ class PgVectorProvider(VectorProvider):
         async with self.connection_pool.acquire() as conn:
             # Use transaction for atomicity
             async with conn.transaction():
-                # CRITICAL FIX: Pass embedding as array directly, not string!
-                # asyncpg will handle the conversion to PostgreSQL vector format
+                # For INSERT operations, asyncpg can handle arrays directly
+                # This is different from SELECT queries with vector operators
 
                 # Serialize metadata to JSON string for PostgreSQL JSONB column
                 metadata_json = json.dumps(metadata) if metadata else '{}'
@@ -401,8 +401,10 @@ class PgVectorProvider(VectorProvider):
             
             # Build where clauses including embedding check
             where_clauses = ["embedding IS NOT NULL"]
-            # CRITICAL FIX: Pass embedding as array directly, not string!
-            params = [query_embedding]  # First parameter is the embedding array
+            # CRITICAL FIX: For vector similarity queries, we need string format
+            # asyncpg cannot pass arrays directly to pgvector operators
+            embedding_str = f"[{','.join(map(str, query_embedding))}]"
+            params = [embedding_str]  # First parameter is the embedding string
             param_count = 2  # $2 will be limit
 
             # Add metadata filters
