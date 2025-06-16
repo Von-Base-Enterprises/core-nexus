@@ -396,57 +396,91 @@ class PgVectorProvider(VectorProvider):
         await self._ensure_pool_ready()
 
         async with self.connection_pool.acquire() as conn:
-            # Build query with filters
-            where_clauses = []
-            params = []
-            param_count = 2  # $1 is embedding, $2 is limit
+            # CRITICAL FIX: Ensure we're in the right schema
+            await conn.execute("SET search_path TO public, pg_catalog")
+            
+            # Build where clauses including embedding check
+            where_clauses = ["embedding IS NOT NULL"]
+            params = [[float(x) for x in query_embedding]]  # Ensure floats
+            param_count = 2  # $2 will be limit
 
             # Add metadata filters
             if filters:
                 for key, value in filters.items():
-                    if key not in ['limit', 'offset']:
+                    if key not in ['limit', 'offset', 'user_id']:  # Handle user_id specially
                         where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
                         params.append(str(value))
                         param_count += 1
+                    elif key == 'user_id':
+                        where_clauses.append(f"user_id = ${param_count + 1}")
+                        params.append(value)
+                        param_count += 1
 
-            where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            where_clause = f"WHERE {' AND '.join(where_clauses)}"
 
-            # Convert embedding to PostgreSQL vector format
-            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
-
-            # Query with cosine similarity - handle NULL embeddings
+            # Query with proper vector casting
             query = f"""
                 SELECT
                     id,
                     content,
+                    embedding,
                     metadata,
                     COALESCE(importance_score, 0.5) as importance_score,
-                    CASE 
-                        WHEN embedding IS NULL THEN 0.0
-                        ELSE 1 - (embedding <=> $1::vector)
-                    END as similarity_score,
-                    created_at
+                    (embedding <=> $1::vector) as distance,
+                    created_at,
+                    updated_at
                 FROM {self.table_name}
                 {where_clause}
-                WHERE embedding IS NOT NULL
                 ORDER BY embedding <=> $1::vector
-                LIMIT $2
+                LIMIT ${param_count + 1}
             """
+            params.append(limit)
 
-            # Use read committed isolation level for consistent reads
-            rows = await conn.fetch(query, embedding_str, limit, *params)
+            try:
+                # Execute query with explicit vector type casting
+                rows = await conn.fetch(query, *params)
+                
+                # If no results and filters were applied, try without filters
+                if not rows and filters:
+                    fallback_query = f"""
+                        SELECT
+                            id, content, embedding, metadata,
+                            importance_score, created_at, updated_at,
+                            (embedding <=> $1::vector) as distance
+                        FROM {self.table_name}
+                        WHERE embedding IS NOT NULL
+                        ORDER BY embedding <=> $1::vector
+                        LIMIT $2
+                    """
+                    rows = await conn.fetch(fallback_query, [float(x) for x in query_embedding], limit)
+            except Exception as e:
+                logger.error(f"Query failed: {e}")
+                logger.error(f"Query: {query}")
+                logger.error(f"Params: {params}")
+                raise
 
             # Convert to MemoryResponse objects
             memories = []
             for row in rows:
+                # Parse metadata correctly
+                metadata = row['metadata']
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                elif not isinstance(metadata, dict):
+                    metadata = {}
+                
                 memory = MemoryResponse(
                     id=row['id'],
                     content=row['content'],
-                    metadata=row['metadata'] if isinstance(row['metadata'], dict) else {},
-                    embedding=[],  # Don't return full embeddings in response
+                    metadata=metadata,
+                    embedding=list(row['embedding']) if row['embedding'] else [],
                     importance_score=float(row['importance_score']),
-                    similarity_score=float(row['similarity_score']),
-                    created_at=row['created_at'].isoformat() if row['created_at'] else ''
+                    similarity_score=1.0 - float(row['distance']),  # Convert distance to similarity
+                    created_at=row['created_at'].isoformat() if row['created_at'] else None,
+                    updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
                 )
                 memories.append(memory)
 
