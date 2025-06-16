@@ -435,7 +435,7 @@ class PgVectorProvider(VectorProvider):
                 FROM {self.table_name}
                 {where_clause}
                 ORDER BY embedding <=> $1::vector
-                LIMIT ${param_count + 1}
+                LIMIT ${param_count}
             """
             params.append(limit)
 
@@ -455,7 +455,7 @@ class PgVectorProvider(VectorProvider):
                         ORDER BY embedding <=> $1::vector
                         LIMIT $2
                     """
-                    rows = await conn.fetch(fallback_query, embedding_str, limit)
+                    rows = await conn.fetch(fallback_query, query_embedding, limit)
             except Exception as e:
                 logger.error(f"Query failed: {e}")
                 logger.error(f"Query: {query}")
