@@ -405,7 +405,7 @@ class PgVectorProvider(VectorProvider):
             # asyncpg cannot pass arrays directly to pgvector operators
             embedding_str = f"[{','.join(map(str, query_embedding))}]"
             params = [embedding_str]  # First parameter is the embedding string
-            param_count = 1  # Start at 1 since we have 1 parameter
+            param_count = 2  # Next available parameter is $2
 
             # Add metadata filters
             if filters:
