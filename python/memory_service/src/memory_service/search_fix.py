@@ -93,6 +93,7 @@ class EmergencySearchFix:
                 logger.info(f"Total memories in {full_table_name}: {total_count}")
                 
                 # Now fetch the actual rows
+                # First try with content filter
                 rows = await conn.fetch(f"""
                     SELECT 
                         id, 
@@ -101,10 +102,25 @@ class EmergencySearchFix:
                         importance_score,
                         created_at
                     FROM {full_table_name}
-                    WHERE content IS NOT NULL
+                    WHERE content IS NOT NULL AND content != ''
                     ORDER BY created_at DESC
                     LIMIT $1
                 """, limit)
+                
+                # If no results with content filter, try without it (data integrity issue)
+                if not rows:
+                    logger.warning(f"No rows with valid content found, trying without content filter")
+                    rows = await conn.fetch(f"""
+                        SELECT 
+                            id, 
+                            COALESCE(content, '[Content missing]') as content, 
+                            metadata, 
+                            importance_score,
+                            created_at
+                        FROM {full_table_name}
+                        ORDER BY created_at DESC
+                        LIMIT $1
+                    """, limit)
                 
                 memories = []
                 for row in rows:
