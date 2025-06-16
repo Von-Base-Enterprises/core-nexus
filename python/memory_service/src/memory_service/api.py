@@ -2574,6 +2574,120 @@ def create_memory_app() -> FastAPI:
             providers_used=["emergency_fallback"]
         )
 
+    @app.get("/admin/vector-diagnostic")
+    async def vector_similarity_diagnostic(admin_key: str = Query(...)):
+        """Quick diagnostic of vector similarity issue"""
+        if admin_key != "vector-debug-2025":
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        conn_str = (
+            f"postgresql://{os.getenv('PGVECTOR_USER', 'nexus_memory_db_user')}:"
+            f"{os.getenv('PGVECTOR_PASSWORD')}@"
+            f"{os.getenv('PGVECTOR_HOST', 'dpg-d12n0np5pdvs73ctmm40-a')}:"
+            f"{os.getenv('PGVECTOR_PORT', '5432')}/"
+            f"{os.getenv('PGVECTOR_DATABASE', 'nexus_memory_db')}"
+        )
+        
+        results = {"diagnosis": {}, "tests": [], "recommendation": None}
+        
+        try:
+            conn = await asyncpg.connect(conn_str)
+            
+            # Check 1: Extension
+            ext = await conn.fetchval("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+            results["diagnosis"]["pgvector_version"] = ext
+            
+            # Check 2: Column type
+            col_info = await conn.fetchrow("""
+                SELECT data_type, udt_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'vector_memories' AND column_name = 'embedding'
+            """)
+            results["diagnosis"]["column_type"] = dict(col_info) if col_info else None
+            
+            # Check 3: Sample embedding
+            sample = await conn.fetchrow("""
+                SELECT 
+                    embedding::text as text_form,
+                    pg_typeof(embedding) as pg_type,
+                    octet_length(embedding::text) as size
+                FROM vector_memories 
+                WHERE embedding IS NOT NULL 
+                LIMIT 1
+            """)
+            if sample:
+                results["diagnosis"]["sample_embedding"] = {
+                    "format": "array" if sample['text_form'].startswith('[') else "vector",
+                    "pg_type": str(sample['pg_type']),
+                    "size": sample['size'],
+                    "preview": sample['text_form'][:50] + "..."
+                }
+            
+            # Test 1: Basic vector operation
+            try:
+                basic = await conn.fetchval("SELECT '[1,2,3]'::vector <=> '[1,2,3]'::vector")
+                results["tests"].append({"name": "basic_vector_op", "success": True, "result": float(basic)})
+            except Exception as e:
+                results["tests"].append({"name": "basic_vector_op", "success": False, "error": str(e)})
+            
+            # Test 2: Current query pattern
+            try:
+                test_vec = '[' + ','.join(['0.1'] * 1536) + ']'
+                rows = await conn.fetch("""
+                    SELECT id FROM vector_memories
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding <=> $1::vector
+                    LIMIT 5
+                """, test_vec)
+                results["tests"].append({"name": "parameterized_query", "success": True, "count": len(rows)})
+            except Exception as e:
+                results["tests"].append({"name": "parameterized_query", "success": False, "error": str(e)})
+                
+                # Try alternative
+                try:
+                    rows = await conn.fetch("""
+                        SELECT id FROM vector_memories
+                        WHERE embedding IS NOT NULL
+                        ORDER BY embedding <=> $1
+                        LIMIT 5
+                    """, test_vec)
+                    results["tests"].append({"name": "no_cast_query", "success": True, "count": len(rows)})
+                    results["recommendation"] = "Remove ::vector casting in queries"
+                except Exception as e2:
+                    results["tests"].append({"name": "no_cast_query", "success": False, "error": str(e2)})
+            
+            # Test 3: Check if it's a type mismatch
+            try:
+                # Get actual type from pg_typeof
+                actual_type = await conn.fetchval("""
+                    SELECT pg_typeof(embedding)::text 
+                    FROM vector_memories 
+                    WHERE embedding IS NOT NULL 
+                    LIMIT 1
+                """)
+                results["diagnosis"]["actual_embedding_type"] = actual_type
+                
+                if actual_type != 'vector':
+                    results["recommendation"] = f"Embedding column is {actual_type}, not vector type"
+            except:
+                pass
+            
+            await conn.close()
+            
+            # Analyze results
+            if not results["recommendation"]:
+                failed_tests = [t for t in results["tests"] if not t["success"]]
+                if failed_tests:
+                    results["recommendation"] = f"Failed test: {failed_tests[0]['name']} - {failed_tests[0].get('error', 'Unknown')}"
+                else:
+                    results["recommendation"] = "All tests passed - issue may be elsewhere"
+            
+        except Exception as e:
+            results["error"] = str(e)
+            results["recommendation"] = "Cannot connect to database"
+        
+        return results
+
     # ===== END EMERGENCY FIXES =====
 
     return app
