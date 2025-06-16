@@ -264,20 +264,30 @@ class PgVectorProvider(VectorProvider):
                     f"{config['host']}:{config['port']}/{config['database']}"
                 )
 
+                # Initialize pool with vector type registration
+                async def init_connection(conn):
+                    await conn.execute("SET search_path TO public, pg_catalog")
+                    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                    try:
+                        from pgvector.asyncpg import register_vector
+                        await register_vector(conn)
+                    except ImportError:
+                        logger.warning("pgvector package not installed, skipping vector type registration")
+                
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
                     min_size=5,
                     max_size=20,
                     command_timeout=60,
+                    init=init_connection,  # Register vector type on each connection
                     server_settings={
                         'synchronous_commit': 'on',  # Ensure synchronous commits
                         'jit': 'off'  # Disable JIT for more predictable performance
                     }
                 )
 
-                # Ensure pgvector extension is enabled
+                # Initialize database schema
                 async with self.connection_pool.acquire() as conn:
-                    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
                     # Create table if not exists
                     await conn.execute(f"""
