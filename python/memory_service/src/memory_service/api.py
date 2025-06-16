@@ -2117,6 +2117,143 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Database initialization failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to initialize database: {str(e)}")
 
+    @app.post("/admin/diagnose-pgvector")
+    async def diagnose_pgvector_issue(
+        admin_key: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Emergency diagnostic endpoint for pgvector query issues.
+        
+        Runs comprehensive diagnostics to identify why queries return 0 results.
+        """
+        import traceback
+        
+        # Simple security check
+        if admin_key != os.getenv("ADMIN_KEY", "diagnose-pgvector-2025"):
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        diagnostics = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "checks": {},
+            "provider_status": {},
+            "recommendations": []
+        }
+        
+        # Get pgvector provider
+        pgvector = store.providers.get('pgvector')
+        if not pgvector or not pgvector.enabled:
+            diagnostics["error"] = "pgvector provider not available"
+            return diagnostics
+        
+        try:
+            async with pgvector.connection_pool.acquire() as conn:
+                # 1. Check table data
+                row_count = await conn.fetchval(
+                    f"SELECT COUNT(*) FROM {pgvector.table_name}"
+                )
+                diagnostics["checks"]["row_count"] = row_count
+                
+                # 2. Check embedding validity
+                embedding_check = await conn.fetchrow(f"""
+                    SELECT 
+                        COUNT(*) as total,
+                        COUNT(embedding) as with_embedding,
+                        AVG(cardinality(embedding::float[])) as avg_dimension
+                    FROM {pgvector.table_name}
+                """)
+                diagnostics["checks"]["embeddings"] = dict(embedding_check) if embedding_check else {}
+                
+                # 3. Test direct query
+                try:
+                    test_embedding = [0.1] * 1536
+                    direct_result = await conn.fetch(f"""
+                        SELECT id, content,
+                               embedding <-> $1::vector as distance
+                        FROM {pgvector.table_name}
+                        WHERE embedding IS NOT NULL
+                        ORDER BY embedding <-> $1::vector
+                        LIMIT 5
+                    """, test_embedding)
+                    
+                    diagnostics["checks"]["direct_query"] = {
+                        "success": True,
+                        "results": len(direct_result),
+                        "first_distance": float(direct_result[0]['distance']) if direct_result else None
+                    }
+                except Exception as e:
+                    diagnostics["checks"]["direct_query"] = {
+                        "success": False,
+                        "error": str(e)
+                    }
+                
+                # 4. Check indexes
+                indexes = await conn.fetch("""
+                    SELECT indexname, indexdef
+                    FROM pg_indexes
+                    WHERE tablename = $1
+                """, pgvector.table_name)
+                diagnostics["checks"]["indexes"] = [dict(idx) for idx in indexes]
+                
+                # 5. Check search_path
+                search_path = await conn.fetchval("SHOW search_path")
+                diagnostics["checks"]["search_path"] = search_path
+                
+                # 6. Test provider query method
+                try:
+                    test_embedding = [0.1] * 1536
+                    provider_results = await pgvector.query(test_embedding, limit=5)
+                    diagnostics["checks"]["provider_query"] = {
+                        "success": True,
+                        "results": len(provider_results)
+                    }
+                except Exception as e:
+                    diagnostics["checks"]["provider_query"] = {
+                        "success": False,
+                        "error": str(e),
+                        "traceback": traceback.format_exc()
+                    }
+                
+                # 7. Sample data check
+                try:
+                    sample = await conn.fetchrow(f"""
+                        SELECT id, content, 
+                               LENGTH(content) as content_length,
+                               octet_length(embedding::text) as embedding_size
+                        FROM {pgvector.table_name}
+                        WHERE embedding IS NOT NULL
+                        LIMIT 1
+                    """)
+                    if sample:
+                        diagnostics["checks"]["sample_data"] = dict(sample)
+                except Exception as e:
+                    diagnostics["checks"]["sample_data"] = {"error": str(e)}
+            
+            # Generate recommendations
+            if diagnostics["checks"].get("row_count", 0) == 0:
+                diagnostics["recommendations"].append("No data in table - check if data was migrated")
+            
+            embeddings_info = diagnostics["checks"].get("embeddings", {})
+            if embeddings_info.get("with_embedding", 0) == 0:
+                diagnostics["recommendations"].append("No embeddings found - regenerate embeddings")
+                
+            if not diagnostics["checks"].get("direct_query", {}).get("success"):
+                diagnostics["recommendations"].append("Direct SQL queries failing - check pgvector extension")
+                
+            if not diagnostics["checks"].get("provider_query", {}).get("success"):
+                diagnostics["recommendations"].append("Provider query method has bugs - check query implementation")
+            
+            # Check if indexes exist
+            index_names = [idx["indexname"] for idx in diagnostics["checks"].get("indexes", [])]
+            if not any("hnsw" in name or "ivfflat" in name for name in index_names):
+                diagnostics["recommendations"].append("No vector indexes found - run migrations")
+        
+        except Exception as e:
+            diagnostics["error"] = str(e)
+            diagnostics["traceback"] = traceback.format_exc()
+        
+        return diagnostics
+
     @app.post("/graph/query")
     async def query_knowledge_graph(
         query: dict,
