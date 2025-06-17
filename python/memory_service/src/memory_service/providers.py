@@ -361,6 +361,10 @@ class PgVectorProvider(VectorProvider):
     async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """Store vector in PostgreSQL with transaction wrapping."""
         await self._ensure_pool_ready()
+        
+        # Convert numpy arrays to lists if needed
+        if hasattr(embedding, 'tolist'):
+            embedding = embedding.tolist()
 
         memory_id = uuid4()
 
@@ -394,6 +398,11 @@ class PgVectorProvider(VectorProvider):
     async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query PostgreSQL for similar vectors."""
         await self._ensure_pool_ready()
+        
+        # CRITICAL FIX: Convert numpy arrays to lists to avoid boolean evaluation errors
+        if hasattr(query_embedding, 'tolist'):
+            query_embedding = query_embedding.tolist()
+            logger.debug("Converted numpy array to list for pgvector compatibility")
 
         memories = []
 
