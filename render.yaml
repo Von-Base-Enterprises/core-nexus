@@ -1,145 +1,91 @@
+# Exported from Render on 2025-06-17T05:44:11Z
 services:
-  # Main Core Nexus Memory Service
-  - type: web
-    name: core-nexus-memory-service
-    env: python
-    region: oregon
-    plan: starter
-    branch: main
-    rootDir: python/memory_service
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
-    healthCheckPath: /health
-    envVars:
-      - key: SERVICE_NAME
-        value: core-nexus-memory-prod
-      - key: ENVIRONMENT
-        value: production
-      - key: LOG_LEVEL
-        value: INFO
-      - key: WORKERS
-        value: "3"
-      - key: MAX_CONNECTIONS
-        value: "100"
-      - key: QUERY_TIMEOUT_MS
-        value: "5000"
-      - key: ENABLE_METRICS
-        value: "true"
-      - key: CORS_ORIGINS
-        value: "*"
-      - key: GRAPH_ENABLED
-        value: "true"
-      - key: PINECONE_API_KEY
-        value: ""
-      # OPENAI_API_KEY should be set in Render.com dashboard for security
-      # Do not hardcode API keys in render.yaml
-      # Deduplication Configuration
-      - key: DEDUPLICATION_MODE
-        value: "off"  # Options: off, log_only, active - Start with 'off' for safety
-      - key: DEDUP_SIMILARITY_THRESHOLD
-        value: "0.95"  # 95% similarity threshold for semantic duplicates
-      - key: DEDUP_EXACT_MATCH_ONLY
-        value: "false"  # Enable semantic similarity checking
-      - key: ADMIN_KEY
-        sync: false  # Set this in Render dashboard for security
-      - key: PGVECTOR_HOST
-        value: dpg-d12n0np5pdvs73ctmm40-a
-      - key: PGVECTOR_DATABASE
-        value: nexus_memory_db
-      - key: PGVECTOR_USER
-        value: nexus_memory_db_user
-      # PGVECTOR_PASSWORD must be set in the dashboard for security
-
-  # Staging Memory Service (Free Tier)
-  - type: web
-    name: core-nexus-memory-staging
-    env: python
-    region: oregon
-    plan: free  # $0/month
-    branch: staging
-    rootDir: python/memory_service
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
-    healthCheckPath: /health
-    autoDeploy: true  # Auto-deploy staging for rapid testing
-    envVars:
-      - key: SERVICE_NAME
-        value: core-nexus-memory-staging
-      - key: ENVIRONMENT
-        value: staging
-      - key: LOG_LEVEL
-        value: DEBUG
-      - key: WORKERS
-        value: "1"
-      - key: MAX_CONNECTIONS
-        value: "25"  # Lower for free tier
-      - key: QUERY_TIMEOUT_MS
-        value: "10000"  # Higher timeout for debugging
-      - key: ENABLE_METRICS
-        value: "true"
-      - key: CORS_ORIGINS
-        value: "*"
-      - key: GRAPH_ENABLED
-        value: "true"
-      - key: DEDUPLICATION_MODE
-        value: "off"
-      - key: DEDUP_SIMILARITY_THRESHOLD
-        value: "0.95"
-      - key: DEDUP_EXACT_MATCH_ONLY
-        value: "false"
-      # Use same production database for now (can create staging DB later)
-      - key: PGVECTOR_HOST
-        value: dpg-d12n0np5pdvs73ctmm40-a
-      - key: PGVECTOR_DATABASE
-        value: nexus_memory_db
-      - key: PGVECTOR_USER
-        value: nexus_memory_db_user
-      # PGVECTOR_PASSWORD and OPENAI_API_KEY set in dashboard
-
-  # Keep-alive Background Worker
-  - type: worker
-    name: core-nexus-keep-alive
-    env: python
-    region: oregon
-    plan: starter
-    branch: main
-    rootDir: python/memory_service
-    buildCommand: pip install httpx asyncio
-    startCommand: python worker/keep_alive.py
-    envVars:
-      - key: API_URL
-        value: https://core-nexus-memory-service.onrender.com
-      - key: PING_SEC
-        value: "300"
-      - key: PING_TIMEOUT
-        value: "10"
-      - key: PING_RETRIES
-        value: "3"
-
-  # Prometheus Monitoring
-  - type: web
-    name: core-nexus-prometheus
-    env: docker
-    region: oregon
-    plan: starter
-    branch: main
-    rootDir: python/memory_service/monitoring
-    dockerfilePath: ./prometheus.Dockerfile
-    envVars:
-      - key: CORE_NEXUS_URL
-        value: https://core-nexus-memory-service.onrender.com
-
-  # Grafana Dashboard
-  - type: web
-    name: core-nexus-grafana
-    env: docker
-    region: oregon
-    plan: starter
-    branch: main
-    rootDir: python/memory_service/monitoring
-    dockerfilePath: ./grafana.Dockerfile
-    envVars:
-      - key: GF_SECURITY_ADMIN_PASSWORD
-        value: admin123
-      - key: PROMETHEUS_URL
-        value: https://core-nexus-prometheus.onrender.com
+- type: web
+  name: core-nexus-memory-service
+  runtime: python
+  repo: https://github.com/Von-Base-Enterprises/core-nexus
+  plan: starter
+  envVars:
+  - key: OTEL_TRACING_ENABLED
+    sync: false
+  - key: OTEL_SDK_DISABLED
+    sync: false
+  - key: OTLP_HEADERS
+    sync: false
+  - key: OTLP_ENDPOINT
+    sync: false
+  - key: ENVIRONMENT
+    sync: false
+  - key: SERVICE_VERSION
+    sync: false
+  - key: SERVICE_NAME
+    sync: false
+  - key: OTEL_TRACE_SAMPLE_RATE
+    sync: false
+  - key: OTEL_LOGGING_ENABLED
+    sync: false
+  - key: OTEL_METRICS_ENABLED
+    sync: false
+  - key: ADMIN_KEY
+    sync: false
+  - key: DEDUP_EXACT_MATCH_ONLY
+    sync: false
+  - key: DEDUP_SIMILARITY_THRESHOLD
+    sync: false
+  - key: DEDUPLICATION_MODE
+    sync: false
+  - key: ENABLE_PGVECTOR
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  - key: PGVECTOR_PASSWORD
+    sync: false
+  - key: PGVECTOR_HOST
+    sync: false
+  - key: RENDER_API_KEY
+    sync: false
+  - key: ADM_EVOLUTION_ENABLED
+    sync: false
+  - key: ADM_SCORING_ENABLED
+    sync: false
+  - key: REQUEST_TIMEOUT
+    sync: false
+  - key: MAX_RETRIES
+    sync: false
+  - key: CACHE_TTL
+    sync: false
+  - key: LOG_LEVEL
+    sync: false
+  - key: CHROMADB_PORT
+    sync: false
+  - key: CHROMADB_HOST
+    sync: false
+  - key: PINECONE_INDEX_NAME
+    sync: false
+  - key: PINECONE_ENVIRONMENT
+    sync: false
+  - key: PINECONE_API_KEY
+    sync: false
+  - key: GEMINI_API_KEY
+    sync: false
+  - key: PGVECTOR_USER
+    sync: false
+  - key: PGVECTOR_DATABASE
+    sync: false
+  - key: PGVECTOR_PORT
+    sync: false
+  - key: GRAPH_ENABLED
+    sync: false
+  - key: PGPASSWORD
+    sync: false
+  - key: OPENAI_API_KEY
+    sync: false
+  - fromGroup: core nexus
+  region: oregon
+  buildCommand: pip install -r requirements.txt
+  startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers
+    1
+  healthCheckPath: /health
+  autoDeployTrigger: "off"
+  rootDir: python/memory_service
+version: "1"
