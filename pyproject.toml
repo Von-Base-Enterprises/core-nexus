@@ -16,7 +16,7 @@ google-generativeai = "^0.8.5"
 ruff = "^0.11.13"
 black = "^25.1.0"
 isort = "^6.0.1"
-mypy = "^1.8.0"
+mypy = "^1.16.1"
 
 # Testing
 pytest = "^8.0.0"
