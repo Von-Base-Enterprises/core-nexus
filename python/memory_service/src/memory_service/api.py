@@ -528,14 +528,14 @@ def create_memory_app() -> FastAPI:
         try:
             start_time = time.time()
             
-            # Add tracing attributes
-            from opentelemetry import trace
-            span = trace.get_current_span()
-            if span:
-                span.set_attribute("query.text", request.query[:100] if request.query else "")
-                span.set_attribute("query.limit", request.limit)
-                span.set_attribute("query.min_similarity", request.min_similarity)
-                span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
+            # Tracing temporarily disabled for stability
+            # from opentelemetry import trace
+            # span = trace.get_current_span()
+            # if span:
+            #     span.set_attribute("query.text", request.query[:100] if request.query else "")
+            #     span.set_attribute("query.limit", request.limit)
+            #     span.set_attribute("query.min_similarity", request.min_similarity)
+            #     span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
 
             # Fix for empty query returning only 3 results
             if not request.query or request.query.strip() == "":
