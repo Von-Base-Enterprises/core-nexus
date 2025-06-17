@@ -514,7 +514,7 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=error_detail)
 
     @app.post("/memories/query", response_model=QueryResponse)
-    @trace_operation("api.query_memories") 
+    # @trace_operation("api.query_memories")  # Temporarily disabled for debugging
     async def query_memories(
         request: QueryRequest,
         store: UnifiedVectorStore = Depends(get_store)
