@@ -99,9 +99,22 @@ services:
       - key: PING_SEC
         value: "900"  # Less frequent for free tier
 
-# Preview Environments for Feature Testing
+# Preview Environments for Feature Testing (SUPPORTS MULTIPLE PRs)
 previewsEnabled: true
-previewsExpireAfterDays: 2  # Shorter expiry to save resources
+previewsExpireAfterDays: 3  # Auto-cleanup after 3 days
+
+# Preview environment configuration for isolated testing
+previewEnvironment:
+  plan: free  # Each preview uses free tier ($0 cost)
+  envVars:
+    - key: ENVIRONMENT
+      value: preview
+    - key: LOG_LEVEL
+      value: DEBUG
+    - key: DEBUG_MODE
+      value: true
+    - key: PREVIEW_MODE
+      value: true
 
 # Environment Protection
 environments:
