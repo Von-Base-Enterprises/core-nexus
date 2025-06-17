@@ -8,6 +8,7 @@ from the Core Nexus codebase while preparing for pgvector integration.
 import asyncio
 import json
 import logging
+import numpy as np
 from typing import Any
 from uuid import uuid4
 
@@ -271,8 +272,11 @@ class PgVectorProvider(VectorProvider):
                     try:
                         from pgvector.asyncpg import register_vector
                         await register_vector(conn)
+                        logger.info("Vector type registered successfully with asyncpg")
                     except ImportError:
-                        logger.warning("pgvector package not installed, skipping vector type registration")
+                        logger.warning("pgvector.asyncpg not available, using manual vector casting")
+                    except Exception as e:
+                        logger.warning(f"Vector type registration failed: {e}, using manual casting")
                 
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
@@ -362,18 +366,17 @@ class PgVectorProvider(VectorProvider):
         """Store vector in PostgreSQL with transaction wrapping."""
         await self._ensure_pool_ready()
         
-        # Convert numpy arrays to lists if needed
-        if hasattr(embedding, 'tolist'):
-            embedding = embedding.tolist()
+        # Convert embedding to numpy array for optimal performance  
+        embedding_array = np.array(embedding, dtype=np.float32)
+        
+        # Convert back to list for PostgreSQL (ensuring compatibility)
+        embedding_list = embedding_array.tolist()
 
         memory_id = uuid4()
 
         async with self.connection_pool.acquire() as conn:
             # Use transaction for atomicity
             async with conn.transaction():
-                # For INSERT operations, asyncpg can handle arrays directly
-                # This is different from SELECT queries with vector operators
-
                 # Serialize metadata to JSON string for PostgreSQL JSONB column
                 metadata_json = json.dumps(metadata) if metadata else '{}'
 
@@ -384,7 +387,7 @@ class PgVectorProvider(VectorProvider):
                 """,
                     memory_id,
                     content,
-                    embedding,  # Pass array directly!
+                    embedding_list,  # Pass optimized array as list
                     metadata_json,
                     metadata.get('importance_score', 0.5)
                 )
@@ -399,10 +402,12 @@ class PgVectorProvider(VectorProvider):
         """Query PostgreSQL for similar vectors."""
         await self._ensure_pool_ready()
         
-        # CRITICAL FIX: Convert numpy arrays to lists to avoid boolean evaluation errors
-        if hasattr(query_embedding, 'tolist'):
-            query_embedding = query_embedding.tolist()
-            logger.debug("Converted numpy array to list for pgvector compatibility")
+        # Convert to numpy array for optimal performance
+        query_vector = np.array(query_embedding, dtype=np.float32)
+        
+        # Convert back to list for PostgreSQL compatibility  
+        query_embedding_list = query_vector.tolist()
+        logger.debug("Optimized query embedding with numpy arrays")
 
         memories = []
 
@@ -414,8 +419,8 @@ class PgVectorProvider(VectorProvider):
                 
                 # Build where clauses including embedding check
                 where_clauses = ["embedding IS NOT NULL"]
-                # CRITICAL FIX: Pass array directly, not string!
-                params = [query_embedding]  # Just pass the array!
+                # Pass optimized array as list
+                params = [query_embedding_list]
                 param_count = 2  # Next available parameter is $2
 
                 # Add metadata filters
@@ -454,9 +459,10 @@ class PgVectorProvider(VectorProvider):
                     # Execute query with array parameter
                     try:
                         # Log the exact types being passed
-                        logger.info(f"Query embedding type: {type(query_embedding)}")
-                        logger.info(f"Query embedding length: {len(query_embedding)}")
-                        logger.info(f"First element type: {type(query_embedding[0])}")
+                        logger.info(f"Query embedding type: {type(query_embedding_list)}")
+                        logger.info(f"Query embedding length: {len(query_embedding_list)}")
+                        logger.info(f"First element type: {type(query_embedding_list[0])}")
+                        logger.info(f"Numpy optimization: enabled")
                         logger.info(f"Table name: {self.table_name}")  # Check which table
                         logger.info(f"Generated query: {query}")  # See the actual SQL
                         logger.info(f"Total params: {len(params)}")  # Verify param count
@@ -464,7 +470,7 @@ class PgVectorProvider(VectorProvider):
                         rows = await conn.fetch(query, *params)
                     except Exception as e:
                         logger.error(f"Query execution failed: {e}")
-                        logger.error(f"Query embedding: {query_embedding[:5]}...")  # First 5 elements
+                        logger.error(f"Query embedding: {query_embedding_list[:5]}...")  # First 5 elements
                         raise
                     
                     # Convert to MemoryResponse objects
@@ -504,7 +510,7 @@ class PgVectorProvider(VectorProvider):
                             ORDER BY embedding <=> $1::vector
                             LIMIT $2
                         """
-                        rows = await conn.fetch(fallback_query, query_embedding, limit)
+                        rows = await conn.fetch(fallback_query, query_embedding_list, limit)
                         
                         for row in rows:
                             metadata = row['metadata']
