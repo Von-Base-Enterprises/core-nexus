@@ -284,34 +284,31 @@ class UnifiedVectorStore:
 
             # EMERGENCY FIX: If empty query, use direct database retrieval
             if not request.query or request.query.strip() == "":
-                logger.info("Empty query - using emergency direct retrieval")
+                logger.info("Empty query - using get_recent_memories for direct retrieval")
                 
                 # Get pgvector provider for direct access
                 pgvector = self.providers.get('pgvector')
                 if pgvector and pgvector.enabled:
-                    # Import emergency search fix
-                    from .search_fix import EmergencySearchFix
-                    
-                    # Ensure connection pool is initialized
-                    if not pgvector.connection_pool:
-                        logger.error("PgVector connection pool not initialized!")
-                        # Try to get recent memories as fallback
-                        if hasattr(pgvector, 'get_recent_memories'):
-                            memories = await pgvector.get_recent_memories(request.limit, {})
-                        else:
-                            memories = []
-                    else:
-                        try:
-                            emergency_search = EmergencySearchFix(pgvector.connection_pool, getattr(pgvector, "table_name", "vector_memories"))
-                            # Get ALL memories directly
-                            memories = await emergency_search.emergency_search_all(limit=request.limit)
-                        except Exception as e:
-                            logger.error(f"Emergency search failed: {e}")
-                            # Try provider's own method as fallback
+                    try:
+                        # Use the provider's get_recent_memories method directly
+                        # This bypasses all vector operations and just returns recent memories
+                        memories = await pgvector.get_recent_memories(request.limit, request.filters or {})
+                        logger.info(f"get_recent_memories returned {len(memories)} results")
+                    except Exception as e:
+                        logger.error(f"get_recent_memories failed: {e}, trying emergency search")
+                        # Import emergency search fix as fallback
+                        from .search_fix import EmergencySearchFix
+                        
+                        if pgvector.connection_pool:
                             try:
-                                memories = await pgvector.get_recent_memories(request.limit, {})
-                            except:
+                                emergency_search = EmergencySearchFix(pgvector.connection_pool, getattr(pgvector, "table_name", "vector_memories"))
+                                memories = await emergency_search.emergency_search_all(limit=request.limit)
+                            except Exception as e2:
+                                logger.error(f"Emergency search also failed: {e2}")
                                 memories = []
+                        else:
+                            logger.error("PgVector connection pool not initialized!")
+                            memories = []
                     
                     response = QueryResponse(
                         memories=memories[:request.limit],
