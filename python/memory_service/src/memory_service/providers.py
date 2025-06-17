@@ -246,7 +246,7 @@ class PgVectorProvider(VectorProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
         self.connection_pool = None
-        self.table_name = config.config.get('table_name', 'memories')  # Use new non-partitioned table
+        self.table_name = config.config.get('table_name', 'vector_memories')  # Use new non-partitioned table
         self.embedding_dim = config.config.get('embedding_dim', 1536)
         self._pool_initialization_task = None
         self._initialize_pool(config.config)
@@ -452,7 +452,20 @@ class PgVectorProvider(VectorProvider):
 
                 try:
                     # Execute query with array parameter
-                    rows = await conn.fetch(query, *params)
+                    try:
+                        # Log the exact types being passed
+                        logger.info(f"Query embedding type: {type(query_embedding)}")
+                        logger.info(f"Query embedding length: {len(query_embedding)}")
+                        logger.info(f"First element type: {type(query_embedding[0])}")
+                        logger.info(f"Table name: {self.table_name}")  # Check which table
+                        logger.info(f"Generated query: {query}")  # See the actual SQL
+                        logger.info(f"Total params: {len(params)}")  # Verify param count
+                        
+                        rows = await conn.fetch(query, *params)
+                    except Exception as e:
+                        logger.error(f"Query execution failed: {e}")
+                        logger.error(f"Query embedding: {query_embedding[:5]}...")  # First 5 elements
+                        raise
                     
                     # Convert to MemoryResponse objects
                     for row in rows:
