@@ -39,7 +39,7 @@ gunicorn==21.2.0
 prometheus-client==0.19.0  # For metrics export
 prometheus-fastapi-instrumentator==6.1.0  # FastAPI Prometheus integration
 
-# Rate limiting and security (for staging testing)
+# Rate limiting and security
 slowapi==0.1.9
 redis==5.0.1
 
