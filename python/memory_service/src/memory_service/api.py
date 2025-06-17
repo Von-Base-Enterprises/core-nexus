@@ -20,9 +20,10 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Q
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
+# Rate limiting temporarily disabled for stability
+# from slowapi import Limiter, _rate_limit_exceeded_handler
+# from slowapi.util import get_remote_address
+# from slowapi.errors import RateLimitExceeded
 import asyncpg
 
 from .bulk_import_simple import (
@@ -32,8 +33,8 @@ from .bulk_import_simple import (
 )
 from .logging_config import get_logger, setup_logging
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter temporarily disabled
+# limiter = Limiter(key_func=get_remote_address)
 
 # Enhanced input validation
 def validate_limit(limit: int = Query(default=10, ge=1, le=1000, description="Number of results (1-1000)")):
@@ -344,9 +345,9 @@ def create_memory_app() -> FastAPI:
         lifespan=lifespan
     )
     
-    # Add rate limiter to app state
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    # Rate limiter temporarily disabled for stability
+    # app.state.limiter = limiter  
+    # app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CORS middleware
     app.add_middleware(
@@ -468,11 +469,9 @@ def create_memory_app() -> FastAPI:
     #         raise HTTPException(status_code=500, detail="Database stats unavailable")
 
     @app.post("/memories", response_model=MemoryResponse)
-    @limiter.limit("60/minute")  # JARVIS-scale rate limiting
     @trace_operation("api.store_memory")
     async def store_memory(
-        request: Request,
-        memory_request: MemoryRequest,
+        request: MemoryRequest,
         background_tasks: BackgroundTasks,
         store: UnifiedVectorStore = Depends(get_store)
     ):
@@ -485,14 +484,14 @@ def create_memory_app() -> FastAPI:
             start_time = time.time()
             
             # Validate content for JARVIS-scale processing
-            validate_content_length(memory_request.content)
+            validate_content_length(request.content)
             
             # Add tracing context
             trace_id = get_current_trace_id()
             if trace_id:
                 logger.info(f"Storing memory with trace_id: {trace_id}")
             
-            memory = await store.store_memory(memory_request)
+            memory = await store.store_memory(request)
 
             # Log and record performance
             store_time = (time.time() - start_time) * 1000
@@ -515,11 +514,9 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=error_detail)
 
     @app.post("/memories/query", response_model=QueryResponse)
-    @limiter.limit("120/minute")  # Higher limit for JARVIS-scale queries
     @trace_operation("api.query_memories") 
     async def query_memories(
-        request: Request,
-        query_request: QueryRequest,
+        request: QueryRequest,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
@@ -535,18 +532,18 @@ def create_memory_app() -> FastAPI:
             from opentelemetry import trace
             span = trace.get_current_span()
             if span:
-                span.set_attribute("query.text", query_request.query[:100] if query_request.query else "")
-                span.set_attribute("query.limit", query_request.limit)
-                span.set_attribute("query.min_similarity", query_request.min_similarity)
-                span.set_attribute("query.is_empty", not query_request.query or query_request.query.strip() == "")
+                span.set_attribute("query.text", request.query[:100] if request.query else "")
+                span.set_attribute("query.limit", request.limit)
+                span.set_attribute("query.min_similarity", request.min_similarity)
+                span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
 
             # Fix for empty query returning only 3 results
-            if not query_request.query or query_request.query.strip() == "":
-                logger.info(f"Empty query detected - returning all memories with limit {query_request.limit}")
+            if not request.query or request.query.strip() == "":
+                logger.info(f"Empty query detected - returning all memories with limit {request.limit}")
                 # For empty queries, set min_similarity to 0 to get all memories
-                query_request.min_similarity = 0.0
+                request.min_similarity = 0.0
 
-            response = await store.query_memories(query_request)
+            response = await store.query_memories(request)
 
             # Add request timing info
             total_time = (time.time() - start_time) * 1000
@@ -590,9 +587,7 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Internal server error")
 
     @app.get("/memories", response_model=QueryResponse)
-    @limiter.limit("100/minute")  # JARVIS-scale retrieval limiting
     async def get_all_memories(
-        request: Request,
         limit: int = Depends(validate_limit),
         offset: int = Query(default=0, ge=0, le=10000, description="Offset for pagination"),
         store: UnifiedVectorStore = Depends(get_store)
