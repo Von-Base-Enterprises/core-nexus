@@ -395,133 +395,155 @@ class PgVectorProvider(VectorProvider):
         """Query PostgreSQL for similar vectors."""
         await self._ensure_pool_ready()
 
+        memories = []
+
         async with self.connection_pool.acquire() as conn:
-            # CRITICAL FIX: Ensure we're in the right schema
-            await conn.execute("SET search_path TO public, pg_catalog")
-            
-            # Build where clauses including embedding check
-            where_clauses = ["embedding IS NOT NULL"]
-            # CRITICAL FIX: For vector similarity queries, we need string format
-            # asyncpg cannot pass arrays directly to pgvector operators
-            embedding_str = f"[{','.join(map(str, query_embedding))}]"
-            params = [embedding_str]  # First parameter is the embedding string
-            param_count = 2  # Next available parameter is $2
-
-            # Add metadata filters
-            if filters:
-                for key, value in filters.items():
-                    if key not in ['limit', 'offset', 'user_id']:  # Handle user_id specially
-                        where_clauses.append(f"metadata->>'{key}' = ${param_count}")
-                        params.append(str(value))
-                        param_count += 1
-                    elif key == 'user_id':
-                        where_clauses.append(f"user_id = ${param_count}")
-                        params.append(value)
-                        param_count += 1
-
-            where_clause = f"WHERE {' AND '.join(where_clauses)}"
-
-            # Query with proper vector casting
-            query = f"""
-                SELECT
-                    id,
-                    content,
-                    embedding,
-                    metadata,
-                    COALESCE(importance_score, 0.5) as importance_score,
-                    (embedding <=> $1::vector) as distance,
-                    created_at,
-                    updated_at
-                FROM {self.table_name}
-                {where_clause}
-                ORDER BY embedding <=> $1::vector
-                LIMIT ${param_count}
-            """
-            params.append(limit)
-
-            try:
-                # Execute query with explicit vector type casting
-                rows = await conn.fetch(query, *params)
+            # Use transaction to ensure all operations complete
+            async with conn.transaction():
+                # CRITICAL FIX: Ensure we're in the right schema
+                await conn.execute("SET search_path TO public, pg_catalog")
                 
-                # If no results and filters were applied, try without filters
-                if not rows and filters:
-                    fallback_query = f"""
-                        SELECT
-                            id, content, embedding, metadata,
-                            importance_score, created_at, updated_at,
-                            (embedding <=> $1::vector) as distance
-                        FROM {self.table_name}
-                        WHERE embedding IS NOT NULL
-                        ORDER BY embedding <=> $1::vector
-                        LIMIT $2
-                    """
-                    rows = await conn.fetch(fallback_query, query_embedding, limit)
-            except Exception as e:
-                logger.error(f"Query failed: {e}")
-                logger.error(f"Query: {query}")
-                logger.error(f"Params: {params}")
-                raise
+                # Build where clauses including embedding check
+                where_clauses = ["embedding IS NOT NULL"]
+                # CRITICAL FIX: Pass array directly, not string!
+                params = [query_embedding]  # Just pass the array!
+                param_count = 2  # Next available parameter is $2
 
-            # Convert to MemoryResponse objects
-            memories = []
-            for row in rows:
-                # Parse metadata correctly
-                metadata = row['metadata']
-                if isinstance(metadata, str):
-                    try:
-                        metadata = json.loads(metadata)
-                    except:
-                        metadata = {}
-                elif not isinstance(metadata, dict):
-                    metadata = {}
-                
-                memory = MemoryResponse(
-                    id=row['id'],
-                    content=row['content'],
-                    metadata=metadata,
-                    embedding=list(row['embedding']) if row['embedding'] else [],
-                    importance_score=float(row['importance_score']),
-                    similarity_score=1.0 - float(row['distance']),  # Convert distance to similarity
-                    created_at=row['created_at'].isoformat() if row['created_at'] else None,
-                    updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
-                )
-                memories.append(memory)
+                # Add metadata filters
+                if filters:
+                    for key, value in filters.items():
+                        if key not in ['limit', 'offset', 'user_id']:  # Handle user_id specially
+                            where_clauses.append(f"metadata->>'{key}' = ${param_count}")
+                            params.append(str(value))
+                            param_count += 1
+                        elif key == 'user_id':
+                            where_clauses.append(f"user_id = ${param_count}")
+                            params.append(value)
+                            param_count += 1
 
-            # Emergency fallback: if no memories found, try without vector operations
-            if not memories:
+                where_clause = f"WHERE {' AND '.join(where_clauses)}"
+
+                # Query with proper vector casting
+                query = f"""
+                    SELECT
+                        id,
+                        content,
+                        embedding,
+                        metadata,
+                        COALESCE(importance_score, 0.5) as importance_score,
+                        (embedding <=> $1::vector) as distance,
+                        created_at,
+                        updated_at
+                    FROM {self.table_name}
+                    {where_clause}
+                    ORDER BY embedding <=> $1::vector
+                    LIMIT ${param_count}
+                """
+                params.append(limit)
+
                 try:
-                    logger.warning("No results from vector query, trying simple select")
-                    rows = await conn.fetch(f"""
-                        SELECT id, content, metadata, importance_score, created_at, updated_at
-                        FROM {self.table_name}
-                        ORDER BY created_at DESC
-                        LIMIT $1
-                    """, limit)
+                    # Execute query with array parameter
+                    rows = await conn.fetch(query, *params)
                     
+                    # Convert to MemoryResponse objects
                     for row in rows:
+                        # Parse metadata correctly
                         metadata = row['metadata']
                         if isinstance(metadata, str):
                             try:
                                 metadata = json.loads(metadata)
                             except:
                                 metadata = {}
+                        elif not isinstance(metadata, dict):
+                            metadata = {}
                         
                         memory = MemoryResponse(
-                            id=str(row['id']),
+                            id=row['id'],
                             content=row['content'],
                             metadata=metadata,
-                            embedding=[],
-                            importance_score=float(row.get('importance_score', 0.5)),
-                            similarity_score=0.5,  # Default similarity for non-vector results
+                            embedding=list(row['embedding']) if row['embedding'] else [],
+                            importance_score=float(row['importance_score']),
+                            similarity_score=1.0 - float(row['distance']),  # Convert distance to similarity
                             created_at=row['created_at'].isoformat() if row['created_at'] else None,
                             updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
                         )
                         memories.append(memory)
+                    
+                    # If no results and filters were applied, try without filters
+                    if not rows and filters:
+                        logger.info("No results with filters, trying without filters")
+                        fallback_query = f"""
+                            SELECT
+                                id, content, embedding, metadata,
+                                importance_score, created_at, updated_at,
+                                (embedding <=> $1::vector) as distance
+                            FROM {self.table_name}
+                            WHERE embedding IS NOT NULL
+                            ORDER BY embedding <=> $1::vector
+                            LIMIT $2
+                        """
+                        rows = await conn.fetch(fallback_query, query_embedding, limit)
                         
-                    if memories:
-                        logger.info(f"Emergency fallback returned {len(memories)} results")
+                        for row in rows:
+                            metadata = row['metadata']
+                            if isinstance(metadata, str):
+                                try:
+                                    metadata = json.loads(metadata)
+                                except:
+                                    metadata = {}
+                            
+                            memory = MemoryResponse(
+                                id=row['id'],
+                                content=row['content'],
+                                metadata=metadata,
+                                embedding=list(row['embedding']) if row['embedding'] else [],
+                                importance_score=float(row['importance_score']),
+                                similarity_score=1.0 - float(row['distance']),
+                                created_at=row['created_at'].isoformat() if row['created_at'] else None,
+                                updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
+                            )
+                            memories.append(memory)
+                            
                 except Exception as e:
-                    logger.error(f"Emergency fallback also failed: {e}")
+                    logger.error(f"Query failed: {e}")
+                    logger.error(f"Query: {query}")
+                    logger.error(f"Params: {params}")
+                    
+                    # Emergency fallback: if vector operations fail, try without them
+                    if not memories:
+                        try:
+                            logger.warning("Vector query failed, trying simple select")
+                            rows = await conn.fetch(f"""
+                                SELECT id, content, metadata, importance_score, created_at, updated_at
+                                FROM {self.table_name}
+                                ORDER BY created_at DESC
+                                LIMIT $1
+                            """, limit)
+                            
+                            for row in rows:
+                                metadata = row['metadata']
+                                if isinstance(metadata, str):
+                                    try:
+                                        metadata = json.loads(metadata)
+                                    except:
+                                        metadata = {}
+                                
+                                memory = MemoryResponse(
+                                    id=str(row['id']),
+                                    content=row['content'],
+                                    metadata=metadata,
+                                    embedding=[],
+                                    importance_score=float(row.get('importance_score', 0.5)),
+                                    similarity_score=0.5,  # Default similarity for non-vector results
+                                    created_at=row['created_at'].isoformat() if row['created_at'] else None,
+                                    updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
+                                )
+                                memories.append(memory)
+                                
+                            if memories:
+                                logger.info(f"Emergency fallback returned {len(memories)} results")
+                        except Exception as e:
+                            logger.error(f"Emergency fallback also failed: {e}")
 
         return memories
 
@@ -535,52 +557,54 @@ class PgVectorProvider(VectorProvider):
         """
         await self._ensure_pool_ready()
         
+        memories = []
+        
         async with self.connection_pool.acquire() as conn:
-            # Build query with filters
-            where_clauses = []
-            params = []
-            param_count = 1  # $1 is limit
-            
-            # Add metadata filters
-            if filters:
-                for key, value in filters.items():
-                    if key not in ['limit', 'offset']:
-                        where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
-                        params.append(str(value))
-                        param_count += 1
-            
-            where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-            
-            # Query WITHOUT vector similarity - just get recent memories
-            # Use COALESCE to handle both partitioned and non-partitioned tables
-            query = f"""
-                SELECT
-                    id,
-                    content,
-                    metadata,
-                    COALESCE(importance_score, 0.5) as importance_score,
-                    created_at
-                FROM {self.table_name}
-                {where_clause}
-                ORDER BY created_at DESC
-                LIMIT $1
-            """
-            
-            rows = await conn.fetch(query, limit, *params)
-            
-            # Convert to MemoryResponse objects
-            memories = []
-            for row in rows:
-                memory = MemoryResponse(
-                    id=row['id'],
-                    content=row['content'],
-                    metadata=row['metadata'] if isinstance(row['metadata'], dict) else {},
-                    embedding=[],  # Don't return full embeddings
-                    importance_score=float(row['importance_score']),
-                    similarity_score=1.0,  # Default high score since no similarity calc
-                    created_at=row['created_at'].isoformat() if row['created_at'] else ''
-                )
-                memories.append(memory)
+            async with conn.transaction():
+                # Build query with filters
+                where_clauses = []
+                params = []
+                param_count = 1  # $1 is limit
+                
+                # Add metadata filters
+                if filters:
+                    for key, value in filters.items():
+                        if key not in ['limit', 'offset']:
+                            where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                            params.append(str(value))
+                            param_count += 1
+                
+                where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                
+                # Query WITHOUT vector similarity - just get recent memories
+                # Use COALESCE to handle both partitioned and non-partitioned tables
+                query = f"""
+                    SELECT
+                        id,
+                        content,
+                        metadata,
+                        COALESCE(importance_score, 0.5) as importance_score,
+                        created_at
+                    FROM {self.table_name}
+                    {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                """
+                
+                rows = await conn.fetch(query, limit, *params)
+                
+                # Convert to MemoryResponse objects
+                for row in rows:
+                    memory = MemoryResponse(
+                        id=row['id'],
+                        content=row['content'],
+                        metadata=row['metadata'] if isinstance(row['metadata'], dict) else {},
+                        embedding=[],  # Don't return full embeddings
+                        importance_score=float(row['importance_score']),
+                        similarity_score=1.0,  # Default high score since no similarity calc
+                        created_at=row['created_at'].isoformat() if row['created_at'] else ''
+                    )
+                    memories.append(memory)
         
         logger.debug(f"Retrieved {len(memories)} recent memories from PgVector")
         return memories
