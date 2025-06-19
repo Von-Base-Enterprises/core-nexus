@@ -56,12 +56,14 @@ class EmergencyChromaDBSync:
 
     async def connect_postgres(self):
         """Connect to PostgreSQL/pgvector"""
-        pg_password = os.getenv("PGVECTOR_PASSWORD", "2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V")
-        pg_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a.ohio-postgres.render.com")
+        pg_password = os.getenv("PGVECTOR_PASSWORD")
+        if not pg_password:
+            raise ValueError("PGVECTOR_PASSWORD environment variable is required")
+        pg_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a.oregon-postgres.render.com")
         pg_database = os.getenv("PGVECTOR_DATABASE", "nexus_memory_db")
         pg_user = os.getenv("PGVECTOR_USER", "nexus_memory_db_user")
 
-        conn_string = f"postgresql://{pg_user}:{pg_password}@{pg_host}:5432/{pg_database}"
+        conn_string = f"postgresql://{pg_user}:{pg_password}@{pg_host}:5432/{pg_database}?sslmode=require"
 
         logger.info("🔌 Connecting to PostgreSQL...")
         self.pg_conn = await asyncpg.connect(conn_string)
