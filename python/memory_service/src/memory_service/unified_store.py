@@ -243,10 +243,16 @@ class UnifiedVectorStore:
                 metadata
             )
 
-            # Async replication to secondary providers for resilience
-            asyncio.create_task(self._replicate_to_secondaries(
-                memory_id, request.content, embedding, metadata
-            ))
+            # SYNCHRONOUS replication to secondary providers for data consistency
+            # This ensures ChromaDB stays in sync with pgvector
+            try:
+                await self._replicate_to_secondaries(
+                    memory_id, request.content, embedding, metadata
+                )
+                logger.debug(f"Successfully replicated memory {memory_id} to secondary providers")
+            except Exception as e:
+                logger.error(f"Secondary replication failed for memory {memory_id}: {e}")
+                # Continue - primary storage succeeded, but log the failure
 
             # Update stats
             self.stats['total_stores'] += 1
@@ -516,16 +522,31 @@ class UnifiedVectorStore:
 
     async def _replicate_to_secondaries(self, memory_id: UUID, content: str,
                                        embedding: list[float], metadata: dict[str, Any]):
-        """Replicate to secondary providers for resilience."""
+        """Replicate to secondary providers for data consistency."""
         secondary_providers = [p for p in self.providers.values()
                              if p != self.primary_provider and p.enabled]
 
+        if not secondary_providers:
+            logger.debug("No secondary providers enabled for replication")
+            return
+
+        replication_results = []
         for provider in secondary_providers:
             try:
-                await self._store_with_retry(provider, content, embedding, metadata)
-                logger.debug(f"Replicated memory {memory_id} to {provider.name}")
+                stored_id = await self._store_with_retry(provider, content, embedding, metadata)
+                logger.info(f"✅ Replicated memory {memory_id} to {provider.name} as {stored_id}")
+                replication_results.append({"provider": provider.name, "success": True, "id": stored_id})
             except Exception as e:
-                logger.warning(f"Failed to replicate to {provider.name}: {e}")
+                logger.error(f"❌ Failed to replicate memory {memory_id} to {provider.name}: {e}")
+                replication_results.append({"provider": provider.name, "success": False, "error": str(e)})
+
+        # Log summary
+        successful = sum(1 for r in replication_results if r["success"])
+        total = len(replication_results)
+        logger.info(f"Replication summary for {memory_id}: {successful}/{total} providers succeeded")
+        
+        if successful == 0:
+            raise Exception(f"All secondary replication failed for memory {memory_id}")
 
     async def _generate_embedding(self, text: str) -> list[float]:
         """Generate embedding using configured model."""
