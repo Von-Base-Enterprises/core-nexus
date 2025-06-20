@@ -190,7 +190,6 @@ async def lifespan(app: FastAPI):
     
     # Ensure the directory exists and is writable
     try:
-        import os
         os.makedirs(chroma_persist_dir, exist_ok=True)
         # Test write permission
         test_file = os.path.join(chroma_persist_dir, "write_test.tmp")
@@ -832,7 +831,6 @@ def create_memory_app() -> FastAPI:
     @app.get("/debug/env")
     async def debug_environment():
         """Debug endpoint to check environment variables."""
-        import os
 
         # Check various environment variables
         env_status = {
@@ -986,7 +984,6 @@ def create_memory_app() -> FastAPI:
 
                 # Check if it's OpenAI and why it might have failed
                 if startup_info['embedding_model']['type'] == 'MockEmbeddingModel':
-                    import os
                     api_key = os.getenv("OPENAI_API_KEY", "")
                     if not api_key:
                         startup_info['initialization_errors'].append(
@@ -2487,9 +2484,7 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=403, detail="Invalid admin key")
         
         try:
-            import os
             import asyncpg
-            from .config import config
         except ImportError as e:
             raise HTTPException(status_code=500, detail=f"Import error: {str(e)}")
         
