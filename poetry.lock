@@ -3309,6 +3309,21 @@ files = [
 ]
 
 [[package]]
+name = "schedule"
+version = "1.2.2"
+description = "Job scheduling for humans."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "schedule-1.2.2-py3-none-any.whl", hash = "sha256:5bef4a2a0183abf44046ae0d164cadcac21b1db011bdd8102e4a0c1e91e06a7d"},
+    {file = "schedule-1.2.2.tar.gz", hash = "sha256:15fe9c75fe5fd9b9627f3f19cc0ef1420508f9f9a46f45cd0769ef75ede5f0b7"},
+]
+
+[package.extras]
+timezone = ["pytz"]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 description = "Tool to Detect Surrounding Shell"
@@ -3934,4 +3949,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "bf4f2b5db7e9d78adcbe5efec10062834455ce64f1bb828e4fb0fd950e6af66e"
+content-hash = "2668d7031758f6a3946723f8aaa3bd526b905e1ab62ea0cf4f63f4225ab1a5a6"

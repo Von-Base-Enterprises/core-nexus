@@ -1,0 +1,109 @@
+# SAFE Staging Environment Blueprint - $0 Cost
+# This is ADDITIVE - won't affect existing production service
+
+databases:
+  # NEW: Free Staging Database (30-day renewable)
+  - name: nexus-memory-db-staging-free
+    plan: free
+    databaseName: nexus_memory_staging
+    user: staging_user
+    ipAllowList: []
+
+  # NEW: Free Redis for Rate Limiting Tests  
+  - name: nexus-redis-staging-free
+    plan: free
+
+services:
+  # NEW: Free Staging Service (separate from production)
+  - type: web
+    name: core-nexus-memory-staging
+    env: staging
+    plan: free  # $0/month - 512MB RAM, 0.1 CPU
+    runtime: python3
+    region: oregon
+    branch: staging  # Deploys from staging branch only
+    rootDir: python/memory_service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    autoDeploy: true  # Auto-deploy staging for rapid testing
+    envVars:
+      - key: SERVICE_NAME
+        value: core-nexus-memory-staging
+      - key: ENVIRONMENT
+        value: staging
+      - key: LOG_LEVEL
+        value: DEBUG
+      - key: DEBUG_MODE
+        value: true
+      # FREE Staging Database Connection
+      - key: PGVECTOR_HOST
+        fromDatabase:
+          name: nexus-memory-db-staging-free
+          property: host
+      - key: PGVECTOR_PORT
+        fromDatabase:
+          name: nexus-memory-db-staging-free
+          property: port
+      - key: PGVECTOR_DATABASE
+        fromDatabase:
+          name: nexus-memory-db-staging-free
+          property: database
+      - key: PGVECTOR_USER
+        fromDatabase:
+          name: nexus-memory-db-staging-free
+          property: user
+      - key: PGVECTOR_PASSWORD
+        fromDatabase:
+          name: nexus-memory-db-staging-free
+          property: password
+      # FREE Redis Connection
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: nexus-redis-staging-free
+          property: connectionString
+      # Feature flags (same as prod for testing)
+      - key: GRAPH_ENABLED
+        value: true
+      - key: ADM_EVOLUTION_ENABLED
+        value: true
+      - key: ADM_SCORING_ENABLED
+        value: true
+      - key: OTEL_SDK_DISABLED
+        value: true
+      # Performance (optimized for free tier)
+      - key: WORKERS
+        value: "1"
+      - key: MAX_CONNECTIONS
+        value: "25"  # Lower for free tier
+      - key: QUERY_TIMEOUT_MS
+        value: "15000"  # Higher timeout for debugging
+      - key: CORS_ORIGINS
+        value: "*"
+
+  # NEW: Staging Keep-alive (free tier)
+  - type: worker
+    name: nexus-keep-alive-staging
+    env: staging
+    plan: free  # $0/month
+    runtime: python3
+    region: oregon
+    branch: staging
+    rootDir: python/memory_service
+    buildCommand: pip install httpx asyncio
+    startCommand: python worker/keep_alive.py
+    envVars:
+      - key: API_URL
+        value: https://core-nexus-memory-staging.onrender.com
+      - key: PING_SEC
+        value: "900"  # Less frequent for free tier
+
+# Preview Environments for Feature Testing
+previewsEnabled: true
+previewsExpireAfterDays: 2  # Shorter expiry to save resources
+
+# Environment Protection
+environments:
+  - name: staging
+    protected: false  # Developers can deploy to staging

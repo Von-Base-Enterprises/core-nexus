@@ -1,0 +1,11 @@
+{
+  "backup_history": [
+    {
+      "backup_name": "manual_backup_20250619_230340",
+      "timestamp": "2025-06-19T23:04:26.439419",
+      "status": "success",
+      "size_human": "25.8 MB",
+      "total_records": 2572
+    }
+  ]
+}

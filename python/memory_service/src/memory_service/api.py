@@ -182,16 +182,34 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Pinecone provider failed to initialize: {e}")
 
     # Add ChromaDB (always available as local fallback)
+    # Use /tmp for Render compatibility - ephemeral but writable
+    chroma_persist_dir = os.getenv("CHROMADB_PERSIST_DIR", "/tmp/memory_service_chroma")
+    logger.info(f"ChromaDB persist directory: {chroma_persist_dir}")
+    
+    # Ensure the directory exists and is writable
+    try:
+        import os
+        os.makedirs(chroma_persist_dir, exist_ok=True)
+        # Test write permission
+        test_file = os.path.join(chroma_persist_dir, "write_test.tmp")
+        with open(test_file, "w") as f:
+            f.write("test")
+        os.remove(test_file)
+        logger.info(f"✅ ChromaDB directory is writable: {chroma_persist_dir}")
+    except Exception as e:
+        logger.error(f"❌ ChromaDB directory not writable: {chroma_persist_dir} - {e}")
+    
     chroma_config = ProviderConfig(
         name="chromadb",
         enabled=True,
         primary=True,  # Make primary by default
         config={
             "collection_name": "core_nexus_memories",
-            "persist_directory": "./memory_service_chroma"
+            "persist_directory": chroma_persist_dir
         }
     )
     try:
+        logger.info("🔄 Initializing ChromaDB provider...")
         # Use instrumented provider if observability is enabled
         if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
             from .providers_instrumented import InstrumentedChromaProvider
@@ -200,15 +218,28 @@ async def lifespan(app: FastAPI):
         else:
             chroma_provider = ChromaProvider(chroma_config)
         
+        logger.info(f"✅ ChromaDB provider created - enabled: {chroma_provider.enabled}")
         providers.append(chroma_provider)
+        
         # If pgvector was successfully initialized, make it primary instead
         if any(p.name == "pgvector" and p.enabled for p in providers):
             chroma_config.primary = False
-            logger.info("ChromaDB provider initialized as secondary (pgvector is primary)")
+            logger.info("🔄 ChromaDB provider initialized as SECONDARY (pgvector is primary)")
+            logger.info(f"   🔍 Will receive replication from pgvector to ChromaDB")
         else:
-            logger.info("ChromaDB provider initialized as primary")
+            logger.info("🔄 ChromaDB provider initialized as PRIMARY")
+            
+        # Test ChromaDB health immediately after initialization
+        try:
+            chroma_health = await chroma_provider.health_check()
+            logger.info(f"📊 ChromaDB health check: {chroma_health}")
+        except Exception as health_error:
+            logger.error(f"❌ ChromaDB health check failed: {health_error}")
+            
     except Exception as e:
-        logger.error(f"ChromaDB provider failed to initialize: {e}")
+        logger.error(f"❌ ChromaDB provider failed to initialize: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
 
     # Add Graph Provider for knowledge graph functionality
     # Feature flag controlled activation for safe rollout
@@ -291,6 +322,26 @@ async def lifespan(app: FastAPI):
         from .embedding_models import MockEmbeddingModel
         embedding_model = MockEmbeddingModel(dimension=1536)
         logger.warning("Using mock embedding model as fallback")
+
+    # Log detailed provider configuration before initialization
+    logger.info("📊 FINAL PROVIDER CONFIGURATION:")
+    primary_provider = None
+    secondary_providers = []
+    for provider in providers:
+        status = "✅ ENABLED" if provider.enabled else "❌ DISABLED"
+        role = "PRIMARY" if provider.config.primary else "SECONDARY"
+        logger.info(f"   {provider.name}: {status} - {role}")
+        if provider.enabled:
+            if provider.config.primary:
+                primary_provider = provider
+            else:
+                secondary_providers.append(provider)
+    
+    logger.info(f"🎯 REPLICATION SETUP:")
+    logger.info(f"   Primary: {primary_provider.name if primary_provider else 'None'}")
+    logger.info(f"   Secondaries: {[p.name for p in secondary_providers]}")
+    logger.info(f"   📝 New memories will be stored in {primary_provider.name if primary_provider else 'None'}")
+    logger.info(f"   🔄 Then replicated to: {[p.name for p in secondary_providers]}")
 
     # Initialize unified store with ADM enabled and embedding model
     unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)

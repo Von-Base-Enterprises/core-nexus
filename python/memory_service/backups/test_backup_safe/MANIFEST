@@ -1,0 +1,46 @@
+{
+  "backup_path": "backups/test_backup_safe",
+  "creation_date": "2025-06-20T02:52:58.852881+00:00",
+  "files": {
+    "backup_info.json": {
+      "size": 1975,
+      "checksum": "7185aca01b3f755c8ffa235983f2e4b5"
+    },
+    "entity_canonicalization_data.json.gz": {
+      "size": 277,
+      "checksum": "c945a38689554584c23f32e0cadfb69d"
+    },
+    "graph_edges_data.json.gz": {
+      "size": 50,
+      "checksum": "bd65e14a4822ca1be3fa960f64d95a24"
+    },
+    "graph_nodes_data.json.gz": {
+      "size": 7305,
+      "checksum": "fb6d3c368198a799aecfada9e6ccb532"
+    },
+    "graph_relationships_data.json.gz": {
+      "size": 2159,
+      "checksum": "5a3881664281edf9144314429884d84d"
+    },
+    "memories_data.json.gz": {
+      "size": 8539404,
+      "checksum": "4cdeb788abf8be5ae9cdeaec860e5682"
+    },
+    "memory_entity_map_data.json.gz": {
+      "size": 4492,
+      "checksum": "503d71ebad743ea07b437f6b025f53b1"
+    },
+    "schema.sql": {
+      "size": 2273,
+      "checksum": "16dc7e2bc9f2cfd54c70f54238e85b15"
+    },
+    "vector_embeddings.pkl.gz": {
+      "size": 9425618,
+      "checksum": "926d859ea1e2b15f32418d1341187fbd"
+    },
+    "vector_memories_data.json.gz": {
+      "size": 9047691,
+      "checksum": "a005a3f16e9cbb8d8f528b6c669d794e"
+    }
+  }
+}

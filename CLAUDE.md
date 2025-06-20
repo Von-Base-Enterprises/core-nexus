@@ -41,6 +41,30 @@ yarn build            # Build all packages
 - Python: `poetry run pytest -xvs tests/test_file.py::test_function`
 - TypeScript: `yarn test path/to/test.spec.ts`
 
+### Database Backup Commands
+```bash
+# Set environment variable for secure access
+export PGVECTOR_PASSWORD="your_password_here"
+
+# Test database connection
+poetry run python ../../secure_backup_system.py health
+
+# Create a full backup
+poetry run python ../../secure_backup_system.py full_backup
+
+# Create a named backup
+poetry run python ../../secure_backup_system.py full_backup "backup_name"
+
+# List all backups with integrity status
+poetry run python ../../secure_backup_system.py list
+
+# Verify backup integrity
+poetry run python ../../secure_backup_system.py verify "backup_name"
+
+# Run automated scheduler (daily backups + retention)
+poetry run python ../../backup_scheduler.py start
+```
+
 ## High-Level Architecture
 
 ### Core Components

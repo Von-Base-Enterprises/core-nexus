@@ -1,0 +1,59 @@
+{
+  "backup_name": "manual_backup_20250619_225537",
+  "backup_date": "2025-06-20T02:55:37.372995+00:00",
+  "backup_type": "full",
+  "database": "nexus_memory_db",
+  "host": "dpg-d12n0np5pdvs73ctmm40-a.oregon-postgres.render.com",
+  "files": {
+    "schema": "backups/manual_backup_20250619_225537/schema.sql",
+    "entity_canonicalization_data": "backups/manual_backup_20250619_225537/entity_canonicalization_data.json.gz",
+    "graph_edges_data": "backups/manual_backup_20250619_225537/graph_edges_data.json.gz",
+    "graph_nodes_data": "backups/manual_backup_20250619_225537/graph_nodes_data.json.gz",
+    "graph_relationships_data": "backups/manual_backup_20250619_225537/graph_relationships_data.json.gz",
+    "memories_data": "backups/manual_backup_20250619_225537/memories_data.json.gz",
+    "memory_entity_map_data": "backups/manual_backup_20250619_225537/memory_entity_map_data.json.gz",
+    "vector_memories_data": "backups/manual_backup_20250619_225537/vector_memories_data.json.gz",
+    "vector_embeddings": "backups/manual_backup_20250619_225537/vector_embeddings.pkl.gz"
+  },
+  "checksums": {
+    "entity_canonicalization_data": "221ee420910204c26a2f43d37ad14c2a",
+    "graph_edges_data": "0f87feda322f4bff926bffa8a9201182",
+    "graph_nodes_data": "69ae98500cbc55f9b18a43a83905d2b4",
+    "graph_relationships_data": "f508a8dae585a88df8cbcabe17df85a2",
+    "memories_data": "a5714bf4c837f0d198f722e2fa287156",
+    "memory_entity_map_data": "eea73ba4db5ee5ae81efb167073ee460",
+    "vector_memories_data": "c83c3c230be160e02329b7102b3b7c04"
+  },
+  "total_records": 2569,
+  "tables_backed_up": [
+    {
+      "table": "entity_canonicalization",
+      "records": 4
+    },
+    {
+      "table": "graph_edges",
+      "records": 0
+    },
+    {
+      "table": "graph_nodes",
+      "records": 141
+    },
+    {
+      "table": "graph_relationships",
+      "records": 27
+    },
+    {
+      "table": "memories",
+      "records": 1088
+    },
+    {
+      "table": "memory_entity_map",
+      "records": 154
+    },
+    {
+      "table": "vector_memories",
+      "records": 1155
+    }
+  ],
+  "vector_count": 1155
+}

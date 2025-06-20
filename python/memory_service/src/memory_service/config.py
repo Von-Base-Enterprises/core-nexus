@@ -9,23 +9,38 @@ from typing import Optional
 
 # Database Configuration
 class DatabaseConfig:
-    """PostgreSQL and pgvector configuration"""
+    """PostgreSQL and pgvector configuration optimized for 1GB RAM"""
     HOST = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
     PORT = int(os.getenv("PGVECTOR_PORT", "5432"))
     DATABASE = os.getenv("PGVECTOR_DATABASE", "nexus_memory_db")
     USER = os.getenv("PGVECTOR_USER", "nexus_memory_db_user")
     PASSWORD = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
     
-    # Connection pool settings
-    POOL_MIN_SIZE = int(os.getenv("POOL_MIN_SIZE", "10"))
-    POOL_MAX_SIZE = int(os.getenv("POOL_MAX_SIZE", "20"))
-    POOL_TIMEOUT = int(os.getenv("POOL_TIMEOUT", "60"))
-    COMMAND_TIMEOUT = int(os.getenv("COMMAND_TIMEOUT", "10"))
+    # Connection pool settings optimized for 1GB RAM
+    POOL_MIN_SIZE = int(os.getenv("POOL_MIN_SIZE", "20"))  # Increased from 10
+    POOL_MAX_SIZE = int(os.getenv("POOL_MAX_SIZE", "50"))  # Increased from 20
+    POOL_TIMEOUT = int(os.getenv("POOL_TIMEOUT", "30"))    # Reduced for faster failover
+    COMMAND_TIMEOUT = int(os.getenv("COMMAND_TIMEOUT", "15"))  # Increased for complex vector ops
     
     # Vector settings
     VECTOR_DIMENSION = 1536
     TABLE_NAME = "vector_memories"
     DISTANCE_METRIC = "cosine"
+    
+    # Performance optimization settings for 1GB RAM
+    SHARED_BUFFERS_MB = int(os.getenv("SHARED_BUFFERS_MB", "256"))  # 256MB
+    WORK_MEM_MB = int(os.getenv("WORK_MEM_MB", "16"))              # 16MB per operation
+    MAINTENANCE_WORK_MEM_MB = int(os.getenv("MAINTENANCE_WORK_MEM_MB", "64"))  # 64MB
+    EFFECTIVE_CACHE_SIZE_MB = int(os.getenv("EFFECTIVE_CACHE_SIZE_MB", "768"))  # 768MB
+    
+    # HNSW index optimization
+    HNSW_M = int(os.getenv("HNSW_M", "32"))                        # Increased from 16
+    HNSW_EF_CONSTRUCTION = int(os.getenv("HNSW_EF_CONSTRUCTION", "128"))  # Increased from 64
+    
+    # Query optimization
+    ENABLE_PREPARED_STATEMENTS = os.getenv("ENABLE_PREPARED_STATEMENTS", "true").lower() == "true"
+    MAX_PREPARED_STATEMENTS = int(os.getenv("MAX_PREPARED_STATEMENTS", "100"))
+    QUERY_PLAN_CACHE_SIZE = int(os.getenv("QUERY_PLAN_CACHE_SIZE", "50"))
 
 # API Configuration
 class APIConfig:
@@ -42,8 +57,11 @@ class APIConfig:
     MAX_QUERY_LIMIT = int(os.getenv("MAX_QUERY_LIMIT", "1000"))
     DEFAULT_QUERY_LIMIT = int(os.getenv("DEFAULT_QUERY_LIMIT", "100"))
     
-    # Cache settings
-    CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))  # 5 minutes
+    # Cache settings optimized for 1GB RAM
+    CACHE_TTL = int(os.getenv("CACHE_TTL", "600"))  # 10 minutes - longer cache
+    CACHE_MAX_SIZE_MB = int(os.getenv("CACHE_MAX_SIZE_MB", "100"))  # 100MB cache
+    EMBEDDING_CACHE_SIZE = int(os.getenv("EMBEDDING_CACHE_SIZE", "1000"))  # Cache 1000 embeddings
+    QUERY_RESULT_CACHE_SIZE = int(os.getenv("QUERY_RESULT_CACHE_SIZE", "500"))  # Cache 500 query results
 
 # Provider Configuration
 class ProviderConfig:

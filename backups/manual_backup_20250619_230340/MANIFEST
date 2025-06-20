@@ -1,0 +1,46 @@
+{
+  "backup_path": "/mnt/c/Users/Tyvon/core-nexus/backups/manual_backup_20250619_230340",
+  "creation_date": "2025-06-20T03:04:24.813693+00:00",
+  "files": {
+    "backup_info.json": {
+      "size": 2375,
+      "checksum": "d469202c96addf665f111aa6ba90db16"
+    },
+    "entity_canonicalization_data.json.gz": {
+      "size": 277,
+      "checksum": "465e8ee65192d6820470093968b1907e"
+    },
+    "graph_edges_data.json.gz": {
+      "size": 50,
+      "checksum": "32446e27d4d1443942fae50e829dea5e"
+    },
+    "graph_nodes_data.json.gz": {
+      "size": 7359,
+      "checksum": "500c0334b4d0e510e3a6fc6c97a3f179"
+    },
+    "graph_relationships_data.json.gz": {
+      "size": 2159,
+      "checksum": "a15798b2c3e6123b45238e2b2d07afa5"
+    },
+    "memories_data.json.gz": {
+      "size": 8539404,
+      "checksum": "9350493fb300f95c565313ff41573b34"
+    },
+    "memory_entity_map_data.json.gz": {
+      "size": 4539,
+      "checksum": "4501bd366cb13996b2ab4d0ed1f757f4"
+    },
+    "schema.sql": {
+      "size": 2273,
+      "checksum": "16dc7e2bc9f2cfd54c70f54238e85b15"
+    },
+    "vector_embeddings.pkl.gz": {
+      "size": 9433927,
+      "checksum": "2c4568ae79bc3b8acf8a2c3ffad23b1c"
+    },
+    "vector_memories_data.json.gz": {
+      "size": 9055260,
+      "checksum": "5c6cc3d994ff45cf77d3eb3ba680d672"
+    }
+  }
+}
