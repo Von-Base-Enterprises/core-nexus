@@ -345,9 +345,28 @@ async def lifespan(app: FastAPI):
     logger.info(f"   📝 New memories will be stored in {primary_provider.name if primary_provider else 'None'}")
     logger.info(f"   🔄 Then replicated to: {[p.name for p in secondary_providers]}")
 
-    # Initialize unified store with ADM enabled and embedding model
-    unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
-    logger.info(f"Memory service started with {len(providers)} providers and {embedding_model.__class__.__name__}")
+    # Initialize unified store with optimization engine integration
+    optimization_enabled = os.getenv("OPTIMIZATION_ENABLED", "true").lower() == "true"
+    
+    if optimization_enabled:
+        try:
+            from .optimized_unified_store import create_optimized_unified_store
+            logger.info("🚀 Creating optimized unified vector store...")
+            unified_store = await create_optimized_unified_store(
+                providers=providers,
+                embedding_model=embedding_model,
+                adm_enabled=True
+            )
+            logger.info(f"✅ Optimized memory service started: {len(providers)} providers with performance enhancements")
+        except Exception as e:
+            logger.warning(f"⚠️ Optimization engine failed, using standard store: {e}")
+            # Fallback to standard UnifiedVectorStore
+            unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
+            logger.info(f"Memory service started with standard vector store: {len(providers)} providers")
+    else:
+        # Standard UnifiedVectorStore
+        unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
+        logger.info(f"Memory service started with standard vector store: {len(providers)} providers")
 
     # Initialize bulk import service (simplified version without Redis)
     global bulk_import_service, memory_export_service
