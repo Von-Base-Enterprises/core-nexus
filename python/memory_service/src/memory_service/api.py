@@ -182,8 +182,9 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Pinecone provider failed to initialize: {e}")
 
     # Add ChromaDB (always available as local fallback)
-    # Use /tmp for Render compatibility - ephemeral but writable
-    chroma_persist_dir = os.getenv("CHROMADB_PERSIST_DIR", "/tmp/memory_service_chroma")
+    # Use config-defined directory (defaults to /tmp for Render compatibility)
+    from .config import config
+    chroma_persist_dir = config.providers.CHROMADB_PERSIST_DIR
     logger.info(f"ChromaDB persist directory: {chroma_persist_dir}")
     
     # Ensure the directory exists and is writable
