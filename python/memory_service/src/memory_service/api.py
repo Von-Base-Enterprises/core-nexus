@@ -3950,6 +3950,131 @@ def create_memory_app() -> FastAPI:
             ]
         }
 
+    @app.post("/admin/debug-replication")
+    async def debug_replication(
+        admin_key: str = Query(..., description="Admin authentication key")
+    ):
+        """Debug replication system to understand why ChromaDB has 0 vectors"""
+        
+        if admin_key != "restore-pgvector-2025":
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+        
+        global unified_store
+        
+        try:
+            debug_info = {
+                "timestamp": datetime.now().isoformat(),
+                "provider_analysis": {},
+                "replication_test": {},
+                "manual_chromadb_test": {}
+            }
+            
+            # 1. Analyze current provider configuration
+            if unified_store:
+                debug_info["provider_analysis"] = {
+                    "primary_provider": unified_store.primary_provider.name if unified_store.primary_provider else None,
+                    "total_providers": len(unified_store.providers),
+                    "provider_details": {}
+                }
+                
+                for name, provider in unified_store.providers.items():
+                    debug_info["provider_analysis"]["provider_details"][name] = {
+                        "enabled": provider.enabled,
+                        "is_primary": provider == unified_store.primary_provider,
+                        "type": type(provider).__name__
+                    }
+                
+                # 2. Test secondary provider identification
+                secondary_providers = [p for p in unified_store.providers.values()
+                                     if p != unified_store.primary_provider and p.enabled]
+                
+                debug_info["provider_analysis"]["secondary_providers"] = [
+                    {"name": p.name, "type": type(p).__name__} for p in secondary_providers
+                ]
+                debug_info["provider_analysis"]["secondary_count"] = len(secondary_providers)
+            
+            # 3. Test manual ChromaDB write
+            chromadb_provider = unified_store.providers.get('chromadb') if unified_store else None
+            if chromadb_provider and chromadb_provider.enabled:
+                try:
+                    # Test direct write to ChromaDB
+                    test_content = f"Direct ChromaDB test {datetime.now().isoformat()}"
+                    test_embedding = [0.1] * 1536  # Simple test embedding
+                    test_metadata = {
+                        "direct_test": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # Use the unified store's embedding model to get a real embedding
+                    if unified_store and unified_store.embedding_model:
+                        test_embedding = await unified_store.embedding_model.embed_text(test_content)
+                    
+                    result_id = await chromadb_provider.store(test_content, test_embedding, test_metadata)
+                    
+                    debug_info["manual_chromadb_test"] = {
+                        "success": True,
+                        "stored_id": str(result_id),
+                        "content_length": len(test_content),
+                        "embedding_dim": len(test_embedding)
+                    }
+                    
+                    # Check if count increased
+                    health_check = await chromadb_provider.health_check()
+                    debug_info["manual_chromadb_test"]["post_write_count"] = health_check.get("details", {}).get("details", {}).get("total_vectors", 0)
+                    
+                except Exception as e:
+                    debug_info["manual_chromadb_test"] = {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": type(e).__name__
+                    }
+            else:
+                debug_info["manual_chromadb_test"]["error"] = "ChromaDB provider not available or disabled"
+            
+            # 4. Test replication method directly
+            if unified_store:
+                try:
+                    test_memory_id = uuid4()
+                    test_content = f"Replication test {datetime.now().isoformat()}"
+                    test_embedding = [0.1] * 1536
+                    test_metadata = {"replication_test": True}
+                    
+                    # Get real embedding
+                    if unified_store.embedding_model:
+                        test_embedding = await unified_store.embedding_model.embed_text(test_content)
+                    
+                    # Call replication method directly
+                    await unified_store._replicate_to_secondaries(
+                        test_memory_id, test_content, test_embedding, test_metadata
+                    )
+                    
+                    debug_info["replication_test"] = {
+                        "success": True,
+                        "test_memory_id": str(test_memory_id)
+                    }
+                    
+                except Exception as e:
+                    debug_info["replication_test"] = {
+                        "success": False,
+                        "error": str(e),
+                        "error_type": type(e).__name__
+                    }
+            
+            return {
+                "status": "debug_complete",
+                "debug_info": debug_info,
+                "next_steps": [
+                    "Check if ChromaDB writes are working",
+                    "Verify secondary provider identification",
+                    "Test replication method directly",
+                    "Check for silent replication failures"
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Replication debug failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Debug failed: {str(e)}")
+
     # ===== END EMERGENCY FIXES =====
 
     return app
