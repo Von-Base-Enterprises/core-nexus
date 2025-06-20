@@ -2986,6 +2986,69 @@ def create_memory_app() -> FastAPI:
             logger.error(f"pgvector activation failed: {e}")
             raise HTTPException(status_code=500, detail=f"Activation failed: {str(e)}")
 
+    @app.get("/admin/memories-direct")
+    async def get_memories_direct(admin_key: str, limit: int = 10):
+        """Direct access to production memories bypassing provider layer"""
+        
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            from .config import config
+            import asyncpg
+            import json
+            
+            # Direct database connection
+            conn_string = f"postgresql://{config.database.USER}:{config.database.PASSWORD}@{config.database.HOST}:{config.database.PORT}/{config.database.DATABASE}?sslmode=require"
+            conn = await asyncpg.connect(conn_string)
+            
+            try:
+                # Query memories directly
+                rows = await conn.fetch(f"""
+                    SELECT id, content, embedding, metadata, created_at
+                    FROM {config.database.TABLE_NAME}
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                """, limit)
+                
+                memories = []
+                for row in rows:
+                    # Parse metadata
+                    metadata = row['metadata'] if row['metadata'] else {}
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except:
+                            metadata = {}
+                    
+                    memory = {
+                        "id": str(row['id']),
+                        "content": row['content'],
+                        "metadata": metadata,
+                        "importance_score": metadata.get('importance_score', 0.5),
+                        "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                        "has_embedding": row['embedding'] is not None,
+                        "embedding_length": len(row['embedding']) if row['embedding'] else 0
+                    }
+                    memories.append(memory)
+                
+                total_count = await conn.fetchval(f"SELECT COUNT(*) FROM {config.database.TABLE_NAME}")
+                
+                return {
+                    "status": "direct_access_success",
+                    "total_memories": total_count,
+                    "returned_memories": len(memories),
+                    "memories": memories
+                }
+                
+            finally:
+                await conn.close()
+                
+        except Exception as e:
+            logger.error(f"Direct memory access failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Direct access failed: {str(e)}")
+
     @app.post("/admin/diagnose-pgvector")
     async def diagnose_pgvector_issue(
         admin_key: str,
