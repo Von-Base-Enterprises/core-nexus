@@ -3764,7 +3764,10 @@ def create_memory_app() -> FastAPI:
                     )
                     
                     new_pgvector_provider = PgVectorProvider(pgvector_config)
-                    await new_pgvector_provider.initialize()
+                    # PgVectorProvider initializes automatically in constructor
+                    # Wait for the initialization task to complete
+                    if hasattr(new_pgvector_provider, '_pool_initialization_task') and new_pgvector_provider._pool_initialization_task:
+                        await new_pgvector_provider._pool_initialization_task
                     
                     # Replace the provider in the unified store
                     if unified_store:
