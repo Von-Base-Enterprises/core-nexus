@@ -123,27 +123,57 @@ class ChromaProvider(VectorProvider):
             raise
 
     async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
-        """Store vector in ChromaDB."""
+        """Store vector in ChromaDB with enhanced error handling."""
+        logger.info(f"🔄 ChromaDB store() called - content length: {len(content)}, embedding dim: {len(embedding)}")
+        
         if not self.collection:
+            logger.error("❌ ChromaDB store() failed: Collection not initialized")
             raise RuntimeError("ChromaDB not initialized")
 
-        memory_id = uuid4()
+        if not self.enabled:
+            logger.error("❌ ChromaDB store() failed: Provider disabled")
+            raise RuntimeError("ChromaDB provider is disabled")
 
-        # ChromaDB is synchronous, so we run in executor
+        memory_id = uuid4()
+        logger.info(f"📝 ChromaDB storing memory {memory_id}...")
+
+        # ChromaDB is synchronous, so we run in executor with detailed error handling
         loop = asyncio.get_event_loop()
 
         def _store():
-            self.collection.add(
-                embeddings=[embedding],
-                documents=[content],
-                metadatas=[metadata],
-                ids=[str(memory_id)]
-            )
+            try:
+                logger.info(f"🔧 ChromaDB executor: Starting collection.add() for {memory_id}")
+                logger.info(f"   Collection name: {self.collection.name}")
+                logger.info(f"   Collection count before: {self.collection.count()}")
+                
+                self.collection.add(
+                    embeddings=[embedding],
+                    documents=[content],
+                    metadatas=[metadata],
+                    ids=[str(memory_id)]
+                )
+                
+                count_after = self.collection.count()
+                logger.info(f"✅ ChromaDB executor: Successfully added to collection")
+                logger.info(f"   Collection count after: {count_after}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"❌ ChromaDB executor failed: {e}")
+                logger.error(f"   Error type: {type(e).__name__}")
+                logger.error(f"   Memory ID: {memory_id}")
+                logger.error(f"   Content preview: {content[:100]}...")
+                logger.error(f"   Embedding first 5: {embedding[:5]}")
+                logger.error(f"   Metadata keys: {list(metadata.keys())}")
+                raise
 
-        await loop.run_in_executor(None, _store)
-
-        logger.debug(f"Stored in ChromaDB: {memory_id}")
-        return memory_id
+        try:
+            await loop.run_in_executor(None, _store)
+            logger.info(f"✅ ChromaDB store() completed successfully: {memory_id}")
+            return memory_id
+        except Exception as e:
+            logger.error(f"❌ ChromaDB store() failed in executor: {e}")
+            raise
 
     async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
         """Query ChromaDB for similar vectors."""
@@ -191,26 +221,56 @@ class ChromaProvider(VectorProvider):
         return memories
 
     async def health_check(self) -> dict[str, Any]:
-        """Check ChromaDB health."""
+        """Check ChromaDB health with detailed diagnostics."""
         try:
+            logger.info("🔍 ChromaDB health_check() called")
+            
+            if not self.enabled:
+                logger.warning("⚠️ ChromaDB health_check: Provider disabled")
+                return {
+                    'status': 'disabled',
+                    'error': 'Provider is disabled'
+                }
+            
             if self.collection:
+                logger.info(f"📊 ChromaDB health_check: Checking collection {self.collection.name}")
+                
+                # Test collection access
                 count = self.collection.count()
+                logger.info(f"   Collection count: {count}")
+                
+                # Test basic collection operations
+                try:
+                    # Try to peek at the collection to ensure it's accessible
+                    peek_result = self.collection.peek()
+                    logger.info(f"   Collection peek successful: {len(peek_result.get('ids', []))} sample entries")
+                except Exception as peek_error:
+                    logger.warning(f"   Collection peek failed: {peek_error}")
+                
                 return {
                     'status': 'healthy',
                     'details': {
                         'total_vectors': count,
-                        'collection_name': self.collection.name
+                        'collection_name': self.collection.name,
+                        'enabled': self.enabled,
+                        'client_initialized': self.client is not None
                     }
                 }
             else:
+                logger.error("❌ ChromaDB health_check: Collection not initialized")
                 return {
                     'status': 'unhealthy',
-                    'error': 'Collection not initialized'
+                    'error': 'Collection not initialized',
+                    'enabled': self.enabled,
+                    'client_initialized': getattr(self, 'client', None) is not None
                 }
         except Exception as e:
+            logger.error(f"❌ ChromaDB health_check failed: {e}")
             return {
                 'status': 'unhealthy',
-                'error': str(e)
+                'error': str(e),
+                'error_type': type(e).__name__,
+                'enabled': getattr(self, 'enabled', False)
             }
 
     async def get_stats(self) -> dict[str, Any]:
