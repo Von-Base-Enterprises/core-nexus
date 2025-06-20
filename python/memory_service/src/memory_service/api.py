@@ -71,12 +71,13 @@ usage_collector: Any = None  # Type: UsageCollector when implemented
 memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
 bulk_import_service: BulkImportService | None = None
 memory_export_service: MemoryExportService | None = None
+emergency_retrieval: Any = None  # Emergency retrieval system
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
-    global unified_store, usage_collector, memory_dashboard, bulk_import_service, memory_export_service
+    global unified_store, usage_collector, memory_dashboard, bulk_import_service, memory_export_service, emergency_retrieval
 
     # Startup
     logger.info("Initializing Core Nexus Memory Service...")
@@ -377,6 +378,16 @@ async def lifespan(app: FastAPI):
     memory_export_service = MemoryExportService(unified_store)
     logger.info("Bulk import/export services initialized")
 
+    # Initialize emergency retrieval system (CRITICAL FOUNDATION FIX)
+    try:
+        from .emergency_foundation_fix import EmergencyMemoryRetrieval
+        emergency_retrieval = EmergencyMemoryRetrieval()
+        await emergency_retrieval.connect()
+        logger.info("🚨 Emergency retrieval system initialized (bypasses broken query system)")
+    except Exception as e:
+        logger.error(f"Failed to initialize emergency retrieval: {e}")
+        emergency_retrieval = None
+
     # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
     # from .tracking import UsageCollector
     # usage_collector = UsageCollector(unified_store=unified_store)
@@ -415,9 +426,18 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning(f"Error closing provider {provider.name}: {e}")
 
+    # Close emergency retrieval connection
+    if emergency_retrieval and hasattr(emergency_retrieval, 'connection') and emergency_retrieval.connection:
+        try:
+            await emergency_retrieval.connection.close()
+            logger.info("Emergency retrieval connection closed")
+        except Exception as e:
+            logger.warning(f"Error closing emergency retrieval: {e}")
+
     unified_store = None
     usage_collector = None
     memory_dashboard = None
+    emergency_retrieval = None
 
 
 def create_memory_app() -> FastAPI:
@@ -668,45 +688,114 @@ def create_memory_app() -> FastAPI:
     async def get_all_memories(
         limit: int = 100,
         offset: int = 0,
+        query: str = "",
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
-        Get all memories without search (returns most recent first).
+        Get all memories (EMERGENCY FOUNDATION FIX - bypasses broken unified store).
 
-        This endpoint addresses the issue where only 3 memories were returned.
-        Now properly returns all memories with configurable limit.
+        This endpoint now uses emergency retrieval to restore functionality
+        while the unified store query system is being fixed.
         """
         try:
-            # Use empty query to get all memories
-            request = QueryRequest(
-                query="",  # Empty query returns all memories
-                limit=min(limit, 1000),  # Cap at 1000 for performance
-                min_similarity=0.0  # Accept all memories
-            )
-
-            response = await store.query_memories(request)
-            logger.info(f"GET /memories returned {len(response.memories)} of {response.total_found} total memories")
-
-            # Add trust metrics
-            response.trust_metrics = {
-                "confidence_score": 1.0,
-                "data_completeness": len(response.memories) / max(response.total_found, 1),
-                "endpoint": "GET /memories",
-                "fix_applied": True,
-                "note": "This endpoint was added to fix the 3-result bug"
-            }
-
-            response.query_metadata = {
-                "limit_requested": limit,
-                "offset": offset,
-                "actual_returned": len(response.memories),
-                "total_available": response.total_found
-            }
-
-            return response
+            logger.info(f"GET /memories called: limit={limit}, offset={offset}, query='{query}'")
+            
+            # Use emergency retrieval system if available
+            if emergency_retrieval:
+                logger.info("🚨 Using emergency retrieval system (bypassing broken unified store)")
+                
+                if query and query.strip():
+                    # Use search for non-empty queries
+                    memories = await emergency_retrieval.search_memories(query, limit)
+                else:
+                    # Use get_all for empty queries
+                    memories = await emergency_retrieval.get_all_memories(limit, offset)
+                
+                response = QueryResponse(
+                    memories=memories,
+                    total_found=len(memories),
+                    query_time_ms=0,
+                    providers_used=["emergency_direct"],
+                    trust_metrics={
+                        "confidence_score": 1.0,
+                        "data_completeness": 1.0,
+                        "endpoint": "GET /memories (EMERGENCY MODE)",
+                        "fix_applied": True,
+                        "note": "Using emergency retrieval - unified store query system broken"
+                    },
+                    query_metadata={
+                        "limit_requested": limit,
+                        "offset": offset,
+                        "query": query,
+                        "actual_returned": len(memories),
+                        "emergency_mode": True
+                    }
+                )
+                
+                logger.info(f"✅ Emergency retrieval returned {len(memories)} memories")
+                return response
+            
+            else:
+                # Fallback to broken unified store (will likely return 0 results)
+                logger.warning("Emergency retrieval not available, using broken unified store")
+                request = QueryRequest(
+                    query=query,
+                    limit=min(limit, 1000),
+                    min_similarity=0.0
+                )
+                
+                response = await store.query_memories(request)
+                response.trust_metrics = {
+                    "confidence_score": 0.1,
+                    "data_completeness": 0.0,
+                    "endpoint": "GET /memories (BROKEN)",
+                    "fix_applied": False,
+                    "note": "Emergency retrieval failed - using broken unified store"
+                }
+                
+                return response
 
         except Exception as e:
             logger.error(f"Failed to get memories: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    @app.get("/memories/{memory_id}")
+    async def get_memory_by_id(
+        memory_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Get specific memory by ID (EMERGENCY FOUNDATION FIX).
+        
+        Uses emergency retrieval to restore individual memory lookup functionality.
+        """
+        try:
+            logger.info(f"GET /memories/{memory_id} called")
+            
+            # Use emergency retrieval system if available
+            if emergency_retrieval:
+                logger.info(f"🚨 Using emergency retrieval for memory {memory_id}")
+                
+                memory = await emergency_retrieval.get_memory_by_id(memory_id)
+                
+                if memory:
+                    logger.info(f"✅ Emergency retrieval found memory {memory_id}")
+                    return memory
+                else:
+                    logger.info(f"❌ Memory {memory_id} not found")
+                    raise HTTPException(status_code=404, detail="Memory not found")
+            
+            else:
+                logger.warning("Emergency retrieval not available - memory lookup will likely fail")
+                raise HTTPException(
+                    status_code=503, 
+                    detail="Memory retrieval system unavailable - emergency mode failed to initialize"
+                )
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get memory {memory_id}: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
 
     @app.get("/emergency/find-all-memories")
