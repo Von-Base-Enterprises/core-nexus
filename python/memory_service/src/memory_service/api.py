@@ -95,15 +95,40 @@ async def lifespan(app: FastAPI):
     # Use Render PostgreSQL internal hostname for better performance
     pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
 
-    # Validate required password is set (check both possible env var names)
+    # Try multiple methods to get database credentials
     pgvector_password = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
+    database_url = os.getenv("DATABASE_URL")  # Render auto-provides this
+    
+    # If no password but DATABASE_URL exists, try to parse it
+    if not pgvector_password and database_url:
+        logger.info("No explicit password found, attempting to use DATABASE_URL")
+        try:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(database_url)
+            if parsed.password:
+                pgvector_password = parsed.password
+                # Also update other config from DATABASE_URL if available
+                if parsed.hostname:
+                    pgvector_host = parsed.hostname
+                if parsed.port:
+                    os.environ["PGVECTOR_PORT"] = str(parsed.port)
+                if parsed.path and len(parsed.path) > 1:
+                    os.environ["PGVECTOR_DATABASE"] = parsed.path[1:]  # Remove leading /
+                if parsed.username:
+                    os.environ["PGVECTOR_USER"] = parsed.username
+                logger.info("Successfully parsed DATABASE_URL for pgvector configuration")
+        except Exception as e:
+            logger.warning(f"Failed to parse DATABASE_URL: {e}")
+    
     if not pgvector_password:
-        logger.error("PGPASSWORD or PGVECTOR_PASSWORD environment variable is required but not set")
-        raise ValueError("PGPASSWORD or PGVECTOR_PASSWORD must be set in environment variables")
-
-    pgvector_config = ProviderConfig(
-        name="pgvector",
-        enabled=True,
+        logger.warning("No pgvector password available - pgvector provider will be disabled")
+        logger.warning("Set PGVECTOR_PASSWORD or DATABASE_URL environment variable to enable production memories")
+        # Don't raise error - allow service to start without pgvector
+        pgvector_config = None
+    else:
+        pgvector_config = ProviderConfig(
+            name="pgvector",
+            enabled=True,
         primary=False,  # Don't make primary unless it initializes successfully
         config={
             "host": pgvector_host,
@@ -115,22 +140,27 @@ async def lifespan(app: FastAPI):
             "embedding_dim": 1536,
             "distance_metric": "cosine"
         }
-    )
-    try:
-        # Use instrumented provider if observability is enabled
-        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-            from .providers_instrumented import InstrumentedPgVectorProvider
-            pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
-            logger.info("Using instrumented PgVector provider")
-        else:
-            pgvector_provider = PgVectorProvider(pgvector_config)
+        )
         
-        providers.append(pgvector_provider)
-        pgvector_config.primary = True  # Make primary if successful
-        logger.info("PgVector provider initialized as primary")
-    except Exception as e:
-        logger.warning(f"PgVector provider failed to initialize: {e}")
-        pgvector_config.enabled = False
+    # Only try to initialize pgvector if configuration is available
+    if pgvector_config:
+        try:
+            # Use instrumented provider if observability is enabled
+            if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+                from .providers_instrumented import InstrumentedPgVectorProvider
+                pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
+                logger.info("Using instrumented PgVector provider")
+            else:
+                pgvector_provider = PgVectorProvider(pgvector_config)
+            
+            providers.append(pgvector_provider)
+            pgvector_config.primary = True  # Make primary if successful
+            logger.info("PgVector provider initialized as primary")
+        except Exception as e:
+            logger.warning(f"PgVector provider failed to initialize: {e}")
+            pgvector_config.enabled = False
+    else:
+        logger.warning("PgVector provider skipped - no database credentials available")
 
     # Add Pinecone if configured
     pinecone_config = ProviderConfig(
@@ -3618,6 +3648,226 @@ def create_memory_app() -> FastAPI:
             results["recommendation"] = "Cannot connect to database"
         
         return results
+
+    # ===== PGVECTOR RESTORATION ENDPOINTS =====
+    
+    @app.post("/admin/restore-pgvector-access")
+    async def restore_pgvector_access(
+        admin_key: str = Query(..., description="Admin authentication key"),
+        database_url: str = Query(None, description="Optional manual database URL"),
+        password: str = Query(None, description="Optional manual password")
+    ):
+        """Emergency endpoint to restore pgvector access when env vars fail"""
+        
+        # Simple admin authentication
+        if admin_key != "restore-pgvector-2025":
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+        
+        global unified_store
+        
+        try:
+            logger.info("🚨 EMERGENCY: Attempting to restore pgvector access")
+            
+            # Try multiple methods to get connection info
+            connection_methods = []
+            
+            # Method 1: Manual override
+            if database_url and password:
+                connection_methods.append(("manual_override", {
+                    "database_url": database_url,
+                    "password": password
+                }))
+                
+            # Method 2: Environment DATABASE_URL
+            env_database_url = os.getenv("DATABASE_URL")
+            if env_database_url:
+                connection_methods.append(("env_database_url", {
+                    "database_url": env_database_url
+                }))
+                
+            # Method 3: Direct environment variables with common password names
+            for pwd_var in ["PGVECTOR_PASSWORD", "PGPASSWORD", "DATABASE_PASSWORD", "POSTGRES_PASSWORD"]:
+                pwd = os.getenv(pwd_var)
+                if pwd:
+                    connection_methods.append((f"env_{pwd_var.lower()}", {
+                        "host": os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a"),
+                        "port": int(os.getenv("PGVECTOR_PORT", "5432")),
+                        "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
+                        "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
+                        "password": pwd
+                    }))
+                    break
+            
+            restoration_results = {
+                "timestamp": datetime.now().isoformat(),
+                "methods_tried": len(connection_methods),
+                "connections_tested": [],
+                "success": False,
+                "memory_count": 0,
+                "pgvector_status": "failed"
+            }
+            
+            # Try each connection method
+            for method_name, config in connection_methods:
+                try:
+                    logger.info(f"Trying connection method: {method_name}")
+                    
+                    if "database_url" in config:
+                        # Parse DATABASE_URL
+                        import urllib.parse
+                        parsed = urllib.parse.urlparse(config["database_url"])
+                        host = parsed.hostname
+                        port = parsed.port or 5432
+                        database = parsed.path[1:] if parsed.path and len(parsed.path) > 1 else "nexus_memory_db"
+                        user = parsed.username
+                        password = config.get("password") or parsed.password
+                    else:
+                        # Use direct config
+                        host = config["host"]
+                        port = config["port"]
+                        database = config["database"]
+                        user = config["user"]
+                        password = config["password"]
+                    
+                    if not password:
+                        restoration_results["connections_tested"].append({
+                            "method": method_name,
+                            "success": False,
+                            "error": "No password available"
+                        })
+                        continue
+                    
+                    # Test connection
+                    conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}?sslmode=require"
+                    conn = await asyncpg.connect(conn_string)
+                    
+                    # Test basic query
+                    memory_count = await conn.fetchval("SELECT COUNT(*) FROM vector_memories")
+                    
+                    await conn.close()
+                    
+                    # Success! Now create and initialize a new pgvector provider
+                    pgvector_config = ProviderConfig(
+                        name="pgvector",
+                        enabled=True,
+                        primary=True,
+                        config={
+                            "host": host,
+                            "port": port,
+                            "database": database,
+                            "user": user,
+                            "password": password,
+                            "table_name": "vector_memories",
+                            "embedding_dim": 1536,
+                            "distance_metric": "cosine"
+                        }
+                    )
+                    
+                    new_pgvector_provider = PgVectorProvider(pgvector_config)
+                    await new_pgvector_provider.initialize()
+                    
+                    # Replace the provider in the unified store
+                    if unified_store:
+                        # Remove old disabled pgvector if it exists
+                        unified_store.providers = {k: v for k, v in unified_store.providers.items() if k != "pgvector"}
+                        
+                        # Add the new working provider
+                        unified_store.providers["pgvector"] = new_pgvector_provider
+                        unified_store.primary_provider = new_pgvector_provider
+                        
+                        logger.info("✅ Successfully restored pgvector provider in unified store")
+                    
+                    restoration_results.update({
+                        "success": True,
+                        "method_used": method_name,
+                        "memory_count": memory_count,
+                        "pgvector_status": "restored",
+                        "host": host,
+                        "port": port,
+                        "database": database,
+                        "user": user
+                    })
+                    
+                    restoration_results["connections_tested"].append({
+                        "method": method_name,
+                        "success": True,
+                        "memory_count": memory_count
+                    })
+                    
+                    break  # Success, stop trying other methods
+                    
+                except Exception as e:
+                    restoration_results["connections_tested"].append({
+                        "method": method_name,
+                        "success": False,
+                        "error": str(e)
+                    })
+                    logger.warning(f"Connection method {method_name} failed: {e}")
+                    continue
+            
+            if restoration_results["success"]:
+                logger.info(f"🎉 PGVECTOR ACCESS RESTORED! {restoration_results['memory_count']} memories available")
+                return {
+                    "status": "success",
+                    "message": f"pgvector access restored with {restoration_results['memory_count']} memories",
+                    "details": restoration_results
+                }
+            else:
+                logger.error("❌ All connection methods failed")
+                return {
+                    "status": "failed",
+                    "message": "Could not restore pgvector access",
+                    "details": restoration_results
+                }
+                
+        except Exception as e:
+            logger.error(f"Emergency restoration failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Restoration failed: {str(e)}")
+
+    @app.get("/admin/pgvector-diagnosis")
+    async def pgvector_diagnosis(admin_key: str = Query(...)):
+        """Diagnose pgvector connection issues"""
+        
+        if admin_key != "restore-pgvector-2025":
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+        
+        diagnosis = {
+            "timestamp": datetime.now().isoformat(),
+            "environment_variables": {},
+            "provider_status": {},
+            "connection_tests": []
+        }
+        
+        # Check environment variables
+        env_vars_to_check = [
+            "DATABASE_URL", "PGVECTOR_PASSWORD", "PGPASSWORD", "DATABASE_PASSWORD", 
+            "POSTGRES_PASSWORD", "PGVECTOR_HOST", "PGVECTOR_PORT", "PGVECTOR_DATABASE", "PGVECTOR_USER"
+        ]
+        
+        for var in env_vars_to_check:
+            value = os.getenv(var)
+            diagnosis["environment_variables"][var] = "SET" if value else "NOT_SET"
+        
+        # Check current provider status
+        global unified_store
+        if unified_store:
+            for name, provider in unified_store.providers.items():
+                diagnosis["provider_status"][name] = {
+                    "enabled": provider.enabled,
+                    "is_primary": provider == unified_store.primary_provider,
+                    "type": type(provider).__name__
+                }
+        
+        return {
+            "status": "diagnosis_complete",
+            "diagnosis": diagnosis,
+            "recommendations": [
+                "Use /admin/restore-pgvector-access to restore connection",
+                "Set DATABASE_URL or PGVECTOR_PASSWORD in environment",
+                "Check Render dashboard for database credentials",
+                "Verify PostgreSQL service is running"
+            ]
+        }
 
     # ===== END EMERGENCY FIXES =====
 
