@@ -707,39 +707,57 @@ def create_memory_app() -> FastAPI:
             
             # Approach 1: Use emergency retrieval system if available
             try:
-                if emergency_retrieval and hasattr(emergency_retrieval, 'connection') and emergency_retrieval.connection:
-                    logger.info("🚨 Using emergency retrieval system (bypassing broken unified store)")
+                logger.info(f"🔍 Approach 1: Checking global emergency_retrieval: {emergency_retrieval is not None}")
+                
+                if emergency_retrieval:
+                    logger.info(f"🔍 Emergency retrieval exists, checking connection: {hasattr(emergency_retrieval, 'connection')}")
                     
-                    if query and query.strip():
-                        # Use search for non-empty queries
-                        memories = await emergency_retrieval.search_memories(query, limit)
+                    if hasattr(emergency_retrieval, 'connection'):
+                        logger.info(f"🔍 Connection attribute exists: {emergency_retrieval.connection is not None}")
+                        
+                        if emergency_retrieval.connection:
+                            logger.info("🚨 Using global emergency retrieval system")
+                            
+                            if query and query.strip():
+                                logger.info(f"🔍 Using search for query: {query}")
+                                memories = await emergency_retrieval.search_memories(query, limit)
+                            else:
+                                logger.info(f"🔍 Using get_all for empty query")
+                                memories = await emergency_retrieval.get_all_memories(limit, offset)
+                            
+                            emergency_mode = True
+                            providers_used = ["emergency_direct"]
+                            logger.info(f"✅ Global emergency retrieval returned {len(memories)} memories")
+                        else:
+                            logger.warning("Emergency retrieval connection is None")
                     else:
-                        # Use get_all for empty queries
-                        memories = await emergency_retrieval.get_all_memories(limit, offset)
-                    
-                    emergency_mode = True
-                    providers_used = ["emergency_direct"]
-                    logger.info(f"✅ Emergency retrieval returned {len(memories)} memories")
-                    
+                        logger.warning("Emergency retrieval has no connection attribute")
                 else:
-                    logger.warning("Emergency retrieval not available or not connected")
+                    logger.warning("Global emergency_retrieval is None")
                     
             except Exception as e:
-                logger.error(f"Emergency retrieval failed: {e}")
+                logger.error(f"APPROACH 1 FAILED: {e}")
+                logger.error(f"Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"Approach 1 traceback: {traceback.format_exc()}")
                 memories = []
             
             # Approach 2: If emergency failed, try creating new emergency connection
             if not memories:
                 try:
-                    logger.info("🔄 Attempting to create new emergency retrieval connection...")
+                    logger.info("🔄 Approach 2: Creating new emergency retrieval connection...")
                     from .emergency_foundation_fix import EmergencyMemoryRetrieval
                     
                     temp_emergency = EmergencyMemoryRetrieval()
+                    logger.info("🔍 Temporary emergency object created, connecting...")
                     await temp_emergency.connect()
+                    logger.info("🔍 Temporary emergency connected successfully")
                     
                     if query and query.strip():
+                        logger.info(f"🔍 Temp emergency search for: {query}")
                         memories = await temp_emergency.search_memories(query, limit)
                     else:
+                        logger.info(f"🔍 Temp emergency get_all: limit={limit}, offset={offset}")
                         memories = await temp_emergency.get_all_memories(limit, offset)
                     
                     emergency_mode = True
@@ -749,28 +767,39 @@ def create_memory_app() -> FastAPI:
                     # Close the temporary connection
                     if temp_emergency.connection:
                         await temp_emergency.connection.close()
+                        logger.info("🔍 Temporary emergency connection closed")
                         
                 except Exception as e:
-                    logger.error(f"Temporary emergency retrieval failed: {e}")
+                    logger.error(f"APPROACH 2 FAILED: {e}")
+                    logger.error(f"Exception type: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"Approach 2 traceback: {traceback.format_exc()}")
                     memories = []
             
             # Approach 3: If all emergency approaches failed, try unified store
             if not memories:
                 try:
-                    logger.warning("All emergency approaches failed, trying unified store")
+                    logger.warning("🔄 Approach 3: All emergency approaches failed, trying unified store")
                     request = QueryRequest(
                         query=query,
                         limit=min(limit, 1000),
                         min_similarity=0.0
                     )
+                    logger.info(f"🔍 Created QueryRequest: query='{query}', limit={min(limit, 1000)}")
                     
+                    logger.info("🔍 Calling store.query_memories...")
                     response = await store.query_memories(request)
+                    logger.info(f"🔍 Store.query_memories completed")
+                    
                     memories = response.memories
                     providers_used = response.providers_used
-                    logger.info(f"Unified store returned {len(memories)} memories")
+                    logger.info(f"✅ Unified store returned {len(memories)} memories")
                     
                 except Exception as e:
-                    logger.error(f"Unified store also failed: {e}")
+                    logger.error(f"APPROACH 3 FAILED: {e}")
+                    logger.error(f"Exception type: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"Approach 3 traceback: {traceback.format_exc()}")
                     # Return empty response rather than crash
                     memories = []
                     providers_used = ["all_failed"]
@@ -802,8 +831,15 @@ def create_memory_app() -> FastAPI:
             return response
 
         except Exception as e:
-            logger.error(f"Failed to get memories: {e}")
-            raise HTTPException(status_code=500, detail="Internal server error")
+            logger.error(f"CRITICAL: GET /memories failed with exception: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
+            logger.error(f"Exception args: {e.args}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
+            # Return detailed error information instead of generic 500
+            error_detail = f"Memory retrieval failed: {type(e).__name__}: {str(e)}"
+            raise HTTPException(status_code=500, detail=error_detail)
 
     @app.get("/memories/{memory_id}")
     async def get_memory_by_id(
