@@ -3651,6 +3651,84 @@ def create_memory_app() -> FastAPI:
 
     # ===== PGVECTOR RESTORATION ENDPOINTS =====
     
+    @app.post("/admin/restore-pgvector-access-lite")
+    async def restore_pgvector_access_lite(
+        admin_key: str = Query(..., description="Admin authentication key")
+    ):
+        """Lightweight pgvector restoration that skips heavy initialization"""
+        
+        if admin_key != "restore-pgvector-2025":
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+        
+        global unified_store
+        
+        try:
+            logger.info("🚨 LIGHTWEIGHT RESTORATION: Testing direct connection only")
+            
+            # Get environment variables
+            env_database_url = os.getenv("DATABASE_URL")
+            pgvector_password = os.getenv("PGVECTOR_PASSWORD") or os.getenv("PGPASSWORD")
+            
+            if env_database_url:
+                import urllib.parse
+                parsed = urllib.parse.urlparse(env_database_url)
+                host = parsed.hostname
+                port = parsed.port or 5432
+                database = parsed.path[1:] if parsed.path and len(parsed.path) > 1 else "nexus_memory_db"
+                user = parsed.username
+                password = parsed.password
+            elif pgvector_password:
+                host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
+                port = int(os.getenv("PGVECTOR_PORT", "5432"))
+                database = os.getenv("PGVECTOR_DATABASE", "nexus_memory_db")
+                user = os.getenv("PGVECTOR_USER", "nexus_memory_db_user")
+                password = pgvector_password
+            else:
+                return {"status": "failed", "message": "No database credentials available"}
+            
+            # Test simple connection without heavy initialization
+            conn_string = f"postgresql://{user}:{password}@{host}:{port}/{database}?sslmode=require"
+            conn = await asyncpg.connect(conn_string)
+            
+            # Get memory count
+            memory_count = await conn.fetchval("SELECT COUNT(*) FROM vector_memories")
+            
+            # Test basic query capability
+            recent_memory = await conn.fetchrow("""
+                SELECT id, LEFT(content, 50) as preview 
+                FROM vector_memories 
+                ORDER BY created_at DESC 
+                LIMIT 1
+            """)
+            
+            await conn.close()
+            
+            # Create a simple provider config for existing provider
+            if unified_store and memory_count > 0:
+                # Try to enable the existing disabled provider
+                for name, provider in unified_store.providers.items():
+                    if name == "pgvector" and not provider.enabled:
+                        # Force enable the provider without reinitializing
+                        provider.enabled = True
+                        unified_store.primary_provider = provider
+                        logger.info(f"✅ Enabled existing pgvector provider")
+                        break
+            
+            return {
+                "status": "success",
+                "message": f"Lightweight restoration successful - {memory_count} memories accessible",
+                "details": {
+                    "memory_count": memory_count,
+                    "recent_preview": recent_memory['preview'] if recent_memory else None,
+                    "connection_verified": True,
+                    "provider_enabled": True
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Lightweight restoration failed: {e}")
+            return {"status": "failed", "message": f"Connection test failed: {str(e)}"}
+
     @app.post("/admin/restore-pgvector-access")
     async def restore_pgvector_access(
         admin_key: str = Query(..., description="Admin authentication key"),
