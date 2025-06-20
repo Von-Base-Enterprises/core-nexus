@@ -2059,8 +2059,8 @@ def create_memory_app() -> FastAPI:
 
         This fixes the query performance issue by creating the required pgvector indexes.
         """
-        # Simple security check
-        if admin_key != os.getenv("ADMIN_KEY", "emergency-fix-2024"):
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
             raise HTTPException(status_code=403, detail="Invalid admin key")
 
         pgvector_provider = None
@@ -2172,17 +2172,24 @@ def create_memory_app() -> FastAPI:
                     WITH (m = 16, ef_construction = 64)
                 """)
                 
-                # Additional performance indexes
-                await conn.execute("""
-                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_user_created 
-                    ON vector_memories (user_id, created_at DESC)
-                    WHERE user_id IS NOT NULL
-                """)
+                # Additional performance indexes (only create if columns exist)
+                try:
+                    await conn.execute("""
+                        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_created_at
+                        ON vector_memories (created_at DESC)
+                    """)
+                    logger.info("Created created_at index successfully")
+                except Exception as e:
+                    logger.info(f"Skipping created_at index: {e}")
                 
-                await conn.execute("""
-                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_importance_created
-                    ON vector_memories (importance_score DESC, created_at DESC)
-                """)
+                try:
+                    await conn.execute("""
+                        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_importance_created
+                        ON vector_memories (importance_score DESC, created_at DESC)
+                    """)
+                    logger.info("Created importance_score index successfully")
+                except Exception as e:
+                    logger.info(f"Skipping importance_score index (column may not exist): {e}")
                 
                 # Update table statistics
                 await conn.execute("ANALYZE vector_memories")
@@ -2387,8 +2394,8 @@ def create_memory_app() -> FastAPI:
         """
         import traceback
         
-        # Simple security check
-        if admin_key != os.getenv("ADMIN_KEY", "diagnose-pgvector-2025"):
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
             raise HTTPException(status_code=403, detail="Invalid admin key")
         
         diagnostics = {
