@@ -469,6 +469,8 @@ class OptimizedUnifiedVectorStore(UnifiedVectorStore):
             for _, task in replication_tasks:
                 if not task.done():
                     task.cancel()
+            # Re-raise the timeout to ensure it's handled properly
+            raise Exception("Replication timeout - providers too slow")
     
     async def _optimized_replicate_single_provider(
         self, 
@@ -479,7 +481,20 @@ class OptimizedUnifiedVectorStore(UnifiedVectorStore):
         metadata: dict[str, Any]
     ):
         """Replicate to single provider with optimization"""
-        return await self._optimized_store_with_retry(provider, content, embedding, metadata)
+        logger.info(f"🔍 Starting replication to {provider.name} for memory {memory_id}")
+        logger.info(f"   Provider enabled: {provider.enabled}")
+        logger.info(f"   Provider type: {type(provider).__name__}")
+        logger.info(f"   Content length: {len(content)}")
+        logger.info(f"   Embedding dimension: {len(embedding) if embedding else 0}")
+        
+        try:
+            result = await self._optimized_store_with_retry(provider, content, embedding, metadata)
+            logger.info(f"✅ Successfully stored to {provider.name}: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"❌ Failed to store to {provider.name}: {e}")
+            logger.error(f"   Error type: {type(e).__name__}")
+            raise
     
     async def _fallback_query_execution(
         self, 
