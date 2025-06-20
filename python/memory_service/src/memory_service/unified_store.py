@@ -245,14 +245,32 @@ class UnifiedVectorStore:
 
             # SYNCHRONOUS replication to secondary providers for data consistency
             # This ensures ChromaDB stays in sync with pgvector
+            replication_success = False
             try:
+                logger.info(f"🔄 Starting replication for memory {memory_id} to secondary providers")
                 await self._replicate_to_secondaries(
                     memory_id, request.content, embedding, metadata
                 )
-                logger.debug(f"Successfully replicated memory {memory_id} to secondary providers")
+                logger.info(f"✅ Successfully replicated memory {memory_id} to secondary providers")
+                replication_success = True
             except Exception as e:
-                logger.error(f"Secondary replication failed for memory {memory_id}: {e}")
-                # Continue - primary storage succeeded, but log the failure
+                logger.error(f"❌ CRITICAL: Secondary replication failed for memory {memory_id}: {e}")
+                logger.error(f"❌ This means ChromaDB is not getting updates - data redundancy broken!")
+                # Continue - primary storage succeeded, but log the failure prominently
+                
+            # Track replication success rate
+            if not hasattr(self, 'replication_stats'):
+                self.replication_stats = {'total': 0, 'successful': 0, 'failed': 0}
+            self.replication_stats['total'] += 1
+            if replication_success:
+                self.replication_stats['successful'] += 1
+            else:
+                self.replication_stats['failed'] += 1
+                
+            # Log replication health every 10 operations
+            if self.replication_stats['total'] % 10 == 0:
+                success_rate = (self.replication_stats['successful'] / self.replication_stats['total']) * 100
+                logger.warning(f"📊 Replication health: {success_rate:.1f}% success rate ({self.replication_stats['successful']}/{self.replication_stats['total']})")
 
             # Update stats
             self.stats['total_stores'] += 1
@@ -523,29 +541,50 @@ class UnifiedVectorStore:
     async def _replicate_to_secondaries(self, memory_id: UUID, content: str,
                                        embedding: list[float], metadata: dict[str, Any]):
         """Replicate to secondary providers for data consistency."""
+        logger.info(f"🔍 Identifying secondary providers for replication...")
+        
         secondary_providers = [p for p in self.providers.values()
                              if p != self.primary_provider and p.enabled]
 
+        logger.info(f"📊 Found {len(secondary_providers)} secondary providers: {[p.name for p in secondary_providers]}")
+        
         if not secondary_providers:
-            logger.debug("No secondary providers enabled for replication")
+            logger.warning("⚠️ No secondary providers enabled for replication - DATA REDUNDANCY BROKEN!")
+            logger.warning(f"   Primary: {self.primary_provider.name if self.primary_provider else 'None'}")
+            logger.warning(f"   All providers: {[(p.name, p.enabled) for p in self.providers.values()]}")
             return
 
         replication_results = []
         for provider in secondary_providers:
             try:
+                logger.info(f"🔄 Attempting replication to {provider.name}...")
+                logger.info(f"   Content length: {len(content)} chars")
+                logger.info(f"   Embedding dimension: {len(embedding)}")
+                logger.info(f"   Metadata keys: {list(metadata.keys())}")
+                
                 stored_id = await self._store_with_retry(provider, content, embedding, metadata)
                 logger.info(f"✅ Replicated memory {memory_id} to {provider.name} as {stored_id}")
                 replication_results.append({"provider": provider.name, "success": True, "id": stored_id})
             except Exception as e:
                 logger.error(f"❌ Failed to replicate memory {memory_id} to {provider.name}: {e}")
+                logger.error(f"   Error type: {type(e).__name__}")
+                logger.error(f"   Provider enabled: {provider.enabled}")
+                logger.error(f"   Provider type: {type(provider).__name__}")
                 replication_results.append({"provider": provider.name, "success": False, "error": str(e)})
 
-        # Log summary
+        # Log detailed summary
         successful = sum(1 for r in replication_results if r["success"])
         total = len(replication_results)
-        logger.info(f"Replication summary for {memory_id}: {successful}/{total} providers succeeded")
+        logger.warning(f"📊 Replication summary for {memory_id}: {successful}/{total} providers succeeded")
+        
+        for result in replication_results:
+            if result["success"]:
+                logger.info(f"   ✅ {result['provider']}: SUCCESS (ID: {result['id']})")
+            else:
+                logger.error(f"   ❌ {result['provider']}: FAILED - {result['error']}")
         
         if successful == 0:
+            logger.error(f"🚨 CATASTROPHIC: All secondary replication failed for memory {memory_id}")
             raise Exception(f"All secondary replication failed for memory {memory_id}")
 
     async def _generate_embedding(self, text: str) -> list[float]:
