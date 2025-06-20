@@ -2390,8 +2390,12 @@ def create_memory_app() -> FastAPI:
         if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
             raise HTTPException(status_code=403, detail="Invalid admin key")
         
-        import os
-        from .config import config
+        try:
+            import os
+            import asyncpg
+            from memory_service.config import config
+        except ImportError as e:
+            raise HTTPException(status_code=500, detail=f"Import error: {str(e)}")
         
         connection_test = {
             "timestamp": datetime.now().isoformat(),
@@ -2533,9 +2537,9 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=403, detail="Invalid admin key")
         
         try:
-            from .config import config
-            from .providers import PgVectorProvider
-            from .models import ProviderConfig
+            from memory_service.config import config
+            from memory_service.providers import PgVectorProvider
+            from memory_service.models import ProviderConfig
             
             reinit_results = {
                 "timestamp": datetime.now().isoformat(),
@@ -2571,11 +2575,15 @@ def create_memory_app() -> FastAPI:
                     }
                 )
                 
-                # Create new provider instance
+                # Create new provider instance (initialization happens in __init__)
                 new_provider = PgVectorProvider(pg_config)
                 
-                # Initialize it
-                await new_provider.initialize()
+                # Wait for async pool initialization to complete
+                if hasattr(new_provider, '_pool_initialization_task') and new_provider._pool_initialization_task:
+                    await new_provider._pool_initialization_task
+                
+                # Enable the provider
+                new_provider.enabled = True
                 
                 # Replace in store
                 store.providers['pgvector'] = new_provider
