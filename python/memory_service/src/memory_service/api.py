@@ -2393,7 +2393,7 @@ def create_memory_app() -> FastAPI:
         try:
             import os
             import asyncpg
-            from memory_service.config import config
+            from .config import config
         except ImportError as e:
             raise HTTPException(status_code=500, detail=f"Import error: {str(e)}")
         
@@ -2537,9 +2537,9 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=403, detail="Invalid admin key")
         
         try:
-            from memory_service.config import config
-            from memory_service.providers import PgVectorProvider
-            from memory_service.models import ProviderConfig
+            from .config import config
+            from .providers import PgVectorProvider
+            from .models import ProviderConfig
             
             reinit_results = {
                 "timestamp": datetime.now().isoformat(),
@@ -2628,7 +2628,7 @@ def create_memory_app() -> FastAPI:
         
         try:
             import asyncpg
-            from memory_service.config import config
+            from .config import config
             
             memory_fix_results = {
                 "timestamp": datetime.now().isoformat(),
