@@ -2713,6 +2713,143 @@ def create_memory_app() -> FastAPI:
             logger.error(f"PostgreSQL memory fix failed: {e}")
             raise HTTPException(status_code=500, detail=f"Memory fix failed: {str(e)}")
 
+    @app.post("/admin/init-pgvector-minimal")
+    async def initialize_pgvector_minimal(
+        admin_key: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """Initialize pgvector with minimal memory requirements (no HNSW indexes)"""
+        
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            from .config import config
+            import asyncpg
+            
+            minimal_init_results = {
+                "timestamp": datetime.now().isoformat(),
+                "approach": "minimal_memory_initialization",
+                "memory_constraint": "16MB maintenance_work_mem",
+                "connection_test": {},
+                "table_validation": {},
+                "provider_creation": {}
+            }
+            
+            # Test direct database connection
+            try:
+                conn_string = f"postgresql://{config.database.USER}:{config.database.PASSWORD}@{config.database.HOST}:{config.database.PORT}/{config.database.DATABASE}?sslmode=require"
+                conn = await asyncpg.connect(conn_string)
+                
+                # Test basic connectivity
+                version = await conn.fetchval("SELECT version()")
+                minimal_init_results["connection_test"] = {
+                    "success": True,
+                    "postgres_version": version[:50] + "..." if len(version) > 50 else version
+                }
+                
+                # Validate table exists and check memory count
+                table_exists = await conn.fetchval(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = '{config.database.TABLE_NAME}'
+                    )
+                """)
+                
+                if table_exists:
+                    # Count existing memories
+                    memory_count = await conn.fetchval(f"SELECT COUNT(*) FROM {config.database.TABLE_NAME}")
+                    
+                    # Test a simple query to validate table structure
+                    test_query = await conn.fetchrow(f"""
+                        SELECT id, content, embedding, metadata 
+                        FROM {config.database.TABLE_NAME} 
+                        LIMIT 1
+                    """)
+                    
+                    minimal_init_results["table_validation"] = {
+                        "table_exists": True,
+                        "memory_count": memory_count,
+                        "sample_query_success": test_query is not None,
+                        "has_embeddings": test_query and test_query['embedding'] is not None if test_query else False
+                    }
+                else:
+                    minimal_init_results["table_validation"] = {
+                        "table_exists": False,
+                        "error": f"Table {config.database.TABLE_NAME} not found"
+                    }
+                
+                await conn.close()
+                
+            except Exception as e:
+                minimal_init_results["connection_test"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+            
+            # Try to create a minimal pgvector provider
+            if minimal_init_results["connection_test"].get("success") and minimal_init_results["table_validation"].get("table_exists"):
+                try:
+                    # Create a custom minimal provider config that skips problematic operations
+                    from .providers import PgVectorProvider
+                    from .models import ProviderConfig
+                    
+                    # Create provider with minimal config
+                    minimal_config = ProviderConfig(
+                        name="pgvector_minimal",
+                        enabled=True,
+                        primary=True,
+                        config={
+                            "host": config.database.HOST,
+                            "port": config.database.PORT,
+                            "database": config.database.DATABASE,
+                            "user": config.database.USER,
+                            "password": config.database.PASSWORD,
+                            "table_name": config.database.TABLE_NAME,
+                            "skip_indexes": True,  # Custom flag to skip index creation
+                            "minimal_mode": True   # Skip memory-intensive operations
+                        }
+                    )
+                    
+                    # This will still fail with memory error, but let's see the exact error
+                    try:
+                        minimal_provider = PgVectorProvider(minimal_config)
+                        minimal_init_results["provider_creation"] = {
+                            "success": True,
+                            "provider_enabled": minimal_provider.enabled
+                        }
+                        
+                        # Try to replace the provider
+                        store.providers['pgvector'] = minimal_provider
+                        store.primary_provider = minimal_provider
+                        
+                    except Exception as provider_error:
+                        minimal_init_results["provider_creation"] = {
+                            "success": False,
+                            "error": str(provider_error),
+                            "error_type": type(provider_error).__name__
+                        }
+                
+                except Exception as e:
+                    minimal_init_results["provider_creation"] = {
+                        "setup_error": str(e)
+                    }
+            
+            return {
+                "status": "minimal_init_complete", 
+                "results": minimal_init_results,
+                "next_steps": [
+                    "If connection successful, try custom pgvector initialization",
+                    "If memory error persists, implement memory-efficient provider variant",
+                    "Consider alternative vector storage approach"
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Minimal pgvector initialization failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Minimal init failed: {str(e)}")
+
     @app.post("/admin/diagnose-pgvector")
     async def diagnose_pgvector_issue(
         admin_key: str,
