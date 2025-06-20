@@ -203,7 +203,7 @@ async def lifespan(app: FastAPI):
     chroma_config = ProviderConfig(
         name="chromadb",
         enabled=True,
-        primary=True,  # Make primary by default
+        primary=False,  # Default to secondary - will be changed to primary only if pgvector fails
         config={
             "collection_name": "core_nexus_memories",
             "persist_directory": chroma_persist_dir
@@ -222,13 +222,17 @@ async def lifespan(app: FastAPI):
         logger.info(f"✅ ChromaDB provider created - enabled: {chroma_provider.enabled}")
         providers.append(chroma_provider)
         
-        # If pgvector was successfully initialized, make it primary instead
-        if any(p.name == "pgvector" and p.enabled for p in providers):
-            chroma_config.primary = False
+        # Check if pgvector was successfully initialized - if not, make ChromaDB primary
+        pgvector_available = any(p.name == "pgvector" and p.enabled for p in providers)
+        if pgvector_available:
+            # pgvector is available, keep ChromaDB as secondary
             logger.info("🔄 ChromaDB provider initialized as SECONDARY (pgvector is primary)")
             logger.info(f"   🔍 Will receive replication from pgvector to ChromaDB")
         else:
-            logger.info("🔄 ChromaDB provider initialized as PRIMARY")
+            # No pgvector, make ChromaDB primary
+            chroma_config.primary = True
+            chroma_provider.config.primary = True  # Update both config and provider
+            logger.info("🔄 ChromaDB provider initialized as PRIMARY (no pgvector available)")
             
         # Test ChromaDB health immediately after initialization
         try:
