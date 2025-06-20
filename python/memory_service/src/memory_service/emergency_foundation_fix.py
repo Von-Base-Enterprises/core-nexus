@@ -48,10 +48,21 @@ class EmergencyMemoryRetrieval:
             
             memories = []
             for row in rows:
+                # Parse metadata if it's a JSON string
+                metadata = row['metadata']
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                elif not metadata:
+                    metadata = {}
+                
                 memory = {
                     "id": str(row['id']),
                     "content": row['content'],
-                    "metadata": row['metadata'] if row['metadata'] else {},
+                    "metadata": metadata,
                     "created_at": row['created_at'].isoformat() if row['created_at'] else None,
                     "importance_score": float(row['importance_score']) if row['importance_score'] else 0.0,
                     "similarity_score": 1.0  # Default for non-search queries
@@ -81,10 +92,21 @@ class EmergencyMemoryRetrieval:
             row = await self.connection.fetchrow(query, memory_id)
             
             if row:
+                # Parse metadata if it's a JSON string
+                metadata = row['metadata']
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                elif not metadata:
+                    metadata = {}
+                
                 return {
                     "id": str(row['id']),
                     "content": row['content'],
-                    "metadata": row['metadata'] if row['metadata'] else {},
+                    "metadata": metadata,
                     "created_at": row['created_at'].isoformat() if row['created_at'] else None,
                     "importance_score": float(row['importance_score']) if row['importance_score'] else 0.0,
                     "similarity_score": 1.0
@@ -117,10 +139,21 @@ class EmergencyMemoryRetrieval:
             
             memories = []
             for row in rows:
+                # Parse metadata if it's a JSON string
+                metadata = row['metadata']
+                if isinstance(metadata, str):
+                    try:
+                        import json
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                elif not metadata:
+                    metadata = {}
+                
                 memory = {
                     "id": str(row['id']),
                     "content": row['content'],
-                    "metadata": row['metadata'] if row['metadata'] else {},
+                    "metadata": metadata,
                     "created_at": row['created_at'].isoformat() if row['created_at'] else None,
                     "importance_score": float(row['importance_score']) if row['importance_score'] else 0.0,
                     "similarity_score": float(row['rank']) if row['rank'] else 0.0
@@ -150,10 +183,21 @@ class EmergencyMemoryRetrieval:
                 
                 memories = []
                 for row in rows:
+                    # Parse metadata if it's a JSON string
+                    metadata = row['metadata']
+                    if isinstance(metadata, str):
+                        try:
+                            import json
+                            metadata = json.loads(metadata)
+                        except:
+                            metadata = {}
+                    elif not metadata:
+                        metadata = {}
+                    
                     memory = {
                         "id": str(row['id']),
                         "content": row['content'],
-                        "metadata": row['metadata'] if row['metadata'] else {},
+                        "metadata": metadata,
                         "created_at": row['created_at'].isoformat() if row['created_at'] else None,
                         "importance_score": float(row['importance_score']) if row['importance_score'] else 0.0,
                         "similarity_score": 0.8  # Default for text matches
