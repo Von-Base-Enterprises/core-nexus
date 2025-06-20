@@ -69,9 +69,9 @@ class ProviderConfig:
     # Primary provider
     PRIMARY_PROVIDER = os.getenv("PRIMARY_PROVIDER", "pgvector")
     
-    # ChromaDB settings - Use /tmp for Render compatibility
+    # ChromaDB settings - Use persistent directory for data retention
     CHROMADB_ENABLED = os.getenv("CHROMADB_ENABLED", "true").lower() == "true"
-    CHROMADB_PERSIST_DIR = os.getenv("CHROMADB_PERSIST_DIR", "/tmp/memory_service_chroma")
+    CHROMADB_PERSIST_DIR = os.getenv("CHROMADB_PERSIST_DIR", "/app/chroma_db")
     CHROMADB_COLLECTION = os.getenv("CHROMADB_COLLECTION", "core_nexus_memories")
     
     # Pinecone settings

@@ -4217,6 +4217,172 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Replication debug failed: {e}")
             raise HTTPException(status_code=500, detail=f"Debug failed: {str(e)}")
 
+    @app.post("/admin/emergency-chromadb-sync")
+    async def emergency_chromadb_sync(
+        admin_key: str = Query(..., description="Admin authentication key"),
+        limit: int = Query(None, description="Limit number of memories to sync (default: all)"),
+        batch_size: int = Query(50, description="Batch size for processing"),
+        dry_run: bool = Query(False, description="Simulate sync without writing")
+    ):
+        """
+        Emergency sync to copy all memories from pgvector to ChromaDB.
+        
+        This fixes the persistence directory issue by restoring all missing data.
+        """
+        # Validate admin key
+        valid_keys = ["<generate-admin-key>", "emergency-chromadb-sync-2025", os.getenv("ADMIN_KEY", "")]
+        if admin_key not in valid_keys:
+            raise HTTPException(status_code=401, detail="Invalid admin key")
+        
+        if not unified_store:
+            raise HTTPException(status_code=500, detail="Unified store not initialized")
+        
+        sync_start_time = time.time()
+        sync_stats = {
+            "sync_started": datetime.now().isoformat(),
+            "dry_run": dry_run,
+            "batch_size": batch_size,
+            "memories_processed": 0,
+            "memories_synced": 0,
+            "errors": [],
+            "batches_completed": 0
+        }
+        
+        try:
+            # Get pgvector and ChromaDB providers
+            pgvector_provider = unified_store.providers.get("pgvector")
+            chromadb_provider = unified_store.providers.get("chromadb")
+            
+            if not pgvector_provider or not pgvector_provider.enabled:
+                raise HTTPException(status_code=500, detail="pgvector provider not available")
+            
+            if not chromadb_provider or not chromadb_provider.enabled:
+                raise HTTPException(status_code=500, detail="ChromaDB provider not available")
+            
+            # Get counts before sync
+            pgvector_health = await pgvector_provider.health_check()
+            chromadb_health = await chromadb_provider.health_check()
+            
+            pgvector_count = pgvector_health.get("details", {}).get("total_vectors", 0)
+            chromadb_count = chromadb_health.get("details", {}).get("total_vectors", 0)
+            
+            sync_stats["pgvector_count_before"] = pgvector_count
+            sync_stats["chromadb_count_before"] = chromadb_count
+            sync_stats["missing_memories"] = pgvector_count - chromadb_count
+            
+            logger.info(f"🔄 Starting emergency ChromaDB sync")
+            logger.info(f"   pgvector: {pgvector_count} memories")
+            logger.info(f"   ChromaDB: {chromadb_count} memories")
+            logger.info(f"   Missing: {sync_stats['missing_memories']} memories")
+            logger.info(f"   Dry run: {dry_run}")
+            
+            # Determine sync limit
+            sync_limit = limit if limit else pgvector_count
+            sync_stats["sync_limit"] = sync_limit
+            
+            # Get all memories from pgvector in batches
+            offset = 0
+            batch_count = 0
+            
+            while offset < sync_limit:
+                batch_count += 1
+                current_batch_size = min(batch_size, sync_limit - offset)
+                
+                logger.info(f"📦 Processing batch {batch_count} (offset {offset}, size {current_batch_size})")
+                
+                try:
+                    # Get batch of memories from pgvector
+                    if hasattr(pgvector_provider, 'connection_pool') and pgvector_provider.connection_pool:
+                        async with pgvector_provider.connection_pool.acquire() as conn:
+                            rows = await conn.fetch("""
+                                SELECT id, content, embedding, metadata, created_at
+                                FROM vector_memories 
+                                ORDER BY created_at DESC
+                                LIMIT $1 OFFSET $2
+                            """, current_batch_size, offset)
+                    else:
+                        logger.error(f"pgvector connection pool not available")
+                        break
+                    
+                    if not rows:
+                        logger.info(f"No more memories found at offset {offset}")
+                        break
+                    
+                    # Process each memory in the batch
+                    batch_synced = 0
+                    for row in rows:
+                        sync_stats["memories_processed"] += 1
+                        
+                        try:
+                            memory_id = row['id']
+                            content = row['content']
+                            embedding = row['embedding']
+                            metadata = row['metadata'] or {}
+                            
+                            # Convert embedding if needed
+                            if isinstance(embedding, str):
+                                embedding = [float(x) for x in embedding.strip('[]').split(',')]
+                            
+                            if not dry_run:
+                                # Store in ChromaDB
+                                await chromadb_provider.store(content, embedding, metadata)
+                                
+                            sync_stats["memories_synced"] += 1
+                            batch_synced += 1
+                            
+                            if sync_stats["memories_processed"] % 100 == 0:
+                                logger.info(f"   Processed {sync_stats['memories_processed']} memories...")
+                                
+                        except Exception as e:
+                            error_msg = f"Failed to sync memory {row.get('id', 'unknown')}: {str(e)}"
+                            logger.error(error_msg)
+                            sync_stats["errors"].append(error_msg)
+                    
+                    sync_stats["batches_completed"] += 1
+                    logger.info(f"✅ Batch {batch_count} completed: {batch_synced}/{len(rows)} synced")
+                    
+                    # Short delay between batches to avoid overwhelming the system
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    error_msg = f"Batch {batch_count} failed: {str(e)}"
+                    logger.error(error_msg)
+                    sync_stats["errors"].append(error_msg)
+                
+                offset += current_batch_size
+            
+            # Get final counts
+            if not dry_run:
+                chromadb_health_after = await chromadb_provider.health_check()
+                chromadb_count_after = chromadb_health_after.get("details", {}).get("total_vectors", 0)
+                sync_stats["chromadb_count_after"] = chromadb_count_after
+                sync_stats["newly_synced"] = chromadb_count_after - chromadb_count
+            
+            sync_stats["sync_completed"] = datetime.now().isoformat()
+            sync_stats["sync_duration_seconds"] = time.time() - sync_start_time
+            sync_stats["success"] = True
+            
+            logger.info(f"🎉 Emergency ChromaDB sync completed!")
+            logger.info(f"   Duration: {sync_stats['sync_duration_seconds']:.1f} seconds")
+            logger.info(f"   Processed: {sync_stats['memories_processed']} memories")
+            logger.info(f"   Synced: {sync_stats['memories_synced']} memories")
+            logger.info(f"   Errors: {len(sync_stats['errors'])}")
+            
+            return {
+                "status": "success",
+                "message": f"Emergency sync completed: {sync_stats['memories_synced']} memories synced",
+                "stats": sync_stats
+            }
+            
+        except Exception as e:
+            sync_stats["success"] = False
+            sync_stats["error"] = str(e)
+            sync_stats["sync_completed"] = datetime.now().isoformat()
+            sync_stats["sync_duration_seconds"] = time.time() - sync_start_time
+            
+            logger.error(f"❌ Emergency ChromaDB sync failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
     # ===== END EMERGENCY FIXES =====
 
     return app
