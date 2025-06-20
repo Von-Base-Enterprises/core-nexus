@@ -1004,14 +1004,15 @@ class GraphProvider(VectorProvider):
                     else:
                         # Create new entity
                         entity_id = uuid4()
-                        embedding_str = '[' + ','.join(map(str, entity_embedding)) + ']' if entity_embedding else None
+                        # Pass embedding array directly - asyncpg handles conversion
+                        entity_embedding_array = entity_embedding if entity_embedding else None
 
                         await conn.execute("""
                             INSERT INTO graph_nodes
                             (id, entity_type, entity_name, embedding, importance_score)
                             VALUES ($1, $2, $3, $4::vector, $5)
                         """, entity_id, entity['type'], entity['name'],
-                            embedding_str, metadata.get('importance_score', 0.5))
+                            entity_embedding_array, metadata.get('importance_score', 0.5))
 
                     entity_ids[entity['name']] = entity_id
 
