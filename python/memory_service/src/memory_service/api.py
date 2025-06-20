@@ -2382,6 +2382,234 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Force sync failed: {e}")
             raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
+    @app.post("/admin/test-database-connection")
+    async def test_database_connection(admin_key: str):
+        """Test raw PostgreSQL connection to diagnose pgvector provider failure"""
+        
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        import os
+        from .config import config
+        
+        connection_test = {
+            "timestamp": datetime.now().isoformat(),
+            "config_status": {},
+            "connection_test": {},
+            "database_checks": {},
+            "pgvector_checks": {}
+        }
+        
+        try:
+            # Check configuration
+            try:
+                config.validate()
+                connection_test["config_status"] = {
+                    "valid": True,
+                    "host": config.database.HOST,
+                    "port": config.database.PORT,
+                    "database": config.database.DATABASE,
+                    "user": config.database.USER,
+                    "has_password": bool(config.database.PASSWORD),
+                    "table_name": config.database.TABLE_NAME
+                }
+            except Exception as e:
+                connection_test["config_status"] = {
+                    "valid": False,
+                    "error": str(e)
+                }
+                
+            # Test raw database connection
+            try:
+                import asyncpg
+                
+                # Build connection string
+                conn_string = f"postgresql://{config.database.USER}:{config.database.PASSWORD}@{config.database.HOST}:{config.database.PORT}/{config.database.DATABASE}?sslmode=require"
+                
+                # Test connection
+                conn = await asyncpg.connect(conn_string)
+                connection_test["connection_test"] = {
+                    "success": True,
+                    "message": "Raw PostgreSQL connection successful"
+                }
+                
+                # Check database and table existence
+                try:
+                    # Check if table exists
+                    table_exists = await conn.fetchval(f"""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_name = '{config.database.TABLE_NAME}'
+                        )
+                    """)
+                    
+                    # Check table structure if it exists
+                    if table_exists:
+                        columns = await conn.fetch(f"""
+                            SELECT column_name, data_type 
+                            FROM information_schema.columns 
+                            WHERE table_name = '{config.database.TABLE_NAME}'
+                            ORDER BY ordinal_position
+                        """)
+                        
+                        memory_count = await conn.fetchval(f"SELECT COUNT(*) FROM {config.database.TABLE_NAME}")
+                        
+                        connection_test["database_checks"] = {
+                            "table_exists": True,
+                            "memory_count": memory_count,
+                            "columns": [{"name": col["column_name"], "type": col["data_type"]} for col in columns]
+                        }
+                    else:
+                        connection_test["database_checks"] = {
+                            "table_exists": False,
+                            "error": f"Table {config.database.TABLE_NAME} does not exist"
+                        }
+                        
+                except Exception as e:
+                    connection_test["database_checks"] = {
+                        "error": f"Database check failed: {str(e)}"
+                    }
+                
+                # Check pgvector extension
+                try:
+                    # Check if pgvector extension is installed
+                    pgvector_installed = await conn.fetchval("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM pg_extension WHERE extname = 'vector'
+                        )
+                    """)
+                    
+                    connection_test["pgvector_checks"] = {
+                        "extension_installed": pgvector_installed
+                    }
+                    
+                    if pgvector_installed and table_exists:
+                        # Test vector operations
+                        try:
+                            test_vector = await conn.fetchval("SELECT '[1,2,3]'::vector")
+                            connection_test["pgvector_checks"]["vector_operations"] = "working"
+                        except Exception as e:
+                            connection_test["pgvector_checks"]["vector_operations"] = f"failed: {str(e)}"
+                            
+                except Exception as e:
+                    connection_test["pgvector_checks"] = {
+                        "error": f"pgvector check failed: {str(e)}"
+                    }
+                
+                await conn.close()
+                
+            except Exception as e:
+                connection_test["connection_test"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+                
+            return {
+                "status": "connection_test_complete",
+                "results": connection_test,
+                "next_steps": [
+                    "Check configuration if config validation failed",
+                    "Check database credentials if connection failed", 
+                    "Create table if table doesn't exist",
+                    "Install pgvector extension if missing",
+                    "Reinitialize pgvector provider if all checks pass"
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"Database connection test failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Connection test failed: {str(e)}")
+
+    @app.post("/admin/reinit-pgvector")
+    async def reinitialize_pgvector_provider(
+        admin_key: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """Force re-initialization of pgvector provider"""
+        
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            from .config import config
+            from .providers import PgVectorProvider
+            from .models import ProviderConfig
+            
+            reinit_results = {
+                "timestamp": datetime.now().isoformat(),
+                "old_status": {},
+                "reinit_attempt": {},
+                "new_status": {}
+            }
+            
+            # Record old status
+            pgvector_provider = store.providers.get('pgvector')
+            if pgvector_provider:
+                reinit_results["old_status"] = {
+                    "enabled": pgvector_provider.enabled,
+                    "is_primary": pgvector_provider == store.primary_provider
+                }
+            else:
+                reinit_results["old_status"] = {"exists": False}
+            
+            # Force re-create pgvector provider
+            try:
+                # Create new provider configuration
+                pg_config = ProviderConfig(
+                    name="pgvector",
+                    enabled=True,
+                    primary=True,
+                    config={
+                        "host": config.database.HOST,
+                        "port": config.database.PORT,
+                        "database": config.database.DATABASE,
+                        "user": config.database.USER,
+                        "password": config.database.PASSWORD,
+                        "table_name": config.database.TABLE_NAME,
+                    }
+                )
+                
+                # Create new provider instance
+                new_provider = PgVectorProvider(pg_config)
+                
+                # Initialize it
+                await new_provider.initialize()
+                
+                # Replace in store
+                store.providers['pgvector'] = new_provider
+                store.primary_provider = new_provider
+                
+                # Test the provider
+                stats = await new_provider.get_stats()
+                
+                reinit_results["reinit_attempt"] = {
+                    "success": True,
+                    "provider_stats": stats
+                }
+                
+                reinit_results["new_status"] = {
+                    "enabled": new_provider.enabled,
+                    "is_primary": True,
+                    "initialization": "successful"
+                }
+                
+            except Exception as e:
+                reinit_results["reinit_attempt"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+            
+            return {
+                "status": "reinit_complete",
+                "results": reinit_results
+            }
+            
+        except Exception as e:
+            logger.error(f"pgvector reinitialization failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Reinitialization failed: {str(e)}")
+
     @app.post("/admin/diagnose-pgvector")
     async def diagnose_pgvector_issue(
         admin_key: str,
