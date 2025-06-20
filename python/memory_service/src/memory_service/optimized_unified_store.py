@@ -400,16 +400,27 @@ class OptimizedUnifiedVectorStore(UnifiedVectorStore):
         metadata: dict[str, Any]
     ):
         """Enhanced replication with parallel execution and optimization"""
+        logger.info(f"🔍 Identifying secondary providers for replication...")
+        
         secondary_providers = [p for p in self.providers.values()
                              if p != self.primary_provider and p.enabled]
         
+        logger.info(f"📊 Found {len(secondary_providers)} secondary providers: {[p.name for p in secondary_providers]}")
+        
         if not secondary_providers:
-            logger.warning("⚠️ No secondary providers enabled for replication")
+            logger.warning("⚠️ No secondary providers enabled for replication - DATA REDUNDANCY BROKEN!")
+            logger.warning(f"   Primary: {self.primary_provider.name if self.primary_provider else 'None'}")
+            logger.warning(f"   All providers: {[(p.name, p.enabled) for p in self.providers.values()]}")
             return
         
-        # Use parallel replication for better performance
+        # Use parallel replication for better performance, but with detailed logging like working version
         replication_tasks = []
         for provider in secondary_providers:
+            logger.info(f"🔄 Attempting optimized replication to {provider.name}...")
+            logger.info(f"   Content length: {len(content)} chars")
+            logger.info(f"   Embedding dimension: {len(embedding)}")
+            logger.info(f"   Metadata keys: {list(metadata.keys())}")
+            
             task = asyncio.create_task(
                 self._optimized_replicate_single_provider(provider, memory_id, content, embedding, metadata)
             )
@@ -422,16 +433,35 @@ class OptimizedUnifiedVectorStore(UnifiedVectorStore):
                 timeout=30.0  # 30 second timeout
             )
             
-            # Process results
+            # Process results with detailed logging like working version
+            replication_results = []
             successful = 0
             for i, ((provider_name, _), result) in enumerate(zip(replication_tasks, results)):
                 if isinstance(result, Exception):
-                    logger.error(f"❌ Replication to {provider_name} failed: {result}")
+                    logger.error(f"❌ Failed to replicate memory {memory_id} to {provider_name}: {result}")
+                    logger.error(f"   Error type: {type(result).__name__}")
+                    provider = next(p for p in secondary_providers if p.name == provider_name)
+                    logger.error(f"   Provider enabled: {provider.enabled}")
+                    logger.error(f"   Provider type: {type(provider).__name__}")
+                    replication_results.append({"provider": provider_name, "success": False, "error": str(result)})
                 else:
                     successful += 1
-                    logger.info(f"✅ Replicated to {provider_name} successfully")
+                    logger.info(f"✅ Replicated memory {memory_id} to {provider_name} as {result}")
+                    replication_results.append({"provider": provider_name, "success": True, "id": result})
             
-            logger.info(f"📊 Parallel replication: {successful}/{len(secondary_providers)} succeeded")
+            # Log detailed summary like working version
+            total = len(replication_results)
+            logger.warning(f"📊 Optimized replication summary for {memory_id}: {successful}/{total} providers succeeded")
+            
+            for result in replication_results:
+                if result["success"]:
+                    logger.info(f"   ✅ {result['provider']}: SUCCESS (ID: {result['id']})")
+                else:
+                    logger.error(f"   ❌ {result['provider']}: FAILED - {result['error']}")
+            
+            if successful == 0:
+                logger.error(f"🚨 CATASTROPHIC: All optimized secondary replication failed for memory {memory_id}")
+                raise Exception(f"All optimized secondary replication failed for memory {memory_id}")
             
         except asyncio.TimeoutError:
             logger.error("🚨 Replication timeout - some providers may be slow")
