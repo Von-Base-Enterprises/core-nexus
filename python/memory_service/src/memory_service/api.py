@@ -22,6 +22,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 import asyncpg
 
+from .config import config
+
 from .bulk_import_simple import (
     BulkImportRequest,
     BulkImportService,
@@ -183,7 +185,6 @@ async def lifespan(app: FastAPI):
 
     # Add ChromaDB (always available as local fallback)
     # Use config-defined directory (defaults to /tmp for Render compatibility)
-    from .config import config
     chroma_persist_dir = config.providers.CHROMADB_PERSIST_DIR
     logger.info(f"ChromaDB persist directory: {chroma_persist_dir}")
     
