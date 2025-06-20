@@ -2164,15 +2164,15 @@ def create_memory_app() -> FastAPI:
                 await conn.execute("DROP INDEX IF EXISTS idx_vector_memories_embedding")
                 await conn.execute("DROP INDEX IF EXISTS idx_vector_memories_embedding_ivfflat")
                 
-                # Create HNSW index (the key performance improvement)
+                # Create HNSW index (optimized for 16MB memory constraint)
                 await conn.execute("""
                     CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_embedding_hnsw 
                     ON vector_memories 
                     USING hnsw (embedding vector_cosine_ops)
-                    WITH (m = 16, ef_construction = 64)
+                    WITH (m = 8, ef_construction = 32)
                 """)
                 
-                # Additional performance indexes (only create if columns exist)
+                # Additional performance indexes (only columns that exist)
                 try:
                     await conn.execute("""
                         CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_created_at
@@ -2182,14 +2182,8 @@ def create_memory_app() -> FastAPI:
                 except Exception as e:
                     logger.info(f"Skipping created_at index: {e}")
                 
-                try:
-                    await conn.execute("""
-                        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_importance_created
-                        ON vector_memories (importance_score DESC, created_at DESC)
-                    """)
-                    logger.info("Created importance_score index successfully")
-                except Exception as e:
-                    logger.info(f"Skipping importance_score index (column may not exist): {e}")
+                # Skip user_id and importance_score indexes that cause schema mismatches
+                logger.info("Skipping user_id and importance_score indexes to avoid schema conflicts")
                 
                 # Update table statistics
                 await conn.execute("ANALYZE vector_memories")
