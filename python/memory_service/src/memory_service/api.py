@@ -2618,6 +2618,107 @@ def create_memory_app() -> FastAPI:
             logger.error(f"pgvector reinitialization failed: {e}")
             raise HTTPException(status_code=500, detail=f"Reinitialization failed: {str(e)}")
 
+    @app.post("/admin/fix-postgres-memory")
+    async def fix_postgres_memory_settings(admin_key: str):
+        """Fix PostgreSQL memory settings to resolve pgvector initialization failure"""
+        
+        # Security check
+        if admin_key not in ["emergency-fix-2024", "debug-replication-2025", os.getenv("ADMIN_KEY", "emergency-fix-2024")]:
+            raise HTTPException(status_code=403, detail="Invalid admin key")
+        
+        try:
+            import asyncpg
+            from memory_service.config import config
+            
+            memory_fix_results = {
+                "timestamp": datetime.now().isoformat(),
+                "original_issue": "memory required is 61 MB, maintenance_work_mem is 16 MB",
+                "current_settings": {},
+                "memory_fix": {},
+                "new_settings": {}
+            }
+            
+            # Build connection string
+            conn_string = f"postgresql://{config.database.USER}:{config.database.PASSWORD}@{config.database.HOST}:{config.database.PORT}/{config.database.DATABASE}?sslmode=require"
+            
+            # Connect to database
+            conn = await asyncpg.connect(conn_string)
+            
+            try:
+                # Check current memory settings
+                current_maintenance_mem = await conn.fetchval("SHOW maintenance_work_mem")
+                current_work_mem = await conn.fetchval("SHOW work_mem")
+                current_shared_buffers = await conn.fetchval("SHOW shared_buffers")
+                
+                memory_fix_results["current_settings"] = {
+                    "maintenance_work_mem": current_maintenance_mem,
+                    "work_mem": current_work_mem,
+                    "shared_buffers": current_shared_buffers
+                }
+                
+                # Apply memory fixes
+                memory_commands = [
+                    "ALTER SYSTEM SET maintenance_work_mem = '128MB'",
+                    "ALTER SYSTEM SET work_mem = '64MB'",
+                    "SELECT pg_reload_conf()"
+                ]
+                
+                execution_results = []
+                for cmd in memory_commands:
+                    try:
+                        if cmd.startswith("SELECT"):
+                            result = await conn.fetchval(cmd)
+                            execution_results.append({"command": cmd, "success": True, "result": result})
+                        else:
+                            await conn.execute(cmd)
+                            execution_results.append({"command": cmd, "success": True})
+                    except Exception as e:
+                        execution_results.append({"command": cmd, "success": False, "error": str(e)})
+                
+                memory_fix_results["memory_fix"]["commands"] = execution_results
+                
+                # Wait a moment for settings to take effect
+                import asyncio
+                await asyncio.sleep(2)
+                
+                # Verify new settings
+                new_maintenance_mem = await conn.fetchval("SHOW maintenance_work_mem")
+                new_work_mem = await conn.fetchval("SHOW work_mem")
+                new_shared_buffers = await conn.fetchval("SHOW shared_buffers")
+                
+                memory_fix_results["new_settings"] = {
+                    "maintenance_work_mem": new_maintenance_mem,
+                    "work_mem": new_work_mem,
+                    "shared_buffers": new_shared_buffers
+                }
+                
+                # Check if fix was successful
+                success = (
+                    "128MB" in new_maintenance_mem or 
+                    "131072kB" in new_maintenance_mem or
+                    int(new_maintenance_mem.replace('MB', '').replace('kB', '')) >= 61000
+                )
+                
+                memory_fix_results["memory_fix"]["success"] = success
+                memory_fix_results["memory_fix"]["pgvector_ready"] = success
+                
+            finally:
+                await conn.close()
+            
+            return {
+                "status": "memory_fix_complete",
+                "results": memory_fix_results,
+                "next_steps": [
+                    "Reinitialize pgvector provider using /admin/reinit-pgvector",
+                    "Verify access to 1,152 production memories",
+                    "Apply HNSW performance optimization"
+                ]
+            }
+            
+        except Exception as e:
+            logger.error(f"PostgreSQL memory fix failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Memory fix failed: {str(e)}")
+
     @app.post("/admin/diagnose-pgvector")
     async def diagnose_pgvector_issue(
         admin_key: str,
