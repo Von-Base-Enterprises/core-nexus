@@ -2158,42 +2158,41 @@ def create_memory_app() -> FastAPI:
                 logger.info(f"Starting HNSW migration for {memory_count} memories")
                 logger.info(f"Current indexes: {[idx['indexname'] for idx in existing_indexes]}")
                 
-                # Apply HNSW migration
-                migration_sql = """
-                -- HNSW Performance Migration - 510ms → <50ms target
-                BEGIN;
+                # Execute migration steps individually (CONCURRENTLY requires separate execution)
                 
-                -- Drop old indexes
-                DROP INDEX IF EXISTS idx_vector_memories_embedding;
-                DROP INDEX IF EXISTS idx_vector_memories_embedding_ivfflat;
+                # Drop old indexes first
+                await conn.execute("DROP INDEX IF EXISTS idx_vector_memories_embedding")
+                await conn.execute("DROP INDEX IF EXISTS idx_vector_memories_embedding_ivfflat")
                 
-                -- Create HNSW index (the key performance improvement)
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_embedding_hnsw 
-                ON vector_memories 
-                USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64);
+                # Create HNSW index (the key performance improvement)
+                await conn.execute("""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_embedding_hnsw 
+                    ON vector_memories 
+                    USING hnsw (embedding vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
+                """)
                 
-                -- Additional performance indexes
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_user_created 
-                ON vector_memories (user_id, created_at DESC)
-                WHERE user_id IS NOT NULL;
+                # Additional performance indexes
+                await conn.execute("""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_user_created 
+                    ON vector_memories (user_id, created_at DESC)
+                    WHERE user_id IS NOT NULL
+                """)
                 
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_importance_created
-                ON vector_memories (importance_score DESC, created_at DESC);
+                await conn.execute("""
+                    CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_memories_importance_created
+                    ON vector_memories (importance_score DESC, created_at DESC)
+                """)
                 
-                -- Update table statistics
-                ANALYZE vector_memories;
+                # Update table statistics
+                await conn.execute("ANALYZE vector_memories")
                 
-                -- Record migration
-                INSERT INTO schema_migrations (version, applied_at) 
-                VALUES ('002_optimize_pgvector_performance', NOW())
-                ON CONFLICT (version) DO NOTHING;
-                
-                COMMIT;
-                """
-                
-                # Execute migration
-                await conn.execute(migration_sql)
+                # Record migration
+                await conn.execute("""
+                    INSERT INTO schema_migrations (version, applied_at) 
+                    VALUES ('002_optimize_pgvector_performance', NOW())
+                    ON CONFLICT (version) DO NOTHING
+                """)
                 
                 # Verify success
                 hnsw_indexes = await conn.fetch("""
