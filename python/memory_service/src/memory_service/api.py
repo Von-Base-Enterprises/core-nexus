@@ -43,7 +43,7 @@ from .models import (
     QueryRequest,
     QueryResponse,
 )
-from .providers import ChromaProvider, PgVectorProvider, PineconeProvider
+from .providers import ChromaProvider, PgVectorProvider, PineconeProvider, GraphProvider
 from .unified_store import UnifiedVectorStore
 from .observability import (
     initialize_observability,
@@ -625,7 +625,7 @@ def create_memory_app() -> FastAPI:
     #         logger.error(f"Database stats failed: {e}")
     #         raise HTTPException(status_code=500, detail="Database stats unavailable")
 
-    @app.post("/memories", response_model=MemoryResponse)
+    @app.post("/memories", response_model=MemoryResponse, status_code=201)
     @trace_operation("api.store_memory")
     async def store_memory(
         request: MemoryRequest,
@@ -835,6 +835,46 @@ def create_memory_app() -> FastAPI:
             except Exception as e2:
                 logger.error(f"Even empty response failed: {e2}")
                 raise HTTPException(status_code=500, detail=f"Complete system failure: {str(e)}")
+
+    @app.get("/memories/stats", response_model=MemoryStats)
+    async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Get comprehensive memory service statistics.
+
+        Includes counts, performance metrics, and provider-specific details.
+        """
+        try:
+            stats = store.stats
+            health_data = await store.health_check()
+
+            # Calculate provider-specific stats
+            memories_by_provider = {}
+            for provider_name, provider_health in health_data['providers'].items():
+                if 'details' in provider_health and isinstance(provider_health['details'], dict):
+                    nested_details = provider_health['details'].get('details', {})
+                    if isinstance(nested_details, dict) and 'total_vectors' in nested_details:
+                        memories_by_provider[provider_name] = nested_details['total_vectors']
+                    elif 'total_vectors' in provider_health['details']:
+                        memories_by_provider[provider_name] = provider_health['details']['total_vectors']
+                    else:
+                        memories_by_provider[provider_name] = 0
+                else:
+                    memories_by_provider[provider_name] = 0
+
+            # Get actual total from provider stats
+            actual_total = sum(memories_by_provider.values())
+
+            return MemoryStats(
+                total_memories=actual_total if actual_total > 0 else stats['total_stores'],
+                memories_by_provider=memories_by_provider,
+                avg_importance_score=0.5,  # TODO: Calculate from actual data
+                queries_last_hour=stats['total_queries'],  # TODO: Implement time-based tracking
+                avg_query_time_ms=stats['avg_query_time']
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to get memory stats: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
     @app.get("/memories/{memory_id}")
     async def get_memory_by_id(
@@ -1058,40 +1098,6 @@ def create_memory_app() -> FastAPI:
                 "foundation_status": "unknown",
                 "last_updated": time.time()
             }
-
-    @app.get("/memories/stats", response_model=MemoryStats)
-    async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
-        """
-        Get comprehensive memory service statistics.
-
-        Includes counts, performance metrics, and provider-specific details.
-        """
-        try:
-            stats = store.stats
-            health_data = await store.health_check()
-
-            # Calculate provider-specific stats
-            memories_by_provider = {}
-            for provider_name, provider_health in health_data['providers'].items():
-                if 'details' in provider_health and 'total_vectors' in provider_health['details']:
-                    memories_by_provider[provider_name] = provider_health['details']['total_vectors']
-                else:
-                    memories_by_provider[provider_name] = 0
-
-            # Get actual total from provider stats
-            actual_total = sum(memories_by_provider.values())
-
-            return MemoryStats(
-                total_memories=actual_total if actual_total > 0 else stats['total_stores'],
-                memories_by_provider=memories_by_provider,
-                avg_importance_score=0.5,  # TODO: Calculate from actual data
-                queries_last_hour=stats['total_queries'],  # TODO: Implement time-based tracking
-                avg_query_time_ms=stats['avg_query_time']
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to get stats: {e}")
-            raise HTTPException(status_code=500, detail="Internal server error")
 
     @app.get("/debug/env")
     async def debug_environment():
@@ -2482,6 +2488,163 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Graph stats failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
 
+    @app.get("/graph/entities")
+    async def get_graph_entities(
+        entity_type: str = Query(None, description="Filter by entity type"),
+        limit: int = Query(50, description="Maximum number of entities to return"),
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Get entities from the knowledge graph.
+        
+        Returns entities with their metadata and importance scores.
+        """
+        try:
+            graph_provider = store.graph_provider
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # Use the graph provider's connection to query entities directly
+            await graph_provider._ensure_pool()
+            async with graph_provider.connection_pool.acquire() as conn:
+                query = """
+                    SELECT id, entity_type, entity_name, importance_score, 
+                           mention_count, first_seen, last_seen
+                    FROM graph_nodes
+                """
+                params = []
+                
+                if entity_type:
+                    query += " WHERE entity_type = $1"
+                    params.append(entity_type)
+                
+                query += " ORDER BY importance_score DESC, mention_count DESC LIMIT $" + str(len(params) + 1)
+                params.append(limit)
+                
+                entities = await conn.fetch(query, *params)
+                
+                return {
+                    "entities": [
+                        {
+                            "id": str(entity['id']),
+                            "name": entity['entity_name'],
+                            "type": entity['entity_type'],
+                            "importance_score": float(entity['importance_score']),
+                            "mention_count": entity['mention_count'],
+                            "first_seen": entity['first_seen'].isoformat() if entity['first_seen'] else None,
+                            "last_seen": entity['last_seen'].isoformat() if entity['last_seen'] else None
+                        }
+                        for entity in entities
+                    ],
+                    "total_count": len(entities),
+                    "filtered_by": {"entity_type": entity_type} if entity_type else None
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get graph entities: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get graph entities: {str(e)}")
+
+    @app.get("/graph/relationships/{entity_id}")
+    async def get_entity_relationships(
+        entity_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Get all relationships for a specific entity.
+        
+        Returns both incoming and outgoing relationships with metadata.
+        """
+        try:
+            graph_provider = store.graph_provider
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            from uuid import UUID
+            entity_uuid = UUID(entity_id)
+            relationships = await graph_provider.get_relationships(entity_uuid)
+            
+            return {
+                "entity_id": entity_id,
+                "relationships": relationships,
+                "total_count": len(relationships)
+            }
+            
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid entity ID format")
+        except Exception as e:
+            logger.error(f"Failed to get entity relationships: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get entity relationships: {str(e)}")
+
+    @app.get("/memories/{memory_id}/entities")
+    async def extract_memory_entities(
+        memory_id: str,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Extract entities and relationships from a specific memory.
+        
+        Returns all entities found in the memory content with their relationships.
+        """
+        try:
+            graph_provider = store.graph_provider
+            if not graph_provider or not graph_provider.enabled:
+                raise HTTPException(status_code=503, detail="Graph provider not available")
+            
+            # Get the memory content first
+            from uuid import UUID
+            memory_uuid = UUID(memory_id)
+            
+            # Query the memory from the primary provider
+            pgvector = store.providers.get('pgvector')
+            if not pgvector or not pgvector.enabled:
+                raise HTTPException(status_code=503, detail="Primary provider not available")
+            
+            await pgvector._ensure_pool_ready()
+            async with pgvector.connection_pool.acquire() as conn:
+                memory_row = await conn.fetchrow(
+                    f"SELECT content, metadata FROM {pgvector.table_name} WHERE id = $1",
+                    memory_uuid
+                )
+                
+                if not memory_row:
+                    raise HTTPException(status_code=404, detail="Memory not found")
+                
+                # Extract entities from the content
+                entities = await graph_provider._extract_entities(memory_row['content'])
+                
+                # Get any existing entities linked to this memory
+                linked_entities = await conn.fetch("""
+                    SELECT gn.id, gn.entity_name, gn.entity_type, gn.importance_score,
+                           mem.position_start, mem.position_end, mem.confidence
+                    FROM memory_entity_map mem
+                    JOIN graph_nodes gn ON mem.entity_id = gn.id
+                    WHERE mem.memory_id = $1
+                """, memory_uuid)
+                
+                return {
+                    "memory_id": memory_id,
+                    "extracted_entities": entities,
+                    "linked_entities": [
+                        {
+                            "id": str(le['id']),
+                            "name": le['entity_name'],
+                            "type": le['entity_type'],
+                            "importance_score": float(le['importance_score']),
+                            "position_start": le['position_start'],
+                            "position_end": le['position_end'],
+                            "confidence": float(le['confidence'])
+                        }
+                        for le in linked_entities
+                    ],
+                    "extraction_time": time.time()
+                }
+                
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid memory ID format")
+        except Exception as e:
+            logger.error(f"Failed to extract memory entities: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to extract memory entities: {str(e)}")
+
     @app.post("/admin/init-database")
     async def init_database_indexes(
         admin_key: str,
@@ -3646,17 +3809,55 @@ def create_memory_app() -> FastAPI:
             start_time = time.time()
 
             limit = query.get('limit', 10)
-            await graph_provider.query([], limit, filters)
+            memories = await graph_provider.query([], limit, filters)
 
             query_time = (time.time() - start_time) * 1000
 
-            # TODO: Convert memories to graph nodes and relationships
+            # Convert memories to graph representation and get graph statistics
+            nodes = []
+            relationships = []
+            
+            # Get actual graph statistics if available
+            total_nodes = 0
+            total_relationships = 0
+            try:
+                graph_stats = await graph_provider.get_stats()
+                total_nodes = graph_stats.get('total_nodes', 0)
+                total_relationships = graph_stats.get('total_relationships', 0)
+            except Exception as e:
+                logger.warning(f"Failed to get graph stats: {e}")
+
+            # Extract unique entities from returned memories
+            entity_names = set()
+            for memory in memories:
+                # Parse entities from metadata if available
+                metadata = memory.metadata or {}
+                if 'entities' in metadata:
+                    for entity in metadata['entities']:
+                        if entity['name'] not in entity_names:
+                            entity_names.add(entity['name'])
+                            nodes.append({
+                                "id": entity['name'],
+                                "name": entity['name'],
+                                "type": entity.get('type', 'unknown'),
+                                "importance": memory.importance_score
+                            })
+
             return {
-                "nodes": [],
-                "relationships": [],
+                "nodes": nodes,
+                "relationships": relationships,  # TODO: Extract from graph provider
+                "memories": [
+                    {
+                        "id": str(memory.id),
+                        "content": memory.content[:200] + "..." if len(memory.content) > 200 else memory.content,
+                        "importance_score": memory.importance_score,
+                        "similarity_score": memory.similarity_score
+                    } for memory in memories
+                ],
                 "query_time_ms": query_time,
-                "total_nodes": 0,
-                "total_relationships": 0
+                "total_nodes": total_nodes,
+                "total_relationships": total_relationships,
+                "results_count": len(memories)
             }
 
         except Exception as e:
