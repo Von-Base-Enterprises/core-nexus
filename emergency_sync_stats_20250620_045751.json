@@ -1,0 +1,19 @@
+{
+  "sync_started": "2025-06-20T04:57:02.838321",
+  "api_calls_made": 0,
+  "memories_synced": 0,
+  "errors": [],
+  "initial_counts": {
+    "pgvector": 1209,
+    "chromadb": 5,
+    "graph": 151
+  },
+  "final_counts": {
+    "pgvector": 1209,
+    "chromadb": 106,
+    "graph": 151
+  },
+  "chromadb_increase": 101,
+  "final_coverage": 8.767576509511994,
+  "sync_completed": "2025-06-20T04:57:51.325592"
+}
