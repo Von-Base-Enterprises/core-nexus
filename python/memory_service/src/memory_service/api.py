@@ -525,7 +525,7 @@ def create_memory_app() -> FastAPI:
         return {
             "service": "Core Nexus Memory Service",
             "description": "Unified Long Term Memory Module with multi-provider vector storage",
-            "version": "0.1.2",
+            "version": "0.1.3",
             "status": "operational",
             "uptime_hours": round(uptime_hours, 2),
             "documentation": {
