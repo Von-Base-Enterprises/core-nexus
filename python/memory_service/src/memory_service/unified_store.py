@@ -306,40 +306,43 @@ class UnifiedVectorStore:
                     logger.debug(f"Cache hit for query: {request.query[:50]}...")
                     return cached_result['response']
 
-            # EMERGENCY FIX: If empty query, use direct database retrieval
+            # EMERGENCY FIX: If empty query, use bulletproof emergency retrieval
             if not request.query or request.query.strip() == "":
-                logger.info("Empty query - using get_recent_memories for direct retrieval")
+                logger.info("Empty query - using bulletproof emergency retrieval")
                 
-                # Get pgvector provider for direct access
-                pgvector = self.providers.get('pgvector')
-                if pgvector and pgvector.enabled:
-                    try:
-                        # Use the provider's get_recent_memories method directly
-                        # This bypasses all vector operations and just returns recent memories
-                        memories = await pgvector.get_recent_memories(request.limit, request.filters or {})
-                        logger.info(f"get_recent_memories returned {len(memories)} results")
-                    except Exception as e:
-                        logger.error(f"get_recent_memories failed: {e}, trying emergency search")
-                        # Import emergency search fix as fallback
-                        from .search_fix import EmergencySearchFix
-                        
-                        if pgvector.connection_pool:
-                            try:
-                                emergency_search = EmergencySearchFix(pgvector.connection_pool, getattr(pgvector, "table_name", "vector_memories"))
-                                memories = await emergency_search.emergency_search_all(limit=request.limit)
-                            except Exception as e2:
-                                logger.error(f"Emergency search also failed: {e2}")
-                                memories = []
-                        else:
-                            logger.error("PgVector connection pool not initialized!")
-                            memories = []
+                try:
+                    # Use the proven emergency retrieval system
+                    from .emergency_foundation_fix import EmergencyMemoryRetrieval
+                    emergency = EmergencyMemoryRetrieval()
+                    await emergency.connect()
+                    
+                    memories_raw = await emergency.get_all_memories(request.limit, 0)
+                    logger.info(f"Emergency retrieval returned {len(memories_raw)} memories")
+                    
+                    # Convert to MemoryResponse objects
+                    memories = []
+                    for mem in memories_raw:
+                        memory_response = MemoryResponse(
+                            id=mem['id'],
+                            content=mem['content'],
+                            metadata=mem.get('metadata', {}),
+                            importance_score=mem.get('importance_score', 0.0),
+                            similarity_score=1.0,  # Default for non-search queries
+                            created_at=mem.get('created_at'),
+                            updated_at=None
+                        )
+                        memories.append(memory_response)
                     
                     response = QueryResponse(
                         memories=memories[:request.limit],
                         total_found=len(memories),
                         query_time_ms=(time.time() - start_time) * 1000,
-                        providers_used=['pgvector_direct']
+                        providers_used=['emergency_direct']
                     )
+                    
+                    # Close emergency connection
+                    if emergency.connection:
+                        await emergency.connection.close()
                     
                     # Cache result
                     self.query_cache[cache_key] = {
@@ -347,8 +350,18 @@ class UnifiedVectorStore:
                         'timestamp': time.time()
                     }
                     
-                    logger.info(f"Emergency search returned {len(memories)} memories")
+                    logger.info(f"Emergency retrieval completed: {len(memories)} memories returned")
                     return response
+                    
+                except Exception as e:
+                    logger.error(f"Emergency retrieval failed: {e}")
+                    # Return empty response rather than crash
+                    return QueryResponse(
+                        memories=[],
+                        total_found=0,
+                        query_time_ms=(time.time() - start_time) * 1000,
+                        providers_used=['emergency_failed']
+                    )
             
             # For non-empty queries, try multiple search strategies
             query_embedding = None
