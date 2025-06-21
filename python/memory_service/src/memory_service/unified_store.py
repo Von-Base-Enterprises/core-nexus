@@ -402,29 +402,33 @@ class UnifiedVectorStore:
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
             
-            # Check if this is a graph-based query (entity-specific search)
+            # Check if this is a graph-based query (entity-specific search with specific filters)
             graph_memories = []
-            if self.graph_provider and self.graph_provider.enabled and request.filters:
+            use_graph = False
+            
+            if (self.graph_provider and self.graph_provider.enabled and 
+                request.filters and len(request.filters) > 0):
                 entity_filters = {k: v for k, v in request.filters.items() 
                                 if k in ['entity_name', 'entity_type', 'relationship_type']}
                 if entity_filters:
                     try:
-                        logger.info(f"🧠 Performing graph-aware query with filters: {entity_filters}")
+                        logger.info(f"🧠 Performing graph-aware query with entity filters: {entity_filters}")
                         graph_memories = await self.graph_provider.query(
                             query_embedding or [], request.limit, request.filters
                         )
                         if graph_memories:
                             logger.info(f"✅ Graph query returned {len(graph_memories)} results")
-                            providers_used = ['graph']
+                            use_graph = True
                         else:
                             logger.info("Graph query returned no results, falling back to vector search")
                     except Exception as e:
                         logger.error(f"❌ Graph query failed: {e}, falling back to vector search")
             
-            # Use graph results if available, otherwise try vector search
-            if graph_memories:
+            # Use graph results ONLY if we have entity-specific results, otherwise use vector search
+            if use_graph and graph_memories:
                 memories = graph_memories
                 providers_used = ['graph']
+                logger.info(f"Using graph provider results: {len(memories)} memories")
             elif query_embedding:
                 try:
                     # Query providers (potentially in parallel for better performance)
