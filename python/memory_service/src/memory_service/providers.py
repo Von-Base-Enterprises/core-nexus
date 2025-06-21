@@ -1013,21 +1013,26 @@ class GraphProvider(VectorProvider):
 
     async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
         """
-        Store memory and extract knowledge graph components.
+        Legacy store method - generates new UUID.
+        For graph integration, use extract_and_link_entities instead.
+        """
+        return await self.extract_and_link_entities(uuid4(), content, embedding, metadata)
+    
+    async def extract_and_link_entities(self, memory_id: UUID, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
+        """
+        Extract entities and relationships for an existing memory.
 
         This method:
-        1. Stores the memory normally (delegated to pgvector)
-        2. Extracts entities from the content
-        3. Creates graph nodes for entities
-        4. Infers and creates relationships
+        1. Extracts entities from the content
+        2. Creates graph nodes for entities
+        3. Infers and creates relationships
+        4. Links entities to the existing memory
         """
         # Ensure pool is initialized
         await self._ensure_pool()
 
         if not self.connection_pool:
             raise RuntimeError("Graph provider not initialized")
-
-        memory_id = uuid4()
 
         async with self.connection_pool.acquire() as conn:
             try:

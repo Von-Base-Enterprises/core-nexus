@@ -117,10 +117,20 @@ class UnifiedVectorStore:
             except Exception as e:
                 logger.error(f"Failed to initialize deduplication service: {e}")
 
+        # Initialize Graph Provider for knowledge graph functionality
+        self.graph_provider = None
+        graph_provider = next((p for p in providers if p.name == 'graph' and p.enabled), None)
+        if graph_provider:
+            self.graph_provider = graph_provider
+            logger.info("Graph provider initialized - Knowledge graph functionality ENABLED")
+        else:
+            logger.info("Graph provider not available - Knowledge graph functionality DISABLED")
+
         logger.info(f"Initialized UnifiedVectorStore with providers: {list(self.providers.keys())}")
         logger.info(f"Primary provider: {self.primary_provider.name}")
         logger.info(f"ADM scoring: {'enabled' if adm_enabled else 'disabled'}")
         logger.info(f"Deduplication: {'enabled' if self.deduplication_service else 'disabled'}")
+        logger.info(f"Graph functionality: {'enabled' if self.graph_provider else 'disabled'}")
 
     def _initialize_adm_engine(self):
         """Initialize the ADM scoring engine."""
@@ -242,6 +252,18 @@ class UnifiedVectorStore:
                 embedding,
                 metadata
             )
+
+            # Extract entities and relationships for knowledge graph if enabled
+            if self.graph_provider and self.graph_provider.enabled:
+                try:
+                    logger.info(f"🧠 Extracting entities and relationships for memory {memory_id}")
+                    # Use the memory_id from primary storage for graph consistency
+                    await self.graph_provider.extract_and_link_entities(memory_id, request.content, embedding, metadata)
+                    logger.info(f"✅ Successfully processed knowledge graph for memory {memory_id}")
+                except Exception as e:
+                    logger.error(f"❌ Graph processing failed for memory {memory_id}: {e}")
+                    # Don't fail the whole operation if graph processing fails
+                    logger.info("Continuing without graph processing - memory storage succeeded")
 
             # SYNCHRONOUS replication to secondary providers for data consistency
             # This ensures ChromaDB stays in sync with pgvector
@@ -380,8 +402,30 @@ class UnifiedVectorStore:
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
             
-            # Try vector-based search first if we have embeddings
-            if query_embedding:
+            # Check if this is a graph-based query (entity-specific search)
+            graph_memories = []
+            if self.graph_provider and self.graph_provider.enabled and request.filters:
+                entity_filters = {k: v for k, v in request.filters.items() 
+                                if k in ['entity_name', 'entity_type', 'relationship_type']}
+                if entity_filters:
+                    try:
+                        logger.info(f"🧠 Performing graph-aware query with filters: {entity_filters}")
+                        graph_memories = await self.graph_provider.query(
+                            query_embedding or [], request.limit, request.filters
+                        )
+                        if graph_memories:
+                            logger.info(f"✅ Graph query returned {len(graph_memories)} results")
+                            providers_used = ['graph']
+                        else:
+                            logger.info("Graph query returned no results, falling back to vector search")
+                    except Exception as e:
+                        logger.error(f"❌ Graph query failed: {e}, falling back to vector search")
+            
+            # Use graph results if available, otherwise try vector search
+            if graph_memories:
+                memories = graph_memories
+                providers_used = ['graph']
+            elif query_embedding:
                 try:
                     # Query providers (potentially in parallel for better performance)
                     if len(providers_to_query) == 1:
@@ -403,6 +447,9 @@ class UnifiedVectorStore:
                     logger.error(f"Vector search failed: {e}")
                     memories = []
                     providers_used = []
+            else:
+                memories = []
+                providers_used = []
             
             # EMERGENCY FIX: If vector search returns no results, use text search
             if not memories and request.query:
@@ -512,7 +559,14 @@ class UnifiedVectorStore:
             'status': 'healthy' if overall_healthy else 'degraded',
             'providers': results,
             'stats': updated_stats,
-            'cache_size': len(self.query_cache)
+            'cache_size': len(self.query_cache),
+            'graph_enabled': self.graph_provider is not None and self.graph_provider.enabled,
+            'features': {
+                'vector_storage': True,
+                'knowledge_graph': self.graph_provider is not None and self.graph_provider.enabled,
+                'adm_scoring': self.adm_enabled,
+                'deduplication': self.deduplication_service is not None
+            }
         }
 
     def _calculate_importance(self, request: MemoryRequest) -> float:
