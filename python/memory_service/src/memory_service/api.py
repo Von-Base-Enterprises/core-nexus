@@ -1011,20 +1011,22 @@ def create_memory_app() -> FastAPI:
             # Get basic health data
             health_data = await store.health_check()
             
-            # Calculate total memories across providers
-            total_memories = 0
+            # Use the top-level total_memories from health data if available
+            total_memories = health_data.get('total_memories', 0)
             provider_counts = {}
             
+            # Calculate provider-specific counts
             for provider_name, provider_health in health_data['providers'].items():
                 if provider_health.get('status') == 'healthy':
                     provider_details = provider_health.get('details', {})
                     if isinstance(provider_details, dict):
-                        # Try different possible keys for memory count
-                        count = (provider_details.get('total_vectors') or 
-                               provider_details.get('details', {}).get('total_vectors') or 
+                        # Handle nested structure: details.details.total_vectors
+                        nested_details = provider_details.get('details', {})
+                        count = (nested_details.get('total_vectors') or 
+                               nested_details.get('total_memories') or 
+                               provider_details.get('total_vectors') or 
                                provider_details.get('total_memories') or 0)
                         provider_counts[provider_name] = count
-                        total_memories += count
                     else:
                         provider_counts[provider_name] = 0
                 else:
