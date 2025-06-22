@@ -45,7 +45,7 @@ class QueryRequest(BaseModel):
     query: str = Field("", description="Query text (empty returns all memories)")
     limit: int = Field(10, ge=1, le=100, description="Maximum results to return")
     min_similarity: float = Field(0.3, ge=0.0, le=1.0, description="Minimum similarity threshold")
-    filters: dict[str, Any] | None = Field(default_factory=dict, description="Metadata filters")
+    filters: dict[str, Any] | None = Field(None, description="Metadata filters")
     user_id: str | None = Field(None, description="Filter by user")
     conversation_id: str | None = Field(None, description="Filter by conversation")
     time_range: dict[str, datetime] | None = Field(None, description="Time range filter")
