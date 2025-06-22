@@ -713,12 +713,31 @@ class UnifiedVectorStore:
             raise Exception(f"All secondary replication failed for memory {memory_id}")
 
     async def _generate_embedding(self, text: str) -> list[float]:
-        """Generate embedding using configured model."""
+        """Generate embedding using configured model with caching for performance."""
         if not self.embedding_model:
             raise ValueError("No embedding model configured")
 
-        # This will integrate with existing OpenAI embeddings from CoreNexus.py
-        return await self.embedding_model.embed_text(text)
+        # PARETO PERFORMANCE FIX: Cache embeddings to eliminate API bottleneck
+        embedding_cache_key = f"embedding:{hash(text)}"
+        if embedding_cache_key in self.query_cache:
+            cached_embedding = self.query_cache[embedding_cache_key]
+            if time.time() - cached_embedding['timestamp'] < 3600:  # 1 hour cache
+                logger.debug(f"Embedding cache hit for text: {text[:50]}...")
+                return cached_embedding['embedding']
+
+        # Generate embedding via API only if not cached
+        start_time = time.time()
+        embedding = await self.embedding_model.embed_text(text)
+        api_time = (time.time() - start_time) * 1000
+        
+        # Cache the embedding for future use
+        self.query_cache[embedding_cache_key] = {
+            'embedding': embedding,
+            'timestamp': time.time()
+        }
+        
+        logger.debug(f"Generated embedding in {api_time:.1f}ms for text: {text[:50]}...")
+        return embedding
 
     def _select_providers(self, request: QueryRequest) -> list[VectorProvider]:
         """Select optimal providers for query."""
