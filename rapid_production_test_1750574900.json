@@ -1,0 +1,8 @@
+{
+  "test_session": {
+    "start_time": 1750574900.1873024,
+    "timestamp": "2025-06-22T02:48:20.187306",
+    "test_type": "rapid_production_baseline"
+  },
+  "critical_error": "No database credentials found in environment"
+}

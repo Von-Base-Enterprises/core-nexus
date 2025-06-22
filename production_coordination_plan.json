@@ -1,0 +1,27 @@
+{
+  "required_credential": "PGVECTOR_PASSWORD",
+  "target_database": {
+    "host": "dpg-d12n0np5pdvs73ctmm40-a",
+    "port": 5432,
+    "database": "nexus_memory_db",
+    "user": "nexus_memory_db_user"
+  },
+  "coordination_steps": [
+    "Contact DevOps team for production database password",
+    "Verify password is for read/write optimization access",
+    "Confirm backup procedures are current and tested",
+    "Coordinate maintenance window scheduling"
+  ],
+  "security_requirements": [
+    "Password should be provided securely (not in plaintext)",
+    "Access should be limited to optimization period",
+    "All operations should be logged and monitored",
+    "Rollback procedures must be tested and ready"
+  ],
+  "team_contacts": [
+    "DevOps team: Database credentials and backup verification",
+    "Database team: Schema modification permissions",
+    "Product team: Maintenance window coordination",
+    "Engineering team: Code review and rollback procedures"
+  ]
+}
