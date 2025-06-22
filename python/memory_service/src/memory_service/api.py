@@ -249,7 +249,7 @@ async def lifespan(app: FastAPI):
 
     # Add Graph Provider for knowledge graph functionality
     # Feature flag controlled activation for safe rollout
-    if os.getenv("GRAPH_ENABLED", "false").lower() == "true":
+    if False:  # PARETO FIX: Temporarily disable broken graph provider
         logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
 
         # Check if pgvector is available to share the same database
