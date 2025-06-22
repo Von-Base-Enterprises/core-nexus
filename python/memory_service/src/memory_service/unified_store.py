@@ -402,51 +402,66 @@ class UnifiedVectorStore:
             # Determine which providers to query
             providers_to_query = self._select_providers(request)
             
-            # Check if this is a graph-based query (entity-specific search with specific filters)
+            # CRITICAL FIX: Only use graph provider for explicit entity queries with specific filters
+            # All other queries (including empty queries and semantic searches) MUST use pgvector
+            use_graph_provider = False
             graph_memories = []
-            use_graph = False
             
+            # Graph provider should ONLY be used for explicit entity relationship queries
             if (self.graph_provider and self.graph_provider.enabled and 
                 request.filters and len(request.filters) > 0):
+                # Check for explicit entity filters
                 entity_filters = {k: v for k, v in request.filters.items() 
                                 if k in ['entity_name', 'entity_type', 'relationship_type']}
-                if entity_filters:
+                
+                # ONLY use graph if we have actual entity filters with values
+                if entity_filters and any(v for v in entity_filters.values() if v):
                     try:
-                        logger.info(f"🧠 Performing graph-aware query with entity filters: {entity_filters}")
+                        logger.info(f"🧠 GRAPH QUERY: Using graph provider for entity query: {entity_filters}")
                         graph_memories = await self.graph_provider.query(
                             query_embedding or [], request.limit, request.filters
                         )
                         if graph_memories:
-                            logger.info(f"✅ Graph query returned {len(graph_memories)} results")
-                            use_graph = True
+                            logger.info(f"✅ Graph provider returned {len(graph_memories)} results")
+                            use_graph_provider = True
                         else:
                             logger.info("Graph query returned no results, falling back to vector search")
                     except Exception as e:
                         logger.error(f"❌ Graph query failed: {e}, falling back to vector search")
+                else:
+                    logger.info("🔍 VECTOR SEARCH: No valid entity filters, using vector search")
+            else:
+                logger.info("🔍 VECTOR SEARCH: No filters or graph provider, using vector search")
             
-            # Use graph results ONLY if we have entity-specific results, otherwise use vector search
-            if use_graph and graph_memories:
+            # Route query based on provider selection
+            if use_graph_provider and graph_memories:
                 memories = graph_memories
                 providers_used = ['graph']
-                logger.info(f"Using graph provider results: {len(memories)} memories")
+                logger.info(f"✅ ROUTED TO GRAPH: {len(memories)} memories from graph provider")
             elif query_embedding:
                 try:
+                    logger.info(f"🔍 VECTOR SEARCH: Querying {len(providers_to_query)} providers: {[p.name for p in providers_to_query]}")
+                    
                     # Query providers (potentially in parallel for better performance)
                     if len(providers_to_query) == 1:
                         # Single provider query
+                        logger.info(f"🔍 SINGLE PROVIDER: Using {providers_to_query[0].name}")
                         memories = await self._query_provider(
                             providers_to_query[0],
                             query_embedding,
                             request
                         )
                         providers_used = [providers_to_query[0].name]
+                        logger.info(f"✅ ROUTED TO {providers_to_query[0].name.upper()}: {len(memories)} memories")
                     else:
                         # Multi-provider query with result aggregation
+                        logger.info(f"🔍 MULTI PROVIDER: Querying {[p.name for p in providers_to_query]}")
                         memories, providers_used = await self._query_multiple_providers(
                             providers_to_query,
                             query_embedding,
                             request
                         )
+                        logger.info(f"✅ ROUTED TO MULTIPLE: {len(memories)} memories from {providers_used}")
                 except Exception as e:
                     logger.error(f"Vector search failed: {e}")
                     memories = []
