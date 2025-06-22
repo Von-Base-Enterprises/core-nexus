@@ -1,0 +1,135 @@
+{
+  "timestamp": "2025-06-22T18:52:37.735343",
+  "duration_seconds": 19.52379012107849,
+  "migration_status": {
+    "original_vectors": 1470,
+    "optimized_migrated": 890,
+    "migration_percentage": 60.544217687074834,
+    "sample_optimized_vectors": [
+      {
+        "id": "e759ff33-6c89-49b5-96b9-fe8add94503f",
+        "content": "Test vector for infrastructure validation",
+        "content_length": 41
+      },
+      {
+        "id": "e219c92d-2c82-46ee-9835-a0466449dadf",
+        "content": "Production test: Core Nexus is now operational with OpenAI text-embedding-3-small and PostgreSQL pgvector storage. This memory was created by the Distinguished Systems Engineer during production verification.",
+        "content_length": 208
+      },
+      {
+        "id": "39e440a6-3bc7-44ba-9b7f-723966ac5ab9",
+        "content": "PRODUCTION READY: Core Nexus memory service is fully operational. OpenAI text-embedding-3-small is generating embeddings, PostgreSQL with pgvector is storing them, and semantic search is functional. System verified by Distinguished Systems Engineer.",
+        "content_length": 249
+      },
+      {
+        "id": "a084428a-7823-4799-bac6-e72a1bdfb8a2",
+        "content": "Night shift probe: probe_1749385162_10978",
+        "content_length": 41
+      },
+      {
+        "id": "7988f0b9-c9b9-4627-8949-d65a3670ef66",
+        "content": "Night shift probe: probe_1749385244_11155",
+        "content_length": 41
+      }
+    ]
+  },
+  "hnsw_optimization": {
+    "ef_search_tests": [
+      {
+        "ef_search": 10,
+        "avg_latency_ms": 228.80834838142619,
+        "results_count": 10
+      },
+      {
+        "ef_search": 20,
+        "avg_latency_ms": 95.71392459329218,
+        "results_count": 10
+      },
+      {
+        "ef_search": 40,
+        "avg_latency_ms": 97.1387519966811,
+        "results_count": 10
+      },
+      {
+        "ef_search": 64,
+        "avg_latency_ms": 95.79220240702853,
+        "results_count": 10
+      },
+      {
+        "ef_search": 100,
+        "avg_latency_ms": 98.1432490167208,
+        "results_count": 10
+      }
+    ],
+    "optimal_ef_search": 20,
+    "optimal_latency_ms": 95.71392459329218
+  },
+  "performance_tests": {
+    "small": {
+      "limit": 5,
+      "original_avg_ms": 115.69835988727088,
+      "optimized_avg_ms": 109.26619567261595,
+      "improvement_percent": 5.559425579517311,
+      "speedup_factor": 1.0588669183095476,
+      "original_queries": 9,
+      "optimized_queries": 9
+    },
+    "medium": {
+      "limit": 20,
+      "original_avg_ms": 105.8942568488419,
+      "optimized_avg_ms": 104.10936432890594,
+      "improvement_percent": 1.6855423259486104,
+      "speedup_factor": 1.0171443993673526,
+      "original_queries": 6,
+      "optimized_queries": 6
+    },
+    "large": {
+      "limit": 50,
+      "original_avg_ms": 98.48964899235095,
+      "optimized_avg_ms": 98.7882106564939,
+      "improvement_percent": -0.3031401443680025,
+      "speedup_factor": 0.9969777601784781,
+      "original_queries": 3,
+      "optimized_queries": 3
+    }
+  },
+  "optimizations_applied": {
+    "baseline_latency_ms": 185.62354100868106,
+    "optimized_latency_ms": 116.16695938864723,
+    "improvement_percent": 37.41798116909404,
+    "ef_search_applied": 20
+  },
+  "final_validation": {
+    "test_queries": 30,
+    "original_table": {
+      "avg_latency_ms": 99.50711974330868,
+      "p95_latency_ms": 107.80891502508894,
+      "min_latency_ms": 89.18733103200793,
+      "max_latency_ms": 192.00874102534726
+    },
+    "optimized_table": {
+      "avg_latency_ms": 100.45076520764269,
+      "p95_latency_ms": 109.2615649686195,
+      "min_latency_ms": 89.03734700288624,
+      "max_latency_ms": 190.12526102596894
+    },
+    "performance_metrics": {
+      "avg_improvement_percent": -0.9483195441374097,
+      "p95_improvement_percent": -1.3474302595406917,
+      "speedup_factor": 0.9906058907328044
+    }
+  },
+  "executive_summary": {
+    "status": "NEEDS_IMPROVEMENT",
+    "recommendation": "INVESTIGATE FURTHER",
+    "final_performance_improvement": -0.9483195441374097,
+    "migration_completion_percent": 60.544217687074834,
+    "migration_complete": false,
+    "hnsw_optimized": true,
+    "key_findings": [
+      "Migration 60.5% complete",
+      "Final performance improvement: -0.9%",
+      "HNSW optimization: 37.4% additional improvement"
+    ]
+  }
+}

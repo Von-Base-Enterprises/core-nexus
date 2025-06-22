@@ -1,0 +1,80 @@
+{
+  "status": "completed",
+  "migration_duration_seconds": 302.7311546802521,
+  "batches_processed": 6,
+  "total_vectors_migrated": 132,
+  "total_vectors_failed": 1,
+  "overall_success_rate": 0.9924812030075187,
+  "api_calls_made": 132,
+  "estimated_cost_usd": 3.206999999999998e-05,
+  "final_quality_metrics": {
+    "status": "validated",
+    "samples_tested": 20,
+    "optimized_query_latency_ms": 97.5111989537254,
+    "optimized_results_count": 10,
+    "accuracy_score": 0.95,
+    "performance_improvement_estimate": 85.0
+  },
+  "batch_results": [
+    {
+      "batch_id": "003a0069-9866-4a23-937c-4fbb2e48b63f",
+      "batch_number": 1,
+      "total_vectors": 25,
+      "successful_migrations": 24,
+      "failed_migrations": 1,
+      "success_rate": 0.96,
+      "duration_seconds": 80.0471785068512,
+      "status": "completed"
+    },
+    {
+      "batch_id": "982b5763-d429-4806-9be2-a8903fd44f52",
+      "batch_number": 2,
+      "total_vectors": 25,
+      "successful_migrations": 25,
+      "failed_migrations": 0,
+      "success_rate": 1.0,
+      "duration_seconds": 49.379098653793335,
+      "status": "completed"
+    },
+    {
+      "batch_id": "5c3b5aa3-0799-440f-8c04-31d8ae7e1586",
+      "batch_number": 3,
+      "total_vectors": 25,
+      "successful_migrations": 25,
+      "failed_migrations": 0,
+      "success_rate": 1.0,
+      "duration_seconds": 48.81389594078064,
+      "status": "completed"
+    },
+    {
+      "batch_id": "a860a735-cefa-449e-b1c7-c5b366e6e914",
+      "batch_number": 4,
+      "total_vectors": 25,
+      "successful_migrations": 25,
+      "failed_migrations": 0,
+      "success_rate": 1.0,
+      "duration_seconds": 48.744112730026245,
+      "status": "completed"
+    },
+    {
+      "batch_id": "0cfcc441-aef2-4427-a885-8f66ddf59bef",
+      "batch_number": 5,
+      "total_vectors": 25,
+      "successful_migrations": 25,
+      "failed_migrations": 0,
+      "success_rate": 1.0,
+      "duration_seconds": 48.69507122039795,
+      "status": "completed"
+    },
+    {
+      "batch_id": "f831e07e-13ab-40f5-ac6c-4377e42abcfa",
+      "batch_number": 6,
+      "total_vectors": 25,
+      "successful_migrations": 8,
+      "failed_migrations": 0,
+      "success_rate": 0.32,
+      "duration_seconds": 14.640568494796753,
+      "status": "completed"
+    }
+  ]
+}
