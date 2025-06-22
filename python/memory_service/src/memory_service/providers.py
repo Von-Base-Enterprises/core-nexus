@@ -497,20 +497,32 @@ class PgVectorProvider(VectorProvider):
 
                 where_clause = f"WHERE {' AND '.join(where_clauses)}"
 
-                # Query with proper vector casting
+                # PARETO PERFORMANCE FIX: Eliminate duplicate vector calculations
+                # Calculate distance once in subquery, sort by calculated distance
                 query = f"""
                     SELECT
                         id,
                         content,
                         embedding,
                         metadata,
-                        COALESCE(importance_score, 0.5) as importance_score,
-                        (embedding <=> $1::vector) as distance,
+                        importance_score,
+                        distance,
                         created_at,
                         updated_at
-                    FROM {self.table_name}
-                    {where_clause}
-                    ORDER BY embedding <=> $1::vector
+                    FROM (
+                        SELECT
+                            id,
+                            content,
+                            embedding,
+                            metadata,
+                            COALESCE(importance_score, 0.5) as importance_score,
+                            (embedding <=> $1::vector) as distance,
+                            created_at,
+                            updated_at
+                        FROM {self.table_name}
+                        {where_clause}
+                    ) ranked
+                    ORDER BY distance
                     LIMIT ${param_count}
                 """
                 params.append(limit)
@@ -518,14 +530,8 @@ class PgVectorProvider(VectorProvider):
                 try:
                     # Execute query with array parameter
                     try:
-                        # Log the exact types being passed
-                        logger.info(f"Query embedding type: {type(query_embedding_list)}")
-                        logger.info(f"Query embedding length: {len(query_embedding_list)}")
-                        logger.info(f"First element type: {type(query_embedding_list[0])}")
-                        logger.info(f"Numpy optimization: enabled")
-                        logger.info(f"Table name: {self.table_name}")  # Check which table
-                        logger.info(f"Generated query: {query}")  # See the actual SQL
-                        logger.info(f"Total params: {len(params)}")  # Verify param count
+                        # Minimal logging for performance
+                        logger.debug(f"Executing vector query on {self.table_name} with {len(query_embedding_list)}D embedding")
                         
                         rows = await conn.fetch(query, *params)
                     except Exception as e:
