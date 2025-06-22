@@ -320,13 +320,20 @@ class UnifiedVectorStore:
         start_time = time.time()
 
         try:
-            # Check cache first (simple key based on query + filters)
-            cache_key = self._get_cache_key(request)
-            if cache_key in self.query_cache:
-                cached_result = self.query_cache[cache_key]
-                if time.time() - cached_result['timestamp'] < 300:  # 5 min cache
-                    logger.debug(f"Cache hit for query: {request.query[:50]}...")
-                    return cached_result['response']
+            # DEBUGGING: Add comprehensive logging
+            logger.info(f"🔍 QUERY PROCESSING: '{request.query}' (length: {len(request.query) if request.query else 0})")
+            logger.info(f"   Filters: {request.filters}")
+            logger.info(f"   Limit: {request.limit}")
+            logger.info(f"   Primary provider: {self.primary_provider.name if self.primary_provider else 'None'}")
+            logger.info(f"   Graph provider enabled: {self.graph_provider.enabled if self.graph_provider else False}")
+            
+            # TEMPORARILY DISABLE CACHE to debug routing issues
+            # cache_key = self._get_cache_key(request)
+            # if cache_key in self.query_cache:
+            #     cached_result = self.query_cache[cache_key]
+            #     if time.time() - cached_result['timestamp'] < 300:  # 5 min cache
+            #         logger.debug(f"Cache hit for query: {request.query[:50]}...")
+            #         return cached_result['response']
 
             # EMERGENCY FIX: If empty query, use bulletproof emergency retrieval
             if not request.query or request.query.strip() == "":
@@ -407,12 +414,24 @@ class UnifiedVectorStore:
             use_graph_provider = False
             graph_memories = []
             
+            # DEBUGGING: Detailed conditional analysis
+            logger.info(f"🔬 CONDITIONAL ANALYSIS:")
+            logger.info(f"   Graph provider exists: {self.graph_provider is not None}")
+            logger.info(f"   Graph provider enabled: {self.graph_provider.enabled if self.graph_provider else False}")
+            logger.info(f"   Request filters exist: {request.filters is not None}")
+            logger.info(f"   Request filters content: {request.filters}")
+            logger.info(f"   Filters length > 0: {len(request.filters) > 0 if request.filters else False}")
+            
             # Graph provider should ONLY be used for explicit entity relationship queries
             if (self.graph_provider and self.graph_provider.enabled and 
                 request.filters and len(request.filters) > 0):
+                logger.info("🔬 ENTERING GRAPH PROVIDER CONDITIONAL BLOCK")
+                
                 # Check for explicit entity filters
                 entity_filters = {k: v for k, v in request.filters.items() 
                                 if k in ['entity_name', 'entity_type', 'relationship_type']}
+                logger.info(f"   Entity filters extracted: {entity_filters}")
+                logger.info(f"   Entity filters has values: {any(v for v in entity_filters.values() if v) if entity_filters else False}")
                 
                 # ONLY use graph if we have actual entity filters with values
                 if entity_filters and any(v for v in entity_filters.values() if v):
@@ -520,11 +539,11 @@ class UnifiedVectorStore:
                 providers_used=providers_used
             )
 
-            # Cache result
-            self.query_cache[cache_key] = {
-                'response': response,
-                'timestamp': time.time()
-            }
+            # TEMPORARILY DISABLE CACHING to debug routing issues
+            # self.query_cache[cache_key] = {
+            #     'response': response,
+            #     'timestamp': time.time()
+            # }
 
             logger.info(f"Query returned {len(filtered_memories)} memories in {query_time:.1f}ms")
             return response
