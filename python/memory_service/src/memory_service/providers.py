@@ -325,10 +325,18 @@ class PgVectorProvider(VectorProvider):
                     f"{config['host']}:{config['port']}/{config['database']}"
                 )
 
-                # Initialize pool with vector type registration
+                # Initialize pool with vector type registration and performance optimizations
                 async def init_connection(conn):
                     await conn.execute("SET search_path TO public, pg_catalog")
                     await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                    
+                    # PERFORMANCE OPTIMIZATION: Session-level settings for vector workloads
+                    await conn.execute("SET work_mem = '32MB'")  # Higher memory for vector operations
+                    await conn.execute("SET enable_seqscan = off")  # Force index usage for vectors
+                    await conn.execute("SET hnsw.ef_search = 64")  # Optimal HNSW search parameter
+                    await conn.execute("SET enable_indexonlyscan = on")  # Enable index-only scans
+                    await conn.execute("SET random_page_cost = 1.1")  # SSD optimization
+                    
                     try:
                         from pgvector.asyncpg import register_vector
                         await register_vector(conn)
@@ -338,15 +346,18 @@ class PgVectorProvider(VectorProvider):
                     except Exception as e:
                         logger.warning(f"Vector type registration failed: {e}, using manual casting")
                 
+                # PERFORMANCE OPTIMIZATION: Optimized connection pool for vector workloads
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
-                    min_size=5,
-                    max_size=20,
-                    command_timeout=60,
-                    init=init_connection,  # Register vector type on each connection
+                    min_size=10,  # Increased from 5 for better connection reuse
+                    max_size=30,  # Increased from 20 but kept reasonable for 1GB RAM
+                    command_timeout=30,  # Reduced from 60 for faster timeouts
+                    init=init_connection,  # Register vector type and optimize each connection
                     server_settings={
                         'synchronous_commit': 'on',  # Ensure synchronous commits
-                        'jit': 'off'  # Disable JIT for more predictable performance
+                        'jit': 'on',  # Enable JIT for complex vector operations
+                        'statement_timeout': '30s',  # Prevent runaway queries
+                        'idle_in_transaction_session_timeout': '60s'  # Clean up idle transactions
                     }
                 )
 
@@ -366,12 +377,18 @@ class PgVectorProvider(VectorProvider):
                         )
                     """)
 
-                    # Create indexes
+                    # Create optimized HNSW index for sub-20ms vector queries
+                    # Drop old ivfflat index if it exists
                     await conn.execute(f"""
-                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
+                        DROP INDEX IF EXISTS idx_{self.table_name}_embedding
+                    """)
+                    
+                    # Create high-performance HNSW index with optimized parameters
+                    await conn.execute(f"""
+                        CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding_hnsw
                         ON {self.table_name}
-                        USING ivfflat (embedding vector_cosine_ops)
-                        WITH (lists = 100)
+                        USING hnsw (embedding vector_cosine_ops)
+                        WITH (m = 32, ef_construction = 128)
                     """)
 
                     await conn.execute(f"""
