@@ -1,0 +1,23 @@
+{
+  "system_info": {
+    "python_version": "3.10.12 (main, May 27 2025, 17:12:29) [GCC 11.4.0]",
+    "working_directory": "/mnt/c/Users/Tyvon/core-nexus",
+    "timestamp": 1750574109.5602906
+  },
+  "environment_variables": {
+    "PGVECTOR_HOST": "not_set",
+    "PGVECTOR_PORT": "not_set",
+    "PGVECTOR_DATABASE": "not_set",
+    "PGVECTOR_USER": "not_set",
+    "PGVECTOR_PASSWORD": "not_set"
+  },
+  "dependency_status": {
+    "fastapi": "available",
+    "uvicorn": "available",
+    "asyncpg": "available",
+    "pgvector": "available",
+    "numpy": "available",
+    "openai": "available"
+  },
+  "database_config": {}
+}
