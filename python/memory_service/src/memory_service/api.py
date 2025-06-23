@@ -1053,6 +1053,11 @@ def create_memory_app() -> FastAPI:
             
             # Use the correct location for total_memories from health data
             total_memories = health_data.get('stats', {}).get('total_stores', 0)
+            
+            # DEBUG: Log the health_data structure to understand the issue
+            logger.info(f"DEBUG health_data keys: {list(health_data.keys())}")
+            logger.info(f"DEBUG stats content: {health_data.get('stats', 'MISSING')}")
+            logger.info(f"DEBUG total_memories extracted: {total_memories}")
             provider_counts = {}
             
             # Calculate provider-specific counts
