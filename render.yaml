@@ -48,6 +48,8 @@ services:
         value: nexus_memory_db
       - key: PGVECTOR_USER
         value: nexus_memory_db_user
+      - key: TABLE_NAME
+        value: vector_memories_optimized  # OPTIMIZATION: Use 1,536D vectors
       # PGVECTOR_PASSWORD must be set in the dashboard for security
 
   # Keep-alive Background Worker
