@@ -1051,8 +1051,8 @@ def create_memory_app() -> FastAPI:
             # Get basic health data
             health_data = await store.health_check()
             
-            # Use the top-level total_memories from health data if available
-            total_memories = health_data.get('total_memories', 0)
+            # Use the correct location for total_memories from health data
+            total_memories = health_data.get('stats', {}).get('total_stores', 0)
             provider_counts = {}
             
             # Calculate provider-specific counts
