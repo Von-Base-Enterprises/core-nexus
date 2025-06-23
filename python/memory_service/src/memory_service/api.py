@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
             "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
             "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
             "password": pgvector_password,
-            "table_name": "vector_memories",
+            "table_name": os.getenv("TABLE_NAME", "vector_memories"),
             "embedding_dim": 1536,
             "distance_metric": "cosine"
         }
@@ -4437,7 +4437,7 @@ def create_memory_app() -> FastAPI:
                             "database": database,
                             "user": user,
                             "password": password,
-                            "table_name": "vector_memories",
+                            "table_name": os.getenv("TABLE_NAME", "vector_memories"),
                             "embedding_dim": 1536,
                             "distance_metric": "cosine"
                         }
