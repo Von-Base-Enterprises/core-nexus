@@ -160,35 +160,44 @@ class JarvisSupervisor:
             }
         )
         
-        # Analysis agent can go to planning or back to supervisor
+        # Analysis agent can go directly to planning or decision (linear flow)
         workflow.add_conditional_edges(
             "analysis",
-            self._should_continue_analysis,
+            self._analysis_next_step,
             {
                 "planning": "planning",
+                "decision_maker": "decision_maker",
                 "supervisor": "supervisor",
                 "end": END
             }
         )
         
-        # Planning agent returns to supervisor for decision
-        workflow.add_edge("planning", "supervisor")
+        # Planning agent can go directly to decision maker (eliminate ping-pong)
+        workflow.add_conditional_edges(
+            "planning",
+            self._planning_next_step,
+            {
+                "decision_maker": "decision_maker",
+                "supervisor": "supervisor",
+                "end": END
+            }
+        )
         
-        # Memory sync returns to supervisor
+        # Memory sync returns to supervisor (keep minimal for now)
         workflow.add_edge("memory_sync", "supervisor")
         
-        # Decision maker can trigger self-improvement or end
+        # Decision maker only triggers self-improvement when truly needed
         workflow.add_conditional_edges(
             "decision_maker",
-            self._should_self_improve,
+            self._should_trigger_self_improvement,
             {
                 "self_improvement": "self_improvement",
                 "end": END
             }
         )
         
-        # Self-improvement returns to supervisor for next iteration
-        workflow.add_edge("self_improvement", "supervisor")
+        # Self-improvement goes directly to END (no more cycles)
+        workflow.add_edge("self_improvement", END)
         
         return workflow
     
@@ -247,26 +256,53 @@ class JarvisSupervisor:
             }
     
     async def _analysis_node(self, state: JarvisState) -> Dict[str, Any]:
-        """Analysis agent node - system analysis and monitoring"""
+        """Analysis agent node - system analysis and monitoring with integrated memory access"""
         try:
-            self.logger.info("Analysis node processing")
+            self.logger.info("Analysis node processing with integrated memory access")
             
             # Get analysis agent
             analysis_agent = self.agents["analysis"]
             
-            # Get current system stats
+            # INTEGRATED MEMORY ACCESS - eliminate separate memory_sync cycles
             bridge = await get_bridge()
+            
+            # Get system stats and health
             system_stats = await bridge.get_stats()
             health_status = await bridge.health_check()
             
-            # Prepare analysis context
+            # Fetch relevant memories for context (integrated memory sync)
+            task = state.get("current_task", "")
+            relevant_memories = await bridge.get_contextual_memories(task, limit=3)
+            analysis_memories = await bridge.get_memories_by_agent_type("analysis", limit=2)
+            
+            self.logger.info("Analysis with integrated memory access",
+                           system_memories=len(relevant_memories),
+                           analysis_memories=len(analysis_memories))
+            
+            # Prepare enriched analysis context with integrated memory
             context = f"""
             Current System Statistics: {system_stats}
             Health Status: {health_status}
             Task Context: {state.get('task_context', {})}
             
-            Please analyze the current system state and provide insights.
+            Relevant Context from Memory: 
+            {[mem.get('content', '')[:100] + '...' for mem in relevant_memories[:2]]}
+            
+            Previous Analysis Insights:
+            {[mem.get('content', '')[:100] + '...' for mem in analysis_memories[:1]]}
+            
+            Please analyze the current system state and provide insights, considering the historical context.
             """
+            
+            # Store enhanced state with memory integration
+            enhanced_state = state.copy()
+            enhanced_state["relevant_memories"] = relevant_memories
+            enhanced_state["analysis_context"] = {
+                "system_stats": system_stats,
+                "health_status": health_status,
+                "relevant_memories_count": len(relevant_memories),
+                "analysis_memories_count": len(analysis_memories)
+            }
             
             # Get analysis
             result = await analysis_agent.think_and_respond(
@@ -310,9 +346,9 @@ class JarvisSupervisor:
             }
     
     async def _planning_node(self, state: JarvisState) -> Dict[str, Any]:
-        """Planning agent node - strategic planning and optimization"""
+        """Planning agent node - strategic planning and optimization with integrated memory access"""
         try:
-            self.logger.info("Planning node processing")
+            self.logger.info("Planning node processing with integrated memory access")
             
             # Get planning agent
             planning_agent = self.agents["planning"]
@@ -320,13 +356,31 @@ class JarvisSupervisor:
             # Get analysis results for context
             analysis_output = state.get("agent_outputs", {}).get("analysis", {})
             
-            # Prepare planning context
+            # INTEGRATED MEMORY ACCESS - fetch relevant planning context
+            bridge = await get_bridge()
+            task = state.get("current_task", "")
+            
+            # Get relevant planning memories and high-confidence decisions
+            planning_memories = await bridge.get_memories_by_agent_type("planning", limit=2)
+            high_confidence_decisions = await bridge.get_high_confidence_decisions(min_confidence=0.7, limit=2)
+            
+            self.logger.info("Planning with integrated memory access",
+                           planning_memories=len(planning_memories),
+                           high_confidence_decisions=len(high_confidence_decisions))
+            
+            # Prepare enriched planning context with memory insights
             context = f"""
             Current Task: {state.get('current_task')}
             Analysis Results: {analysis_output}
             System Insights: {state.get('system_insights', [])}
             
-            Based on the analysis, create a strategic plan for improvement.
+            Previous Planning Strategies:
+            {[mem.get('content', '')[:150] + '...' for mem in planning_memories[:1]]}
+            
+            High-Confidence Past Decisions:
+            {[mem.get('content', '')[:100] + '...' for mem in high_confidence_decisions[:1]]}
+            
+            Based on the analysis and historical context, create a strategic plan for improvement.
             """
             
             # Get planning recommendations
@@ -498,72 +552,154 @@ class JarvisSupervisor:
             }
     
     def _route_next_agent(self, state: JarvisState) -> str:
-        """Route to the next agent based on supervisor decision"""
+        """Intelligent routing based on task completion state and workflow efficiency"""
         completed_agents = state.get("completed_agents", [])
         supervisor_decision = state.get("supervisor_decision", "").lower()
         iteration_count = state.get("iteration_count", 0)
+        agent_outputs = state.get("agent_outputs", {})
         
-        self.logger.info("Routing decision analysis",
+        self.logger.info("Supervisor routing analysis",
                         iteration=iteration_count,
                         completed_agents=completed_agents,
-                        supervisor_decision=supervisor_decision[:100],
-                        max_iterations=config.max_iterations)
+                        available_outputs=list(agent_outputs.keys()),
+                        decision_preview=supervisor_decision[:100])
         
-        # If we've done too many iterations, end
+        # Emergency termination - too many iterations
         if iteration_count > config.max_iterations:
-            self.logger.warning("Max iterations exceeded, ending workflow",
+            self.logger.warning("Max iterations exceeded, forcing termination",
                               iteration=iteration_count,
                               max_allowed=config.max_iterations)
-            return "end"
+            return "decision_maker"  # Force decision with available info
         
-        # Route based on what hasn't been done yet and supervisor decision
-        if "analysis" not in completed_agents and ("analyze" in supervisor_decision or "analysis" in supervisor_decision):
+        # OPTIMIZATION: Early termination for simple tasks
+        if iteration_count <= 2 and len(completed_agents) == 0:
+            # First supervisor call - decide complexity
+            if any(word in supervisor_decision for word in ["simple", "quick", "status", "check"]):
+                self.logger.info("Simple task detected, skipping analysis")
+                return "decision_maker"
+        
+        # STATE-BASED ROUTING (not keyword-based)
+        analysis_complete = "analysis" in completed_agents
+        planning_complete = "planning" in completed_agents
+        
+        # Progressive workflow logic
+        if not analysis_complete and iteration_count < 6:
+            # Need analysis first
             next_route = "analysis"
-        elif "planning" not in completed_agents and ("plan" in supervisor_decision or "planning" in supervisor_decision):
-            next_route = "planning"
-        elif "memory" in supervisor_decision or "sync" in supervisor_decision:
-            next_route = "memory_sync"
-        elif len(completed_agents) >= 2:  # If we have enough information, make decision
+            reason = "analysis_required"
+        elif analysis_complete and not planning_complete and iteration_count < 6:
+            # Analysis done, check if planning needed
+            analysis_confidence = agent_outputs.get("analysis", {}).get("confidence", 0)
+            if analysis_confidence > 0.8 and "simple" in supervisor_decision:
+                next_route = "decision_maker"
+                reason = "high_confidence_skip_planning"
+            else:
+                next_route = "planning"
+                reason = "planning_required"
+        elif analysis_complete or planning_complete:
+            # At least one major agent completed - ready for decision
             next_route = "decision_maker"
+            reason = "sufficient_information_for_decision"
+        elif "memory" in supervisor_decision and "memory_sync" not in completed_agents:
+            # Explicit memory request
+            next_route = "memory_sync"
+            reason = "explicit_memory_request"
         else:
-            next_route = "end"
+            # Fallback - make decision with available information
+            next_route = "decision_maker"
+            reason = "fallback_decision_with_available_info"
         
-        self.logger.info("Route decision made",
+        self.logger.info("Supervisor routing decision",
                         next_agent=next_route,
-                        reasoning=f"Completed: {completed_agents}, Decision contains: {[word for word in ['analyze', 'analysis', 'plan', 'planning', 'memory', 'sync'] if word in supervisor_decision]}")
+                        reason=reason,
+                        analysis_complete=analysis_complete,
+                        planning_complete=planning_complete,
+                        workflow_efficiency=f"{iteration_count} iterations")
         
         return next_route
     
-    def _should_continue_analysis(self, state: JarvisState) -> str:
-        """Decide if analysis should continue to planning"""
+    def _analysis_next_step(self, state: JarvisState) -> str:
+        """Intelligent routing after analysis - linear workflow optimization"""
         analysis_output = state.get("agent_outputs", {}).get("analysis", {})
         confidence = analysis_output.get("confidence", 0)
+        completed_agents = state.get("completed_agents", [])
+        iteration_count = state.get("iteration_count", 0)
         
-        next_step = "planning" if confidence > 0.7 else "supervisor"
+        # High confidence analysis - skip planning for simple tasks
+        if confidence > 0.85 and iteration_count <= 3:
+            next_step = "decision_maker"
+            reason = "high_confidence_direct_decision"
+        # Normal confidence - proceed to planning
+        elif confidence > 0.6:
+            next_step = "planning"
+            reason = "normal_flow_to_planning"
+        # Low confidence - return to supervisor for additional context
+        elif confidence <= 0.6 and iteration_count < 5:
+            next_step = "supervisor"
+            reason = "low_confidence_need_context"
+        else:
+            # Fallback - make decision with available info
+            next_step = "decision_maker"
+            reason = "fallback_make_decision"
         
-        self.logger.info("Analysis continuation decision",
+        self.logger.info("Analysis routing decision",
                         confidence=confidence,
-                        threshold=0.7,
-                        next_step=next_step)
+                        iteration=iteration_count,
+                        completed_agents=completed_agents,
+                        next_step=next_step,
+                        reason=reason)
         
         return next_step
     
-    def _should_self_improve(self, state: JarvisState) -> str:
-        """Decide if self-improvement should be triggered"""
+    def _planning_next_step(self, state: JarvisState) -> str:
+        """Intelligent routing after planning - direct to decision maker"""
+        planning_output = state.get("agent_outputs", {}).get("planning", {})
+        analysis_output = state.get("agent_outputs", {}).get("analysis", {})
+        confidence = planning_output.get("confidence", 0)
         iteration_count = state.get("iteration_count", 0)
         
-        if config.self_improvement_enabled:
-            # Trigger self-improvement every few iterations
-            should_improve = iteration_count > 0 and iteration_count % 3 == 0
-            next_step = "self_improvement" if should_improve else "end"
+        # Most planning should go directly to decision maker (eliminate ping-pong)
+        if confidence > 0.5 or iteration_count > 4:
+            next_step = "decision_maker"
+            reason = "planning_complete_make_decision"
+        else:
+            # Only return to supervisor if planning is insufficient and we have room for iteration
+            next_step = "supervisor"
+            reason = "planning_insufficient_need_supervisor"
+        
+        self.logger.info("Planning routing decision",
+                        planning_confidence=confidence,
+                        analysis_confidence=analysis_output.get("confidence", 0),
+                        iteration=iteration_count,
+                        next_step=next_step,
+                        reason=reason)
+        
+        return next_step
+    
+    def _should_trigger_self_improvement(self, state: JarvisState) -> str:
+        """Decide if self-improvement should be triggered - ONLY after decision completion"""
+        iteration_count = state.get("iteration_count", 0)
+        agent_outputs = state.get("agent_outputs", {})
+        task_complexity = len(agent_outputs)  # Simple heuristic
+        
+        # Only trigger self-improvement for complex tasks that warrant learning
+        if (config.self_improvement_enabled and 
+            iteration_count >= 5 and  # Only for workflows that actually needed multiple steps
+            task_complexity >= 3 and  # Only for tasks that involved multiple agents
+            iteration_count % 7 == 0):  # Much less frequent than every 3 iterations
+            
+            next_step = "self_improvement"
+            reason = "complex_task_learning_opportunity"
         else:
             next_step = "end"
+            reason = "simple_task_or_learning_not_needed"
         
         self.logger.info("Self-improvement decision",
                         iteration=iteration_count,
+                        task_complexity=task_complexity,
                         self_improvement_enabled=config.self_improvement_enabled,
-                        trigger_condition=f"iteration % 3 == 0",
-                        next_step=next_step)
+                        next_step=next_step,
+                        reason=reason)
         
         return next_step
     

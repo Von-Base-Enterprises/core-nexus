@@ -200,7 +200,7 @@ class CoreNexusBridge:
                 "filters": {"source": "jarvis"}  # Server-side filtering
             }
             
-            response = await self.client.post("/memories/query", json=query_data)
+            response = await self.client.post(f"{self.base_url}/memories/query", json=query_data)
             
             if response.status_code == 200:
                 data = response.json()
@@ -257,7 +257,7 @@ class CoreNexusBridge:
                 }
             }
             
-            response = await self.client.post("/memories/query", json=query_data)
+            response = await self.client.post(f"{self.base_url}/memories/query", json=query_data)
             
             if response.status_code == 200:
                 data = response.json()
@@ -291,7 +291,7 @@ class CoreNexusBridge:
                 }
             }
             
-            response = await self.client.post("/memories/query", json=query_data)
+            response = await self.client.post(f"{self.base_url}/memories/query", json=query_data)
             
             if response.status_code == 200:
                 data = response.json()
