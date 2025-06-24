@@ -135,18 +135,28 @@ class CoreNexusBridge:
     async def get_recent_jarvis_memories(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get recent JARVIS-specific memories"""
         try:
-            # Search for JARVIS-specific memories
-            memories = await self.search_memories("source:jarvis", limit=limit)
+            # Search for JARVIS-related content (content-based search)
+            memories = await self.search_memories("JARVIS", limit=limit * 3)  # Get more to filter
             
-            # Filter and sort by JARVIS metadata
+            # Filter for JARVIS-specific memories by metadata
             jarvis_memories = []
             for memory in memories:
                 metadata = memory.get("metadata", {})
-                if metadata.get("source") == "jarvis":
+                content = memory.get("content", "").lower()
+                
+                # Check if memory is JARVIS-related by metadata or content
+                if (metadata.get("source") == "jarvis" or 
+                    metadata.get("agent_type") in ["supervisor", "analysis", "planning", "self_improvement"] or
+                    "jarvis" in content):
                     jarvis_memories.append(memory)
             
-            # Sort by timestamp (most recent first)
-            jarvis_memories.sort(key=lambda x: x.get("metadata", {}).get("timestamp", ""), reverse=True)
+            # Sort by created_at timestamp (most recent first)
+            jarvis_memories.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            
+            self.logger.info("Retrieved JARVIS memories", 
+                           total_searched=len(memories),
+                           jarvis_filtered=len(jarvis_memories),
+                           limit=limit)
             
             return jarvis_memories[:limit]
             
