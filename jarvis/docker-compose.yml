@@ -1,0 +1,71 @@
+# JARVIS Development Environment
+# Docker Compose configuration for local development
+
+version: '3.8'
+
+services:
+  jarvis:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app/src
+      - JARVIS_DEBUG=true
+      - JARVIS_LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://jarvis:jarvis_password@postgres:5432/jarvis_state
+      - REDIS_URL=redis://redis:6379
+      - CORE_NEXUS_URL=https://core-nexus-memory-service.onrender.com
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./src:/app/src
+      - ./.env:/app/.env
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=jarvis_state
+      - POSTGRES_USER=jarvis
+      - POSTGRES_PASSWORD=jarvis_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+
+  # Optional: Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - jarvis-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  jarvis-network:
+    driver: bridge

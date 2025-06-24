@@ -99,3 +99,25 @@ services:
         value: admin123
       - key: PROMETHEUS_URL
         value: https://core-nexus-prometheus.onrender.com
+  # JARVIS AI Agent Service
+  - type: web
+    name: jarvis-ai-agent
+    env: python
+    region: oregon
+    plan: starter
+    branch: main
+    rootDir: jarvis
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m jarvis.main --mode api
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false  # Set this in Render dashboard for security
+      - key: CORE_NEXUS_URL
+        value: https://core-nexus-memory-service.onrender.com
+      - key: JARVIS_DEBUG
+        value: "false"
+      - key: JARVIS_LOG_LEVEL
+        value: "INFO"
+      - key: LANGGRAPH_CHECKPOINT_BACKEND
+        value: "memory"
