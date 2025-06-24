@@ -22,6 +22,21 @@ from .core_nexus_bridge import get_bridge, JarvisMemory
 logger = structlog.get_logger(__name__)
 config = get_config()
 
+# Helper functions for datetime handling in JSON-serializable state
+def now_iso() -> str:
+    """Get current UTC timestamp as ISO string for JSON serialization"""
+    return datetime.now(timezone.utc).isoformat()
+
+def parse_iso_datetime(iso_string: str) -> datetime:
+    """Parse ISO timestamp string back to datetime object"""
+    return datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+
+def calculate_duration(start_iso: str, end_iso: Optional[str] = None) -> float:
+    """Calculate duration in seconds between ISO timestamp strings"""
+    start_dt = parse_iso_datetime(start_iso)
+    end_dt = datetime.now(timezone.utc) if end_iso is None else parse_iso_datetime(end_iso)
+    return (end_dt - start_dt).total_seconds()
+
 # State definition for JARVIS workflow
 class JarvisState(TypedDict):
     """JARVIS workflow state"""
@@ -44,10 +59,10 @@ class JarvisState(TypedDict):
     supervisor_decision: str
     agent_outputs: Dict[str, Any]
     
-    # Metadata
+    # Metadata (using ISO strings for JSON serialization)
     iteration_count: int
-    start_time: datetime
-    last_update: datetime
+    start_time: str  # ISO timestamp string
+    last_update: str  # ISO timestamp string
     
     # Self-improvement tracking
     learning_opportunities: List[str]
@@ -210,7 +225,7 @@ class JarvisSupervisor:
             updates = {
                 "supervisor_decision": result.final_response,
                 "messages": [AIMessage(content=result.final_response, name="supervisor")],
-                "last_update": datetime.now(timezone.utc),
+                "last_update": now_iso(),
                 "iteration_count": state.get("iteration_count", 0) + 1
             }
             
@@ -272,7 +287,7 @@ class JarvisSupervisor:
                 "system_insights": state.get("system_insights", []) + [analysis_output],
                 "completed_agents": state.get("completed_agents", []) + ["analysis"],
                 "messages": [AIMessage(content=result.final_response, name="analysis")],
-                "last_update": datetime.now(timezone.utc)
+                "last_update": now_iso()
             }
             
             # Store analysis insights
@@ -333,7 +348,7 @@ class JarvisSupervisor:
                 "completed_agents": state.get("completed_agents", []) + ["planning"],
                 "messages": [AIMessage(content=result.final_response, name="planning")],
                 "improvement_suggestions": state.get("improvement_suggestions", []) + [result.final_response],
-                "last_update": datetime.now(timezone.utc)
+                "last_update": now_iso()
             }
             
             # Store planning insights
@@ -375,7 +390,7 @@ class JarvisSupervisor:
                 "relevant_memories": relevant_memories,
                 "completed_agents": state.get("completed_agents", []) + ["memory_sync"],
                 "messages": [SystemMessage(content=f"Synced {len(relevant_memories)} relevant memories")],
-                "last_update": datetime.now(timezone.utc)
+                "last_update": now_iso()
             }
             
             self.logger.info("Memory sync completed", 
@@ -421,7 +436,7 @@ class JarvisSupervisor:
                     "reasoning": result.reasoning_steps
                 }},
                 "messages": [AIMessage(content=f"Final Decision: {result.final_response}", name="decision_maker")],
-                "last_update": datetime.now(timezone.utc)
+                "last_update": now_iso()
             }
             
             self.logger.info("Final decision made", 
@@ -441,13 +456,14 @@ class JarvisSupervisor:
             self.logger.info("Self-improvement node processing")
             
             # Analyze the entire workflow for learning opportunities
+            start_time_iso = state.get("start_time", now_iso())
             workflow_analysis = {
                 "iteration_count": state.get("iteration_count", 0),
                 "agents_used": state.get("completed_agents", []),
                 "decisions_made": state.get("agent_outputs", {}),
                 "task_completion": state.get("current_task", ""),
-                "start_time": state.get("start_time"),
-                "total_duration": (datetime.now(timezone.utc) - state.get("start_time", datetime.now(timezone.utc))).total_seconds()
+                "start_time": start_time_iso,
+                "total_duration": calculate_duration(start_time_iso)
             }
             
             # Use supervisor to identify improvements
@@ -468,7 +484,7 @@ class JarvisSupervisor:
             updates = {
                 "learning_opportunities": state.get("learning_opportunities", []) + result.reasoning_steps,
                 "messages": [AIMessage(content=f"Self-Improvement: {result.final_response}", name="self_improvement")],
-                "last_update": datetime.now(timezone.utc)
+                "last_update": now_iso()
             }
             
             self.logger.info("Self-improvement analysis completed")
@@ -487,41 +503,69 @@ class JarvisSupervisor:
         supervisor_decision = state.get("supervisor_decision", "").lower()
         iteration_count = state.get("iteration_count", 0)
         
+        self.logger.info("Routing decision analysis",
+                        iteration=iteration_count,
+                        completed_agents=completed_agents,
+                        supervisor_decision=supervisor_decision[:100],
+                        max_iterations=config.max_iterations)
+        
         # If we've done too many iterations, end
         if iteration_count > config.max_iterations:
+            self.logger.warning("Max iterations exceeded, ending workflow",
+                              iteration=iteration_count,
+                              max_allowed=config.max_iterations)
             return "end"
         
         # Route based on what hasn't been done yet and supervisor decision
         if "analysis" not in completed_agents and ("analyze" in supervisor_decision or "analysis" in supervisor_decision):
-            return "analysis"
+            next_route = "analysis"
         elif "planning" not in completed_agents and ("plan" in supervisor_decision or "planning" in supervisor_decision):
-            return "planning"
+            next_route = "planning"
         elif "memory" in supervisor_decision or "sync" in supervisor_decision:
-            return "memory_sync"
+            next_route = "memory_sync"
         elif len(completed_agents) >= 2:  # If we have enough information, make decision
-            return "decision_maker"
+            next_route = "decision_maker"
         else:
-            return "end"
+            next_route = "end"
+        
+        self.logger.info("Route decision made",
+                        next_agent=next_route,
+                        reasoning=f"Completed: {completed_agents}, Decision contains: {[word for word in ['analyze', 'analysis', 'plan', 'planning', 'memory', 'sync'] if word in supervisor_decision]}")
+        
+        return next_route
     
     def _should_continue_analysis(self, state: JarvisState) -> str:
         """Decide if analysis should continue to planning"""
         analysis_output = state.get("agent_outputs", {}).get("analysis", {})
         confidence = analysis_output.get("confidence", 0)
         
-        if confidence > 0.7:
-            return "planning"
-        else:
-            return "supervisor"
+        next_step = "planning" if confidence > 0.7 else "supervisor"
+        
+        self.logger.info("Analysis continuation decision",
+                        confidence=confidence,
+                        threshold=0.7,
+                        next_step=next_step)
+        
+        return next_step
     
     def _should_self_improve(self, state: JarvisState) -> str:
         """Decide if self-improvement should be triggered"""
+        iteration_count = state.get("iteration_count", 0)
+        
         if config.self_improvement_enabled:
             # Trigger self-improvement every few iterations
-            iteration_count = state.get("iteration_count", 0)
-            if iteration_count > 0 and iteration_count % 3 == 0:
-                return "self_improvement"
+            should_improve = iteration_count > 0 and iteration_count % 3 == 0
+            next_step = "self_improvement" if should_improve else "end"
+        else:
+            next_step = "end"
         
-        return "end"
+        self.logger.info("Self-improvement decision",
+                        iteration=iteration_count,
+                        self_improvement_enabled=config.self_improvement_enabled,
+                        trigger_condition=f"iteration % 3 == 0",
+                        next_step=next_step)
+        
+        return next_step
     
     async def _store_supervisor_insight(self, result, state: JarvisState):
         """Store supervisor insights in memory"""
@@ -546,6 +590,7 @@ class JarvisSupervisor:
             self.logger.info("Processing task", task=task)
             
             # Initialize state
+            current_time_iso = now_iso()
             initial_state = JarvisState(
                 messages=[HumanMessage(content=task)],
                 current_task=task,
@@ -557,8 +602,8 @@ class JarvisSupervisor:
                 supervisor_decision="",
                 agent_outputs={},
                 iteration_count=0,
-                start_time=datetime.now(timezone.utc),
-                last_update=datetime.now(timezone.utc),
+                start_time=current_time_iso,
+                last_update=current_time_iso,
                 learning_opportunities=[],
                 improvement_suggestions=[]
             )
@@ -572,11 +617,16 @@ class JarvisSupervisor:
             
             async for step in self.app.astream(initial_state, config_dict):
                 step_count += 1
-                self.logger.debug("Workflow step", step=step, step_count=step_count)
                 
                 # Each step is a dict with node_name: state_updates
                 for node_name, state_updates in step.items():
-                    self.logger.debug("Processing node updates", node=node_name, updates=list(state_updates.keys()))
+                    current_iteration = state_updates.get("iteration_count", accumulated_state.get("iteration_count", 0))
+                    
+                    self.logger.info("Workflow step execution",
+                                   step=step_count,
+                                   node=node_name,
+                                   iteration=current_iteration,
+                                   updates=list(state_updates.keys()))
                     
                     # Merge state updates into accumulated state
                     for key, value in state_updates.items():
@@ -617,7 +667,7 @@ class JarvisSupervisor:
                     "learning_opportunities": accumulated_state.get("learning_opportunities", []),
                     "improvement_suggestions": accumulated_state.get("improvement_suggestions", []),
                     "iterations": accumulated_state.get("iteration_count", 0),
-                    "duration": (datetime.now(timezone.utc) - initial_state["start_time"]).total_seconds()
+                    "duration": calculate_duration(initial_state["start_time"])
                 }
                 
                 self.logger.info("Workflow execution details",
