@@ -566,37 +566,77 @@ class JarvisSupervisor:
             # Execute the workflow
             config_dict = {"configurable": {"thread_id": f"jarvis-{datetime.now().isoformat()}"}}
             
-            final_state = None
-            async for step in self.app.astream(initial_state, config_dict):
-                self.logger.debug("Workflow step", step=step)
-                final_state = step
+            # Accumulate state from workflow stream
+            accumulated_state = initial_state.copy()
+            step_count = 0
             
-            # Extract the final result
-            if final_state:
-                # Get the last value from the stream
-                final_values = list(final_state.values())[-1]
+            async for step in self.app.astream(initial_state, config_dict):
+                step_count += 1
+                self.logger.debug("Workflow step", step=step, step_count=step_count)
                 
+                # Each step is a dict with node_name: state_updates
+                for node_name, state_updates in step.items():
+                    self.logger.debug("Processing node updates", node=node_name, updates=list(state_updates.keys()))
+                    
+                    # Merge state updates into accumulated state
+                    for key, value in state_updates.items():
+                        if key == "agent_outputs":
+                            # Merge agent outputs
+                            accumulated_state["agent_outputs"] = {
+                                **accumulated_state.get("agent_outputs", {}),
+                                **value
+                            }
+                        elif key == "completed_agents":
+                            # Merge completed agents list
+                            existing = accumulated_state.get("completed_agents", [])
+                            new_agents = [a for a in value if a not in existing]
+                            accumulated_state["completed_agents"] = existing + new_agents
+                        elif key == "learning_opportunities":
+                            # Merge learning opportunities
+                            accumulated_state["learning_opportunities"] = accumulated_state.get("learning_opportunities", []) + value
+                        elif key == "improvement_suggestions":
+                            # Merge improvement suggestions
+                            accumulated_state["improvement_suggestions"] = accumulated_state.get("improvement_suggestions", []) + value
+                        elif key == "system_insights":
+                            # Merge system insights
+                            accumulated_state["system_insights"] = accumulated_state.get("system_insights", []) + value
+                        elif key == "messages":
+                            # Append new messages
+                            accumulated_state["messages"] = accumulated_state.get("messages", []) + value
+                        else:
+                            # Direct update for other fields
+                            accumulated_state[key] = value
+            
+            # Extract the final result from accumulated state
+            if step_count > 0:
                 result = {
                     "success": True,
                     "task": task,
-                    "final_decision": final_values.get("agent_outputs", {}).get("final_decision"),
-                    "agent_outputs": final_values.get("agent_outputs", {}),
-                    "learning_opportunities": final_values.get("learning_opportunities", []),
-                    "improvement_suggestions": final_values.get("improvement_suggestions", []),
-                    "iterations": final_values.get("iteration_count", 0),
+                    "final_decision": accumulated_state.get("agent_outputs", {}).get("final_decision"),
+                    "agent_outputs": accumulated_state.get("agent_outputs", {}),
+                    "learning_opportunities": accumulated_state.get("learning_opportunities", []),
+                    "improvement_suggestions": accumulated_state.get("improvement_suggestions", []),
+                    "iterations": accumulated_state.get("iteration_count", 0),
                     "duration": (datetime.now(timezone.utc) - initial_state["start_time"]).total_seconds()
                 }
+                
+                self.logger.info("Workflow execution details",
+                               steps_executed=step_count,
+                               agents_completed=accumulated_state.get("completed_agents", []),
+                               has_final_decision=bool(accumulated_state.get("agent_outputs", {}).get("final_decision")),
+                               agent_outputs_keys=list(accumulated_state.get("agent_outputs", {}).keys()))
             else:
                 result = {
                     "success": False,
                     "task": task,
-                    "error": "No final state received from workflow"
+                    "error": "No workflow steps executed"
                 }
             
             self.logger.info("Task processing completed", 
                            task=task, 
                            success=result["success"], 
-                           duration=result.get("duration", 0))
+                           duration=result.get("duration", 0),
+                           final_decision_present=bool(result.get("final_decision")))
             
             return result
             
