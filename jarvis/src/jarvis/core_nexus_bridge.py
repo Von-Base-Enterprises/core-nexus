@@ -109,61 +109,218 @@ class CoreNexusBridge:
             raise
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    async def search_memories(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search memories in Core Nexus using semantic search"""
+    async def search_memories(self, query: str, limit: int = 10, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Search memories in Core Nexus with optional metadata filtering"""
         try:
-            params = {"query": query, "limit": limit}
+            # Use POST endpoint for advanced queries with metadata filtering
+            if filters:
+                query_data = {
+                    "query": query,
+                    "limit": limit,
+                    "filters": filters
+                }
+                
+                self.logger.info("Searching with metadata filters", 
+                               query=query[:50] if query else "metadata-only", 
+                               filters=filters, limit=limit)
+                
+                response = await self.client.post(f"{self.base_url}/memories/query", json=query_data)
+                response.raise_for_status()
+                result = response.json()
+                
+                memories = result.get("memories", [])
+                query_time = result.get("query_time_ms", 0)
+                
+                self.logger.info("Found memories with metadata filtering", 
+                               query=query[:30] if query else "metadata-only",
+                               filters=filters,
+                               count=len(memories),
+                               query_time_ms=query_time)
+                
+                return memories
+            else:
+                # Use original GET method for simple content searches (backward compatibility)
+                params = {"query": query, "limit": limit}
+                
+                self.logger.info("Searching Core Nexus memories (content-only)", 
+                               query=query, limit=limit)
+                
+                response = await self.client.get(f"{self.base_url}/memories", params=params)
+                response.raise_for_status()
+                result = response.json()
+                
+                memories = result.get("memories", [])
+                self.logger.info("Found memories in Core Nexus", 
+                               query=query, count=len(memories))
+                
+                return memories
             
-            self.logger.info("Searching Core Nexus memories", 
-                           query=query, limit=limit)
+        except Exception as e:
+            self.logger.error("Failed to search memories in Core Nexus", 
+                            error=str(e), query=query, filters=filters)
+            raise
+
+    async def query_memories_with_metadata(self, content_query: str = "", metadata_filters: Dict[str, Any] = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Combined content and metadata search for maximum flexibility"""
+        try:
+            query_data = {
+                "query": content_query,
+                "limit": limit
+            }
             
-            response = await self.client.get(f"{self.base_url}/memories", params=params)
+            if metadata_filters:
+                query_data["filters"] = metadata_filters
+                
+            response = await self.client.post(f"{self.base_url}/memories/query", json=query_data)
             response.raise_for_status()
             result = response.json()
             
             memories = result.get("memories", [])
-            self.logger.info("Found memories in Core Nexus", 
-                           query=query, count=len(memories))
+            
+            self.logger.info("Combined query completed", 
+                           content_query=bool(content_query),
+                           metadata_filters=bool(metadata_filters),
+                           memories_found=len(memories),
+                           total_found=result.get("total_found", 0),
+                           query_time_ms=result.get("query_time_ms", 0))
             
             return memories
-            
+                
         except Exception as e:
-            self.logger.error("Failed to search memories in Core Nexus", 
-                            error=str(e), query=query)
-            raise
+            self.logger.error("Combined query failed", error=str(e))
+            return []
     
     async def get_recent_jarvis_memories(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get recent JARVIS-specific memories"""
+        """Get recent JARVIS-specific memories using efficient metadata filtering"""
         try:
-            # Search for JARVIS-related content (content-based search)
-            memories = await self.search_memories("JARVIS", limit=limit * 3)  # Get more to filter
+            # Use server-side metadata filtering for maximum efficiency
+            query_data = {
+                "query": "",  # Empty query for pure metadata filtering
+                "limit": limit,
+                "filters": {"source": "jarvis"}  # Server-side filtering
+            }
             
-            # Filter for JARVIS-specific memories by metadata
+            response = await self.client.post("/memories/query", json=query_data)
+            
+            if response.status_code == 200:
+                data = response.json()
+                memories = data.get("memories", [])
+                
+                self.logger.info("Retrieved JARVIS memories via metadata filtering", 
+                               memories_found=len(memories),
+                               total_in_db=data.get("total_found", 0),
+                               query_time_ms=data.get("query_time_ms", 0))
+                
+                return memories
+            else:
+                self.logger.error("Failed to query JARVIS memories", 
+                                status_code=response.status_code,
+                                response=response.text)
+                return []
+            
+        except Exception as e:
+            self.logger.error("Failed to get recent JARVIS memories", error=str(e))
+            # Fallback to old method if metadata filtering fails
+            return await self._fallback_content_search("JARVIS", limit)
+    
+    async def _fallback_content_search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fallback to content-based search when metadata filtering fails"""
+        try:
+            self.logger.warning("Using fallback content search for JARVIS memories")
+            memories = await self.search_memories(query, limit=limit * 2)
+            
+            # Client-side filtering as fallback
             jarvis_memories = []
             for memory in memories:
                 metadata = memory.get("metadata", {})
                 content = memory.get("content", "").lower()
                 
-                # Check if memory is JARVIS-related by metadata or content
                 if (metadata.get("source") == "jarvis" or 
                     metadata.get("agent_type") in ["supervisor", "analysis", "planning", "self_improvement"] or
                     "jarvis" in content):
                     jarvis_memories.append(memory)
             
-            # Sort by created_at timestamp (most recent first)
-            jarvis_memories.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            
-            self.logger.info("Retrieved JARVIS memories", 
-                           total_searched=len(memories),
-                           jarvis_filtered=len(jarvis_memories),
-                           limit=limit)
-            
             return jarvis_memories[:limit]
-            
         except Exception as e:
-            self.logger.error("Failed to get recent JARVIS memories", error=str(e))
+            self.logger.error("Fallback content search failed", error=str(e))
             return []
-    
+
+    async def get_memories_by_agent_type(self, agent_type: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get memories from a specific JARVIS agent using metadata filtering"""
+        try:
+            query_data = {
+                "query": "",
+                "limit": limit,
+                "filters": {
+                    "source": "jarvis",
+                    "agent_type": agent_type
+                }
+            }
+            
+            response = await self.client.post("/memories/query", json=query_data)
+            
+            if response.status_code == 200:
+                data = response.json()
+                memories = data.get("memories", [])
+                
+                self.logger.info(f"Retrieved {agent_type} agent memories", 
+                               memories_found=len(memories),
+                               query_time_ms=data.get("query_time_ms", 0))
+                
+                return memories
+            else:
+                self.logger.error(f"Failed to query {agent_type} memories", 
+                                status_code=response.status_code)
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get {agent_type} memories", error=str(e))
+            return []
+
+    async def get_high_confidence_decisions(self, min_confidence: float = 0.7, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get high-confidence JARVIS decisions using metadata filtering"""
+        try:
+            # For now, use content search combined with metadata filtering
+            # TODO: Enhance Core Nexus to support comparison operators in filters
+            query_data = {
+                "query": "decision confidence",
+                "limit": limit * 2,
+                "filters": {
+                    "source": "jarvis",
+                    "agent_type": "supervisor"
+                }
+            }
+            
+            response = await self.client.post("/memories/query", json=query_data)
+            
+            if response.status_code == 200:
+                data = response.json()
+                memories = data.get("memories", [])
+                
+                # Client-side confidence filtering (until Core Nexus supports >= operators)
+                high_confidence_memories = []
+                for memory in memories:
+                    metadata = memory.get("metadata", {})
+                    confidence = metadata.get("confidence", 0)
+                    try:
+                        if float(confidence) >= min_confidence:
+                            high_confidence_memories.append(memory)
+                    except (ValueError, TypeError):
+                        continue
+                
+                self.logger.info("Retrieved high-confidence decisions", 
+                               total_found=len(memories),
+                               high_confidence=len(high_confidence_memories),
+                               min_confidence=min_confidence)
+                
+                return high_confidence_memories[:limit]
+            else:
+                return []
+                
+        except Exception as e:
+            self.logger.error("Failed to get high-confidence decisions", error=str(e))
+            return []
+
     async def get_contextual_memories(self, context: str, limit: int = 5) -> List[Dict[str, Any]]:
         """Get memories relevant to current context"""
         try:
