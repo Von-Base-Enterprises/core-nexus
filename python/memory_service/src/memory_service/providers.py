@@ -146,10 +146,14 @@ class ChromaProvider(VectorProvider):
                 logger.info(f"   Collection name: {self.collection.name}")
                 logger.info(f"   Collection count before: {self.collection.count()}")
                 
+                # Clean metadata - ChromaDB doesn't accept None values
+                clean_metadata = {k: v for k, v in metadata.items() if v is not None}
+                logger.info(f"   Metadata cleaned: {len(metadata)} -> {len(clean_metadata)} fields")
+                
                 self.collection.add(
                     embeddings=[embedding],
                     documents=[content],
-                    metadatas=[metadata],
+                    metadatas=[clean_metadata],
                     ids=[str(memory_id)]
                 )
                 
