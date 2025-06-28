@@ -115,10 +115,7 @@ class JarvisClient:
             headers=headers
         )
         
-        logger.info(f"JARVIS client initialized", 
-                   url=self.base_url, 
-                   enabled=self.enabled,
-                   timeout=self.timeout)
+        logger.info(f"JARVIS client initialized: url={self.base_url}, enabled={self.enabled}, timeout={self.timeout}")
     
     async def __aenter__(self):
         return self
@@ -209,9 +206,7 @@ class JarvisClient:
                 priority=config.jarvis.TASK_PRIORITY
             )
             
-            logger.info(f"Sending query to JARVIS for analysis", 
-                       query=query[:100], 
-                       memory_count=len(memories))
+            logger.info(f"Sending query to JARVIS for analysis: query={query[:100]}, memory_count={len(memories)}")
             
             # Call JARVIS /tasks endpoint
             response = await self.client.post(
@@ -224,9 +219,7 @@ class JarvisClient:
             result_data = response.json()
             
             analysis_time = time.time() - start_time
-            logger.info(f"JARVIS analysis completed in {analysis_time:.2f}s",
-                       task_id=result_data.get("task_id", "unknown"),
-                       success=result_data.get("success", False))
+            logger.info(f"JARVIS analysis completed in {analysis_time:.2f}s, task_id={result_data.get('task_id', 'unknown')}, success={result_data.get('success', False)}")
             
             return JarvisAnalysisResult(result_data)
             
