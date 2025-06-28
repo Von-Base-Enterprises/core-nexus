@@ -1,0 +1,107 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pipenv/
+
+# Test artifacts
+test_results_*.json
+*_test_results_*.json
+advanced_test_reports/
+htmlcov_*/
+.coverage
+.pytest_cache/
+.tox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Temporary analysis files
+*analysis_*.json
+*_analysis_*.json
+comprehensive_*.json
+api_test_report_*.json
+health_check_report_*.json
+production_status_*.json
+
+# Debug and emergency files
+debug_*.py
+emergency_*.py
+fix_*.py
+diagnose_*.py
+
+# Timestamped files
+*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*
+*_20[0-9][0-9][0-9][0-9][0-9][0-9]_*
+*_1750[0-9][0-9][0-9][0-9][0-9][0-9]_*
+
+# Temporary test data
+test_chroma_db/
+test_executor_chroma/
+htmlcov_api_tests/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env.local
+.env.development
+.env.testing
+.env.production
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
+# Documentation artifacts
+docs/build/
+site/

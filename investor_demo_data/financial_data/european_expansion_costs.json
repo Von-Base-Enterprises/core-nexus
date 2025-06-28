@@ -1,0 +1,249 @@
+{
+  "expansion_analysis": {
+    "report_date": "2025-01-20",
+    "currency": "USD",
+    "analysis_period": "3_years",
+    "base_assumptions": {
+      "exchange_rate_eur_usd": 1.08,
+      "exchange_rate_gbp_usd": 1.26,
+      "inflation_rate": "3.2%",
+      "market_growth_rate": "14.2%"
+    }
+  },
+  "market_entry_strategies": {
+    "netherlands_pilot": {
+      "timeline": "Q1-Q2 2025",
+      "initial_investment": 850000,
+      "breakdown": {
+        "legal_setup": 45000,
+        "office_lease_setup": 120000,
+        "hiring_costs": 180000,
+        "marketing_launch": 150000,
+        "technology_localization": 95000,
+        "regulatory_compliance": 75000,
+        "working_capital": 185000
+      },
+      "monthly_burn_rate": 285000,
+      "break_even_timeline": "Month 14",
+      "projected_year_1_revenue": 1250000,
+      "projected_customers_year_1": 47
+    },
+    "uk_expansion": {
+      "timeline": "Q2-Q3 2025", 
+      "initial_investment": 1350000,
+      "breakdown": {
+        "legal_setup": 65000,
+        "office_lease_london": 280000,
+        "hiring_costs": 320000,
+        "marketing_launch": 220000,
+        "technology_localization": 125000,
+        "regulatory_compliance": 85000,
+        "working_capital": 255000
+      },
+      "monthly_burn_rate": 425000,
+      "break_even_timeline": "Month 16",
+      "projected_year_1_revenue": 2100000,
+      "projected_customers_year_1": 78
+    },
+    "germany_partnership": {
+      "timeline": "Q4 2025",
+      "initial_investment": 650000,
+      "breakdown": {
+        "partner_onboarding": 85000,
+        "legal_agreements": 45000,
+        "technology_integration": 145000,
+        "german_localization": 180000,
+        "marketing_materials": 95000,
+        "training_support": 100000
+      },
+      "monthly_revenue_share": "25%",
+      "break_even_timeline": "Month 8",
+      "projected_year_1_revenue": 1650000,
+      "projected_customers_year_1": 62
+    }
+  },
+  "cost_categories": {
+    "personnel_costs": {
+      "netherlands": {
+        "sales_director": {
+          "annual_salary": 95000,
+          "benefits_taxes": 28500,
+          "total_cost": 123500
+        },
+        "account_executives": {
+          "count": 2,
+          "annual_salary_each": 68000,
+          "benefits_taxes_each": 20400,
+          "total_cost": 176800
+        },
+        "customer_success": {
+          "count": 1,
+          "annual_salary": 58000,
+          "benefits_taxes": 17400,
+          "total_cost": 75400
+        },
+        "marketing_specialist": {
+          "count": 1,
+          "annual_salary": 52000,
+          "benefits_taxes": 15600,
+          "total_cost": 67600
+        }
+      },
+      "uk": {
+        "country_manager": {
+          "annual_salary": 110000,
+          "benefits_taxes": 33000,
+          "total_cost": 143000
+        },
+        "sales_team": {
+          "count": 3,
+          "annual_salary_each": 72000,
+          "benefits_taxes_each": 21600,
+          "total_cost": 280800
+        },
+        "customer_success": {
+          "count": 2,
+          "annual_salary_each": 61000,
+          "benefits_taxes_each": 18300,
+          "total_cost": 158600
+        },
+        "marketing_team": {
+          "count": 2,
+          "annual_salary_each": 56000,
+          "benefits_taxes_each": 16800,
+          "total_cost": 145600
+        }
+      }
+    },
+    "operational_costs": {
+      "netherlands": {
+        "office_rent_amsterdam": {
+          "monthly": 12000,
+          "annual": 144000
+        },
+        "utilities_internet": {
+          "monthly": 800,
+          "annual": 9600
+        },
+        "insurance": {
+          "annual": 18000
+        },
+        "legal_accounting": {
+          "annual": 45000
+        }
+      },
+      "uk": {
+        "office_rent_london": {
+          "monthly": 22000,
+          "annual": 264000
+        },
+        "utilities_internet": {
+          "monthly": 1200,
+          "annual": 14400
+        },
+        "insurance": {
+          "annual": 28000
+        },
+        "legal_accounting": {
+          "annual": 65000
+        }
+      }
+    },
+    "technology_costs": {
+      "localization": {
+        "dutch_translation": 45000,
+        "german_translation": 65000,
+        "french_translation": 38000,
+        "ui_ux_adaptation": 85000
+      },
+      "compliance": {
+        "gdpr_implementation": 125000,
+        "data_residency_setup": 95000,
+        "security_certifications": 75000
+      },
+      "infrastructure": {
+        "european_servers": {
+          "monthly": 15000,
+          "annual": 180000
+        },
+        "cdn_optimization": {
+          "monthly": 3500,
+          "annual": 42000
+        }
+      }
+    },
+    "marketing_costs": {
+      "digital_marketing": {
+        "google_ads_monthly": 25000,
+        "linkedin_ads_monthly": 12000,
+        "content_marketing": 18000,
+        "seo_optimization": 15000
+      },
+      "events_conferences": {
+        "major_events": 85000,
+        "local_meetups": 24000,
+        "webinar_series": 18000
+      },
+      "pr_communications": {
+        "pr_agency_retainer": 120000,
+        "industry_analyst_relations": 45000,
+        "content_creation": 65000
+      }
+    }
+  },
+  "revenue_projections": {
+    "year_1": {
+      "netherlands": 1250000,
+      "uk": 2100000,
+      "germany": 1650000,
+      "total": 5000000
+    },
+    "year_2": {
+      "netherlands": 2850000,
+      "uk": 4750000,
+      "germany": 3950000,
+      "total": 11550000
+    },
+    "year_3": {
+      "netherlands": 4200000,
+      "uk": 7200000,
+      "germany": 6100000,
+      "total": 17500000
+    }
+  },
+  "risk_factors": {
+    "currency_risk": {
+      "eur_usd_volatility": "±8%",
+      "gbp_usd_volatility": "±12%",
+      "hedging_cost": "2.1%_annually"
+    },
+    "regulatory_risk": {
+      "gdpr_compliance_penalties": "up_to_4%_revenue",
+      "brexit_impact": "ongoing_uncertainty",
+      "ai_act_compliance": "additional_50k_annual"
+    },
+    "competitive_risk": {
+      "price_war_probability": "35%",
+      "customer_acquisition_cost_increase": "15-25%",
+      "churn_rate_increase": "2-4%"
+    }
+  },
+  "roi_analysis": {
+    "payback_period": {
+      "netherlands": "14_months",
+      "uk": "16_months", 
+      "germany": "8_months"
+    },
+    "net_present_value_3_years": {
+      "netherlands": 2850000,
+      "uk": 4200000,
+      "germany": 3650000,
+      "total": 10700000
+    },
+    "internal_rate_of_return": {
+      "netherlands": "68%",
+      "uk": "72%",
+      "germany": "95%"
+    }
+  }
+}

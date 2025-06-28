@@ -50,6 +50,7 @@ class QueryRequest(BaseModel):
     conversation_id: str | None = Field(None, description="Filter by conversation")
     time_range: dict[str, datetime] | None = Field(None, description="Time range filter")
     providers: list[str] | None = Field(None, description="Specific providers to query")
+    include_reasoning: bool = Field(False, description="Include JARVIS reasoning analysis")
 
 
 class QueryResponse(BaseModel):
@@ -61,6 +62,7 @@ class QueryResponse(BaseModel):
     providers_used: list[str] = Field(default_factory=list, description="Vector providers queried")
     trust_metrics: dict[str, Any] | None = Field(None, description="Trust and confidence metrics")
     query_metadata: dict[str, Any] | None = Field(None, description="Additional query metadata")
+    reasoning_analysis: dict[str, Any] | None = Field(None, description="JARVIS reasoning analysis")
 
 
 class HealthCheckResponse(BaseModel):

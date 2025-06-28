@@ -75,7 +75,7 @@ class ObservabilityConfig:
 
 def initialize_observability(app=None, config: Optional[ObservabilityConfig] = None):
     """
-    Initialize OpenTelemetry instrumentation.
+    Initialize OpenTelemetry instrumentation with defensive error handling.
     
     Args:
         app: FastAPI application instance
@@ -83,43 +83,64 @@ def initialize_observability(app=None, config: Optional[ObservabilityConfig] = N
     """
     global tracer, meter
     
-    if not config:
-        config = ObservabilityConfig()
-    
-    # Create resource
-    resource = Resource.create(config.resource_attributes)
-    
-    # Initialize tracing
-    if config.enable_tracing:
-        tracer_provider = _setup_tracing(config, resource)
-        trace.set_tracer_provider(tracer_provider)
-        tracer = trace.get_tracer(__name__, config.service_version)
+    try:
+        if not config:
+            config = ObservabilityConfig()
         
-        # Set up propagation (B3 format for compatibility)
-        set_global_textmap(B3MultiFormat())
+        # Create resource safely
+        resource = Resource.create(config.resource_attributes)
         
-        logger.info("OpenTelemetry tracing initialized")
-    
-    # Initialize metrics
-    if config.enable_metrics:
-        meter_provider = _setup_metrics(config, resource)
-        metrics.set_meter_provider(meter_provider)
-        meter = metrics.get_meter(__name__, config.service_version)
+        # Initialize tracing with error handling
+        if config.enable_tracing:
+            try:
+                tracer_provider = _setup_tracing(config, resource)
+                trace.set_tracer_provider(tracer_provider)
+                tracer = trace.get_tracer(__name__, config.service_version)
+                
+                # Set up propagation (B3 format for compatibility)
+                set_global_textmap(B3MultiFormat())
+                
+                logger.info("OpenTelemetry tracing initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize tracing, continuing without: {e}")
+                tracer = None
         
-        # Create custom metrics
-        _create_custom_metrics()
+        # Initialize metrics with error handling
+        if config.enable_metrics:
+            try:
+                meter_provider = _setup_metrics(config, resource)
+                metrics.set_meter_provider(meter_provider)
+                meter = metrics.get_meter(__name__, config.service_version)
+                
+                # Create custom metrics
+                _create_custom_metrics()
+                
+                logger.info("OpenTelemetry metrics initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize metrics, continuing without: {e}")
+                meter = None
         
-        logger.info("OpenTelemetry metrics initialized")
-    
-    # Initialize logging
-    if config.enable_logging:
-        LoggingInstrumentor().instrument(set_logging_format=True)
-        logger.info("OpenTelemetry logging initialized")
-    
-    # Auto-instrument libraries
-    _setup_auto_instrumentation(app)
-    
-    logger.info(f"Observability initialized for {config.service_name} v{config.service_version}")
+        # Initialize logging with error handling
+        if config.enable_logging:
+            try:
+                LoggingInstrumentor().instrument(set_logging_format=True)
+                logger.info("OpenTelemetry logging initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize logging instrumentation: {e}")
+        
+        # Auto-instrument libraries with error handling
+        try:
+            _setup_auto_instrumentation(app)
+        except Exception as e:
+            logger.warning(f"Failed to set up auto-instrumentation: {e}")
+        
+        logger.info(f"Observability initialization completed for {config.service_name} v{config.service_version}")
+        
+    except Exception as e:
+        # If complete initialization fails, disable observability entirely
+        logger.error(f"Complete observability initialization failed, disabling: {e}")
+        tracer = None
+        meter = None
 
 
 def _setup_tracing(config: ObservabilityConfig, resource: Resource) -> TracerProvider:
@@ -277,83 +298,112 @@ def trace_operation(operation_name: str, attributes: Optional[dict] = None):
         attributes: Optional attributes to add to the span
     """
     def decorator(func):
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            if not tracer:
-                return await func(*args, **kwargs)
+        # CRITICAL FIX: Add defensive programming to prevent FastAPI signature corruption
+        try:
+            # Check if tracing is disabled or broken - return original function
+            if not os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+                return func
             
-            with tracer.start_as_current_span(operation_name) as span:
-                # Add attributes
-                if attributes:
-                    for key, value in attributes.items():
-                        span.set_attribute(key, value)
-                
-                # Add function info
-                span.set_attribute("function.name", func.__name__)
-                span.set_attribute("function.module", func.__module__)
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                # Double-check tracer availability at runtime
+                if not tracer:
+                    return await func(*args, **kwargs)
                 
                 try:
-                    result = await func(*args, **kwargs)
-                    span.set_status(Status(StatusCode.OK))
-                    return result
-                except Exception as e:
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    span.record_exception(e)
-                    raise
-        
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            if not tracer:
-                return func(*args, **kwargs)
+                    with tracer.start_as_current_span(operation_name) as span:
+                        # Add attributes safely
+                        if attributes:
+                            for key, value in attributes.items():
+                                span.set_attribute(key, value)
+                        
+                        # Add function info
+                        span.set_attribute("function.name", func.__name__)
+                        span.set_attribute("function.module", func.__module__)
+                        
+                        try:
+                            result = await func(*args, **kwargs)
+                            span.set_status(Status(StatusCode.OK))
+                            return result
+                        except Exception as e:
+                            span.set_status(Status(StatusCode.ERROR, str(e)))
+                            span.record_exception(e)
+                            raise
+                except Exception as trace_error:
+                    # If tracing fails, log error but continue with original function
+                    logger.warning(f"Tracing failed for {operation_name}: {trace_error}")
+                    return await func(*args, **kwargs)
             
-            with tracer.start_as_current_span(operation_name) as span:
-                # Add attributes
-                if attributes:
-                    for key, value in attributes.items():
-                        span.set_attribute(key, value)
-                
-                # Add function info
-                span.set_attribute("function.name", func.__name__)
-                span.set_attribute("function.module", func.__module__)
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                # Double-check tracer availability at runtime
+                if not tracer:
+                    return func(*args, **kwargs)
                 
                 try:
-                    result = func(*args, **kwargs)
-                    span.set_status(Status(StatusCode.OK))
-                    return result
-                except Exception as e:
-                    span.set_status(Status(StatusCode.ERROR, str(e)))
-                    span.record_exception(e)
-                    raise
-        
-        # Return appropriate wrapper based on function type
-        import asyncio
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
+                    with tracer.start_as_current_span(operation_name) as span:
+                        # Add attributes safely
+                        if attributes:
+                            for key, value in attributes.items():
+                                span.set_attribute(key, value)
+                        
+                        # Add function info
+                        span.set_attribute("function.name", func.__name__)
+                        span.set_attribute("function.module", func.__module__)
+                        
+                        try:
+                            result = func(*args, **kwargs)
+                            span.set_status(Status(StatusCode.OK))
+                            return result
+                        except Exception as e:
+                            span.set_status(Status(StatusCode.ERROR, str(e)))
+                            span.record_exception(e)
+                            raise
+                except Exception as trace_error:
+                    # If tracing fails, log error but continue with original function
+                    logger.warning(f"Tracing failed for {operation_name}: {trace_error}")
+                    return func(*args, **kwargs)
+            
+            # Return appropriate wrapper based on function type
+            import asyncio
+            if asyncio.iscoroutinefunction(func):
+                return async_wrapper
+            else:
+                return sync_wrapper
+                
+        except Exception as decorator_error:
+            # If decorator setup fails completely, return original function
+            logger.error(f"Decorator setup failed for {operation_name}: {decorator_error}")
+            return func
     
     return decorator
 
 
 def record_metric(metric_name: str, value: float, attributes: Optional[dict] = None):
-    """Record a metric value."""
-    if not meter:
-        return
-    
-    # Get or create the metric
-    # This is simplified - in practice, you'd cache these
-    if "duration" in metric_name:
-        metric = meter.create_histogram(metric_name)
-    elif "total" in metric_name or "count" in metric_name:
-        metric = meter.create_counter(metric_name)
-    else:
-        metric = meter.create_gauge(metric_name)
-    
-    # Record value
-    if hasattr(metric, 'add'):
-        metric.add(value, attributes or {})
-    elif hasattr(metric, 'record'):
-        metric.record(value, attributes or {})
+    """Record a metric value with defensive error handling."""
+    try:
+        # Skip if metrics are disabled or not available
+        if not meter or not os.getenv("OTEL_METRICS_ENABLED", "true").lower() == "true":
+            return
+        
+        # Get or create the metric safely
+        # This is simplified - in practice, you'd cache these
+        if "duration" in metric_name:
+            metric = meter.create_histogram(metric_name)
+        elif "total" in metric_name or "count" in metric_name:
+            metric = meter.create_counter(metric_name)
+        else:
+            metric = meter.create_gauge(metric_name)
+        
+        # Record value safely
+        if hasattr(metric, 'add'):
+            metric.add(value, attributes or {})
+        elif hasattr(metric, 'record'):
+            metric.record(value, attributes or {})
+    except Exception as e:
+        # Silently fail for metrics to avoid breaking main functionality
+        logger.debug(f"Failed to record metric {metric_name}: {e}")
+        pass
 
 
 def get_current_trace_id() -> Optional[str]:

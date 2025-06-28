@@ -1,0 +1,72 @@
+{
+  "test_timestamp": "2025-06-27T23:40:22Z",
+  "claims_tested": {
+    "core_memory_api_health_check": {
+      "url": "https://core-nexus-memory-service.onrender.com/health",
+      "status_code": "200",
+      "response_time_ms": "",
+      "result": "PASS",
+      "response_size_bytes": 296,
+      "response_preview": "{"status":"healthy","providers":{"pgvector":{"status":"healthy","details":{"status":"healthy","details":{"total_vectors":1648,"pgvector_enabled":true,"table_name":"vector_memories","pool_size":3}},"pr"
+    },
+    "jarvis_ai_agent_health_check": {
+      "url": "https://jarvis-ai-agent-aa4m.onrender.com/health",
+      "status_code": "200",
+      "response_time_ms": "",
+      "result": "PASS",
+      "response_size_bytes": 420,
+      "response_preview": "{"status":"healthy","timestamp":"2025-06-27T23:40:23.212673Z","jarvis_version":"0.1.0","core_nexus_status":{"status":"healthy","providers":{"pgvector":{"status":"healthy","details":{"status":"healthy""
+    },
+    "get_all_memories": {
+      "url": "https://core-nexus-memory-service.onrender.com/memories",
+      "status_code": "200",
+      "response_time_ms": "",
+      "result": "PASS",
+      "response_size_bytes": 453061,
+      "response_preview": "{"memories":[{"id":"11ffe28b-c1eb-4458-9921-e29cb381b2f5","content":"Performance test memory #5 - Testing background task optimization for faster response times. This content is long enough to trigger"
+    },
+    "get_memories_with_limit": {
+      "url": "https://core-nexus-memory-service.onrender.com/memories?limit=1",
+      "status_code": "200",
+      "response_time_ms": "",
+      "result": "PASS",
+      "response_size_bytes": 1225,
+      "response_preview": "{"memories":[{"id":"11ffe28b-c1eb-4458-9921-e29cb381b2f5","content":"Performance test memory #5 - Testing background task optimization for faster response times. This content is long enough to trigger"
+    },
+    "prometheus_metrics_endpoint": {
+      "url": "https://core-nexus-memory-service.onrender.com/metrics",
+      "status_code": "404",
+      "response_time_ms": "",
+      "result": "FAIL",
+      "response_size_bytes": 22,
+      "response_preview": "{"detail":"Not Found"} "
+    },
+    "memory_count_validation": {
+      "claimed_count": "≥1,643",
+      "actual_count": "0",
+      "result": "FAIL"
+    },
+    "store_new_memory": {
+      "url": "https://core-nexus-memory-service.onrender.com/memories",
+      "method": "POST",
+      "status_code": "201",
+      "response_time_ms": "",
+      "result": "PASS",
+      "response_preview": "{"id":"7130a89a-9f53-4923-9ded-8603b9e13fa5","content":"Test memory for validation - Core Nexus curl test at Fri Jun 27 19:40:27 EDT 2025","metadata":{"source":"curl_validation_test","test_timestamp":"
+    },
+    "memory_search_query": {
+      "url": "https://core-nexus-memory-service.onrender.com/query",
+      "method": "POST",
+      "status_code": "404",
+      "response_time_ms": "",
+      "result": "FAIL",
+      "response_preview": "{"detail":"Not Found"} "
+    },
+    "performance_validation": {
+      "claimed_avg_ms": "~850",
+      "measured_avg_ms": "670",
+      "successful_requests": "5",
+      "result": "PASS"
+    }
+  }
+}

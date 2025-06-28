@@ -24,7 +24,7 @@ class DatabaseConfig:
     
     # Vector settings
     VECTOR_DIMENSION = 1536
-    TABLE_NAME = "vector_memories"
+    TABLE_NAME = "vector_memories_optimized"  # OPTIMIZED: Using 1,536D vectors
     DISTANCE_METRIC = "cosine"
     
     # Performance optimization settings for 1GB RAM
@@ -97,12 +97,52 @@ class EmbeddingConfig:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# JARVIS AI Agent Configuration
+class JarvisConfig:
+    """JARVIS AI agent integration configuration"""
+    ENABLED = os.getenv("JARVIS_ENABLED", "true").lower() == "true"
+    URL = os.getenv("JARVIS_URL", "https://jarvis-ai-agent-aa4m.onrender.com")
+    TIMEOUT = int(os.getenv("JARVIS_TIMEOUT", "30"))
+    MAX_RETRIES = int(os.getenv("JARVIS_MAX_RETRIES", "3"))
+    API_KEY = os.getenv("JARVIS_API_KEY", "")  # Optional authentication
+    
+    # Task processing settings
+    TASK_PRIORITY = os.getenv("JARVIS_TASK_PRIORITY", "medium")
+    MAX_CONTEXT_MEMORIES = int(os.getenv("JARVIS_MAX_CONTEXT_MEMORIES", "5"))
+    
+    # Timeout for reasoning analysis
+    REASONING_TIMEOUT = int(os.getenv("JARVIS_REASONING_TIMEOUT", "20"))
+
 # Admin Configuration
 class AdminConfig:
     """Admin and emergency endpoint configuration"""
     ADMIN_KEY = os.getenv("ADMIN_KEY", "")
     ENABLE_NUCLEAR_ENDPOINTS = os.getenv("ENABLE_NUCLEAR_ENDPOINTS", "true").lower() == "true"
     ENABLE_DEBUG_ENDPOINTS = os.getenv("ENABLE_DEBUG_ENDPOINTS", "false").lower() == "true"
+
+# Authentication Configuration
+class AuthConfig:
+    """API authentication configuration for AI agents and external clients"""
+    # Enable/disable authentication globally
+    ENABLED = os.getenv("AUTH_ENABLED", "true").lower() == "true"
+    
+    # Development and internal API keys (comma-separated)
+    # Default includes a development key for easy testing
+    API_KEYS = os.getenv("API_KEYS", "dev-key-12345,core-nexus-agent-key").split(",")
+    
+    # Admin key for privileged operations (separate from regular API keys)
+    ADMIN_KEY = os.getenv("ADMIN_KEY", "")
+    
+    # Authentication bypass for specific endpoints (health checks, metrics)
+    BYPASS_ENDPOINTS = {
+        "/", "/health", "/metrics", "/metrics/fastapi", "/docs", "/redoc", "/openapi.json"
+    }
+    
+    # Rate limiting per API key (requests per minute)
+    RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "1000"))
+    
+    # Enable API key validation
+    VALIDATE_KEYS = os.getenv("VALIDATE_API_KEYS", "true").lower() == "true"
 
 # Singleton config instance
 class Config:
@@ -112,7 +152,9 @@ class Config:
     providers = ProviderConfig()
     features = FeatureFlags()
     embedding = EmbeddingConfig()
+    jarvis = JarvisConfig()
     admin = AdminConfig()
+    auth = AuthConfig()
     
     @classmethod
     def validate(cls):

@@ -6,10 +6,10 @@
     "cleanup": "N/A"
   },
   "response_times": {
-    "create": "3152ms",
-    "retrieve": "458ms",
-    "search": "1005ms",
-    "embedding": "369ms"
+    "create": "2009ms",
+    "retrieve": "202ms",
+    "search": "197ms",
+    "embedding": "203ms"
   },
   "errors": [
     "Memory not found by ID",

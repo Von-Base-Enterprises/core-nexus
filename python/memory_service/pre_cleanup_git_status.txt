@@ -1,0 +1,65 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   ../../poetry.lock
+	modified:   ../../pyproject.toml
+	modified:   health_check_results.json
+	modified:   requirements.txt
+	modified:   src/memory_service/config.py
+	modified:   src/memory_service/unified_store.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	../../JARVIS_IMPLEMENTATION_STATUS.md
+	../../comprehensive_user_analysis.py
+	../../core_nexus_analysis_analysis_1750639080.json
+	../../core_nexus_analysis_analysis_1750640199.json
+	../../core_nexus_user_analysis_user_analysis_1750653918.json
+	../../core_nexus_user_analysis_user_analysis_1750654066.json
+	../../deployment_fix_strategy.py
+	../../failure_simulation_test.py
+	../../jarvis/
+	../../load_test.py
+	../../migration_resume_results_20250622_195352.json
+	../../migration_resume_results_20250622_195450.json
+	../../migration_resume_results_20250622_195539.json
+	../../migration_resume_results_20250622_195754.json
+	../../migration_resume_results_20250622_200255.json
+	../../optimization_validation_20250622_210632.json
+	../../production_analysis_test.py
+	advanced_test_reports/
+	comprehensive_test_results_20250623_013542.json
+	comprehensive_test_results_20250623_013637.json
+	conftest.py
+	deploy_automation.py
+	pre_cleanup_git_status.txt
+	pytest.ini
+	run_comprehensive_tests.py
+	src/memory_service/circuit_breaker.py
+	test_results_all_tests.json
+	test_results_api_tests.json
+	test_results_integration_tests.json
+	test_results_performance_tests.json
+	test_results_test_behavioral_intelligence.json
+	test_results_test_chaos_engineering.json
+	test_results_test_data_science_validation.json
+	test_results_test_deep_observability.json
+	test_results_test_production_fidelity.json
+	test_results_unit_tests.json
+	tests/README_ADVANCED_TESTS.md
+	tests/run_advanced_test_suite.py
+	tests/test_api_endpoints.py
+	tests/test_behavioral_intelligence.py
+	tests/test_chaos_engineering.py
+	tests/test_data_science_validation.py
+	tests/test_deep_observability.py
+	tests/test_models.py
+	tests/test_production_fidelity.py
+	tests/test_providers.py
+	tests/test_unified_store.py
+	../../quick_load_test.py
+
+no changes added to commit (use "git add" and/or "git commit -a")

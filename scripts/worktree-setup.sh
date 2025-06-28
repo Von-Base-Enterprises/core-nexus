@@ -121,14 +121,30 @@ create_worktree() {
         return 0
     fi
     
-    # Create the worktree
-    if git worktree add "$path" "$branch" 2>/dev/null; then
-        print_success "Created worktree: $path"
+    # Create appropriate branch name for worktree
+    local worktree_branch_name="${name}-work"
+    
+    # Check if this is a main/staging branch that we need to track
+    if [[ "$branch" == "main" ]] || [[ "$branch" == "staging" ]]; then
+        # Create a new branch based on the target branch for this worktree
+        if git worktree add -b "$worktree_branch_name" "$path" "$branch" 2>/dev/null; then
+            print_success "Created worktree with tracking branch: $path (${worktree_branch_name} tracking ${branch})"
+        else
+            print_warning "Failed to create worktree from $branch, creating from main"
+            git worktree add -b "$worktree_branch_name" "$path" main
+            print_success "Created worktree with new branch: $path (${worktree_branch_name})"
+        fi
     else
-        # If branch doesn't exist, create it from main
-        print_warning "Branch $branch doesn't exist, creating from main"
-        git worktree add -b "$branch" "$path" main
-        print_success "Created worktree with new branch: $path"
+        # For feature branches, try to use the branch directly or create it
+        if git worktree add "$path" "$branch" 2>/dev/null; then
+            print_success "Created worktree: $path (${branch})"
+        elif git worktree add -b "$branch" "$path" main 2>/dev/null; then
+            print_success "Created worktree with new branch: $path (${branch})"
+        else
+            # Fallback to worktree-specific branch name
+            git worktree add -b "$worktree_branch_name" "$path" main
+            print_success "Created worktree with fallback branch: $path (${worktree_branch_name})"
+        fi
     fi
     
     return 0
