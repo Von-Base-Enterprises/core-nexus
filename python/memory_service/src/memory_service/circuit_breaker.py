@@ -296,7 +296,12 @@ class StrategicIntelligenceCircuitBreaker:
     """
     
     def __init__(self, fallback_config: Optional[FallbackConfig] = None):
-        self.logger = structlog_logger.bind(component="strategic_intelligence_circuit_breaker")
+        # Use defensive logging to prevent keyword argument errors
+        try:
+            self.logger = structlog_logger.bind(component="strategic_intelligence_circuit_breaker")
+        except Exception:
+            # Fallback to standard logger if structlog binding fails
+            self.logger = logger
         self.config = fallback_config or FallbackConfig()
         
         # Main circuit breakers for different components
@@ -625,7 +630,12 @@ class CircuitBreakerManager:
     """
     
     def __init__(self):
-        self.logger = structlog_logger.bind(component="circuit_breaker_manager")
+        # Use defensive logging to prevent keyword argument errors
+        try:
+            self.logger = structlog_logger.bind(component="circuit_breaker_manager")
+        except Exception:
+            # Fallback to standard logger if structlog binding fails
+            self.logger = logger
         
         # Initialize specialized circuit breakers
         self.strategic_intelligence = StrategicIntelligenceCircuitBreaker()
