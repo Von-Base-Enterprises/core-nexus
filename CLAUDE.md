@@ -78,6 +78,129 @@ poetry run python ../../secure_backup_system.py verify "backup_name"
 poetry run python ../../backup_scheduler.py start
 ```
 
+## Git Worktree Management
+
+The Core Nexus project uses Git worktrees for AI agent coordination and parallel development. This enables multiple AI agents to work simultaneously without conflicts.
+
+### Worktree Setup and Management
+```bash
+# Initialize the complete worktree system
+./scripts/worktree-setup.sh
+
+# Check status of all worktrees
+./scripts/sync-environments.sh --status
+
+# Sync all worktrees
+./scripts/sync-environments.sh --all
+
+# Sync specific worktree
+./scripts/sync-environments.sh memory-service
+
+# Check for conflicts between worktrees
+./scripts/sync-environments.sh --conflicts
+
+# Check integration readiness
+./scripts/sync-environments.sh --readiness
+
+# Update status tracking
+./scripts/sync-environments.sh --update-status
+```
+
+### Worktree Structure
+The system creates dedicated worktrees for different purposes:
+
+**Core Environment Worktrees:**
+- `core-nexus-production` - Production validation (main branch)
+- `core-nexus-staging` - Integration testing (staging branch) 
+- `core-nexus-development` - Feature integration (develop branch)
+- `core-nexus-hotfix` - Emergency fixes (main branch)
+- `core-nexus-rollback` - Stable reference (latest tag)
+
+**Component-Specific Worktrees:**
+- `core-nexus-memory-service` - Memory Service development
+- `core-nexus-jarvis` - JARVIS AI agent development
+- `core-nexus-performance` - Performance optimization work
+- `core-nexus-observability` - Monitoring and observability
+- `core-nexus-testing` - Advanced testing suites
+
+### AI Agent Coordination
+```bash
+# Before starting work (MANDATORY)
+./scripts/sync-environments.sh --status
+./scripts/sync-environments.sh [your-worktree-name]
+./scripts/sync-environments.sh --conflicts
+
+# During work (every 30 minutes)
+echo "$(date): [AGENT_NAME] Progress: [ACCOMPLISHMENTS]" >> docs/AGENT_ACTIVITY.log
+
+# After completing work (MANDATORY)
+git add . && git commit -m "[AGENT_NAME]: [SUMMARY]"
+./scripts/sync-environments.sh --update-status
+./scripts/sync-environments.sh --readiness
+```
+
+### Worktree Navigation
+```bash
+# Switch to your assigned worktree
+cd ../core-nexus-[worktree-name]
+
+# Example: Memory Agent workflow
+cd ../core-nexus-memory-service
+poetry run uvicorn src.memory_service.api:app --reload
+
+# Example: JARVIS Agent workflow  
+cd ../core-nexus-jarvis
+python test_jarvis.py
+
+# Return to main repository
+cd ../core-nexus
+```
+
+### Cleanup and Maintenance
+```bash
+# Complete cleanup (recommended monthly)
+./scripts/worktree-cleanup.sh --all
+
+# Remove abandoned worktrees
+./scripts/worktree-cleanup.sh --remove-abandoned
+
+# Clean temporary files
+./scripts/worktree-cleanup.sh --temp-files
+
+# Optimize git repositories
+./scripts/worktree-cleanup.sh --optimize
+
+# Validate integrity
+./scripts/worktree-cleanup.sh --validate
+
+# Emergency cleanup
+./scripts/worktree-cleanup.sh --emergency
+```
+
+### Important Files for AI Agents
+- `docs/AI_AGENT_COORDINATION.md` - Complete coordination protocols
+- `docs/AGENT_WORKSPACE_PROTOCOLS.md` - Workspace-specific guidelines  
+- `docs/WORKTREE_STATUS.md` - Real-time status dashboard
+- `docs/AGENT_ACTIVITY.log` - Agent activity tracking
+- `.env.worktree-template` - Environment configuration template
+
+### Emergency Procedures
+```bash
+# Emergency stop all agents
+echo "EMERGENCY_STOP: $(date) - [REASON]" >> docs/EMERGENCY.log
+
+# Switch to safe rollback state
+cd ../core-nexus-rollback
+
+# Emergency cleanup
+./scripts/worktree-cleanup.sh --emergency
+
+# Check system health
+make ci && ./scripts/sync-environments.sh --status
+```
+
+**CRITICAL**: Always check `docs/WORKTREE_STATUS.md` before starting work and update `docs/AGENT_ACTIVITY.log` during work sessions.
+
 ## High-Level Architecture
 
 ### Core Components
