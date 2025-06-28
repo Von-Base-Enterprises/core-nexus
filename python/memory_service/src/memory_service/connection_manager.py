@@ -232,19 +232,29 @@ class OptimizedConnectionPool:
     
     async def _apply_managed_postgres_settings(self, conn: asyncpg.Connection):
         """Apply conservative settings for managed PostgreSQL services"""
-        try:
-            # Only session-level parameters that are widely supported
-            await conn.execute(f"SET work_mem = '{min(config.database.WORK_MEM_MB, 4)}MB'")  # Cap at 4MB for managed
-            await conn.execute("SET random_page_cost = 1.1")  # Optimized for SSD
-            await conn.execute("SET seq_page_cost = 1.0")
-            
-            # Enable basic query optimization
-            await conn.execute("SET enable_hashjoin = on")
-            await conn.execute("SET enable_mergejoin = on")
-            
-            logger.debug("Applied managed PostgreSQL settings")
-        except Exception as e:
-            logger.warning(f"Some managed PostgreSQL settings failed: {e}")
+        applied_settings = []
+        failed_settings = []
+        
+        # Conservative session-level parameters - apply individually with graceful degradation
+        settings_to_try = [
+            (f"SET work_mem = '{min(config.database.WORK_MEM_MB, 4)}MB'", "work_mem"),
+            ("SET random_page_cost = 1.1", "random_page_cost"),
+            ("SET seq_page_cost = 1.0", "seq_page_cost"),
+            ("SET enable_hashjoin = on", "enable_hashjoin"),
+            ("SET enable_mergejoin = on", "enable_mergejoin")
+        ]
+        
+        for setting_sql, setting_name in settings_to_try:
+            try:
+                await conn.execute(setting_sql)
+                applied_settings.append(setting_name)
+            except Exception as e:
+                failed_settings.append(f"{setting_name}: {str(e)}")
+                logger.debug(f"Managed PostgreSQL setting failed: {setting_name} - {e}")
+        
+        logger.info(f"Managed PostgreSQL settings applied: {len(applied_settings)} successful, {len(failed_settings)} failed")
+        if failed_settings:
+            logger.debug(f"Failed managed PostgreSQL settings: {', '.join(failed_settings)}")
     
     async def _apply_selfhosted_postgres_settings(self, conn: asyncpg.Connection):
         """Apply full optimizations for self-hosted PostgreSQL"""
@@ -272,13 +282,18 @@ class OptimizedConnectionPool:
     
     
     def _get_optimized_server_settings(self) -> Dict[str, str]:
-        """Get optimized server settings for the connection pool (session-level only)"""
-        # Only include session-level parameters that work on managed PostgreSQL (Render.com)
-        # Removed server-level parameters: wal_buffers, checkpoint_completion_target, jit
+        """Get optimized server settings for the connection pool"""
+        if self.is_managed_postgres:
+            # No server settings for managed PostgreSQL - use defaults only
+            logger.info("Using no server settings for managed PostgreSQL environment")
+            return {}
+        
+        # Full server settings for self-hosted PostgreSQL
         return {
-            'synchronous_commit': 'on',  # Ensure data consistency (session-level)
-            'log_statement': 'none',     # Reduce logging overhead (session-level)
-            'log_min_duration_statement': '1000'  # Only log slow queries (session-level)
+            'synchronous_commit': 'on',  # Ensure data consistency
+            'log_statement': 'none',     # Reduce logging overhead
+            'log_min_duration_statement': '1000',  # Only log slow queries
+            'shared_preload_libraries': 'vector'   # Ensure vector extension is loaded
         }
     
     @asynccontextmanager
