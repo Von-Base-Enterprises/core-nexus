@@ -872,18 +872,13 @@ def create_memory_app() -> FastAPI:
                             "query_classification": enhanced_result.query_classification,
                             "performance": enhanced_result.processing_metadata
                         }
-                        logger.info("Strategic intelligence analysis completed",
-                                   analysis_id=enhanced_result.strategic_analysis.get("analysis_id"),
-                                   confidence=enhanced_result.confidence_assessment.get("overall_confidence", 0),
-                                   classification=enhanced_result.query_classification)
+                        logger.info(f"Strategic intelligence analysis completed: analysis_id={enhanced_result.strategic_analysis.get('analysis_id')}, confidence={enhanced_result.confidence_assessment.get('overall_confidence', 0)}, classification={enhanced_result.query_classification}")
                     elif enhanced_result.reasoning_analysis:
                         # For non-strategic queries, use enhanced reasoning
                         reasoning_analysis = enhanced_result.reasoning_analysis
                         reasoning_analysis["query_classification"] = enhanced_result.query_classification
                         reasoning_analysis["performance"] = enhanced_result.processing_metadata
-                        logger.info("Enhanced reasoning analysis completed",
-                                   enhancement_type=reasoning_analysis.get("enhancement_type"),
-                                   classification=enhanced_result.query_classification)
+                        logger.info(f"Enhanced reasoning analysis completed: enhancement_type={reasoning_analysis.get('enhancement_type')}, classification={enhanced_result.query_classification}")
                     else:
                         # Fallback case
                         reasoning_analysis = {
