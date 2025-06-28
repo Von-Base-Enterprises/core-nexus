@@ -169,11 +169,24 @@ async def lifespan(app: FastAPI):
             else:
                 pgvector_provider = PgVectorProvider(pgvector_config)
             
-            providers.append(pgvector_provider)
-            pgvector_config.primary = True  # Make primary if successful
-            logger.info("PgVector provider initialized as primary")
+            # Test basic provider health before adding to providers
+            try:
+                health_result = await pgvector_provider.health_check()
+                logger.info(f"PgVector provider health check: {health_result}")
+                
+                providers.append(pgvector_provider)
+                pgvector_config.primary = True  # Make primary if successful
+                logger.info("✅ PgVector provider initialized as primary and healthy")
+            except Exception as health_error:
+                logger.warning(f"PgVector provider created but health check failed: {health_error}")
+                # Add provider anyway but as secondary - let UnifiedStore handle graceful degradation
+                pgvector_config.primary = False
+                providers.append(pgvector_provider)
+                logger.info("⚠️ PgVector provider added as secondary (health check failed)")
+                
         except Exception as e:
-            logger.warning(f"PgVector provider failed to initialize: {e}")
+            logger.error(f"PgVector provider failed to initialize: {e}")
+            logger.warning("System will continue with ChromaDB only - some operations may be limited")
             pgvector_config.enabled = False
     else:
         logger.warning("PgVector provider skipped - no database credentials available")
@@ -365,25 +378,48 @@ async def lifespan(app: FastAPI):
     # Initialize unified store with optimization engine integration
     optimization_enabled = os.getenv("OPTIMIZATION_ENABLED", "true").lower() == "true"
     
+    # Ensure we have at least one working provider
+    working_providers = [p for p in providers if getattr(p, 'enabled', True)]
+    if not working_providers:
+        logger.error("❌ CRITICAL: No working providers available - service cannot start")
+        raise RuntimeError("No working vector providers available")
+    
+    logger.info(f"Available providers: {[p.name for p in working_providers]}")
+    
     if optimization_enabled:
         try:
             from .optimized_unified_store import create_optimized_unified_store
             logger.info("🚀 Creating optimized unified vector store...")
             unified_store = await create_optimized_unified_store(
-                providers=providers,
+                providers=working_providers,
                 embedding_model=embedding_model,
                 adm_enabled=True
             )
-            logger.info(f"✅ Optimized memory service started: {len(providers)} providers with performance enhancements")
+            logger.info(f"✅ Optimized memory service started: {len(working_providers)} providers with performance enhancements")
         except Exception as e:
             logger.warning(f"⚠️ Optimization engine failed, using standard store: {e}")
-            # Fallback to standard UnifiedVectorStore
-            unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
-            logger.info(f"Memory service started with standard vector store: {len(providers)} providers")
+            import traceback
+            logger.debug(f"Optimization failure details: {traceback.format_exc()}")
+            
+            # Fallback to standard UnifiedVectorStore with robust error handling
+            try:
+                unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=True)
+                logger.info(f"✅ Memory service started with standard vector store: {len(working_providers)} providers")
+            except Exception as fallback_error:
+                logger.error(f"❌ CRITICAL: Even standard vector store failed: {fallback_error}")
+                # Last resort: try with minimal configuration
+                unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=False)
+                logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
     else:
-        # Standard UnifiedVectorStore
-        unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
-        logger.info(f"Memory service started with standard vector store: {len(providers)} providers")
+        # Standard UnifiedVectorStore with robust error handling
+        try:
+            unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=True)
+            logger.info(f"✅ Memory service started with standard vector store: {len(working_providers)} providers")
+        except Exception as standard_error:
+            logger.error(f"❌ Standard vector store failed: {standard_error}")
+            # Last resort: try with minimal configuration
+            unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=False)
+            logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
 
     # Initialize bulk import service (simplified version without Redis)
     global bulk_import_service, memory_export_service
