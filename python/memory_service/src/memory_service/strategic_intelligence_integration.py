@@ -36,7 +36,7 @@ class StrategicIntelligenceClient:
     """Client for JARVIS strategic intelligence services"""
     
     def __init__(self):
-        self.logger = logger.bind(component="strategic_intelligence_client")
+        self.logger = logger
         
         # Use JARVIS configuration
         self.base_url = config.jarvis.URL.rstrip('/')

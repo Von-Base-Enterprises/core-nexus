@@ -366,8 +366,7 @@ class StrategicIntelligenceCircuitBreaker:
             if (self.strategic_analysis_circuit.success_rate < self.config.degraded_mode_threshold and
                 not self.degraded_mode_active):
                 self.degraded_mode_active = True
-                self.logger.warning("Activating degraded mode for strategic intelligence",
-                                  success_rate=self.strategic_analysis_circuit.success_rate)
+                self.logger.warning(f"Activating degraded mode for strategic intelligence: success_rate={self.strategic_analysis_circuit.success_rate}")
             
             # Return fallback response
             return await self._provide_strategic_fallback(query, context, str(e))
@@ -381,16 +380,13 @@ class StrategicIntelligenceCircuitBreaker:
     ) -> Any:
         """Execute enhanced reasoning with circuit breaker protection"""
         try:
-            self.logger.info("Executing enhanced reasoning call with circuit protection",
-                           query_preview=query[:50],
-                           memory_count=len(memories),
-                           circuit_state=self.enhanced_reasoning_circuit.state.value)
+            self.logger.info(f"Executing enhanced reasoning call with circuit protection: query_preview={query[:50]}, memory_count={len(memories)}, circuit_state={self.enhanced_reasoning_circuit.state.value}")
             
             result = await self.enhanced_reasoning_circuit.call(func, query, memories, context)
             return result
             
         except Exception as e:
-            self.logger.warning("Enhanced reasoning circuit breaker failure", error=str(e))
+            self.logger.warning(f"Enhanced reasoning circuit breaker failure: error={str(e)}")
             
             # Fallback to basic reasoning summary
             return await self._provide_reasoning_fallback(query, memories, str(e))
@@ -406,7 +402,7 @@ class StrategicIntelligenceCircuitBreaker:
             return await self.jarvis_circuit.call(func, *args, **kwargs)
             
         except Exception as e:
-            self.logger.warning("JARVIS service circuit breaker failure", error=str(e))
+            self.logger.warning(f"JARVIS service circuit breaker failure: error={str(e)}")
             
             # Check JARVIS health and provide appropriate fallback
             if self.jarvis_circuit.state == CircuitState.OPEN:
@@ -484,9 +480,7 @@ class StrategicIntelligenceCircuitBreaker:
             "fallback_mode": True
         }
         
-        self.logger.info("Provided strategic analysis fallback response",
-                        query_preview=query[:50],
-                        confidence=25.0)
+        self.logger.info(f"Provided strategic analysis fallback response: query_preview={query[:50]}, confidence=25.0")
         
         return fallback_analysis
     
@@ -528,9 +522,7 @@ class StrategicIntelligenceCircuitBreaker:
             "fallback_mode": True
         }
         
-        self.logger.info("Provided reasoning analysis fallback response",
-                        query_preview=query[:50],
-                        memory_count=len(memories))
+        self.logger.info(f"Provided reasoning analysis fallback response: query_preview={query[:50]}, memory_count={len(memories)}")
         
         return fallback_reasoning
     
@@ -616,9 +608,7 @@ class StrategicIntelligenceCircuitBreaker:
                     
                     # Re-queue for background processing
                     # This would integrate with actual background task system
-                    self.logger.info("Re-queued fallback request for processing",
-                                   request_type=request["type"],
-                                   age_seconds=age)
+                    self.logger.info(f"Re-queued fallback request for processing: request_type={request['type']}, age_seconds={age}")
                     processed += 1
                     
                 except Exception as e:
@@ -649,15 +639,14 @@ class CircuitBreakerManager:
             "embedding_service": self.embedding_service
         }
         
-        self.logger.info("Circuit Breaker Manager initialized",
-                        circuit_count=len(self.circuit_registry))
+        self.logger.info(f"Circuit Breaker Manager initialized: circuit_count={len(self.circuit_registry)}")
     
     async def call_memory_store(self, func: Callable, *args, **kwargs) -> Any:
         """Execute memory store operation with circuit breaker protection"""
         try:
             return await self.memory_store.call(func, *args, **kwargs)
         except Exception as e:
-            self.logger.error("Memory store circuit breaker failure", error=str(e))
+            self.logger.error(f"Memory store circuit breaker failure: error={str(e)}")
             raise
     
     async def call_embedding_service(self, func: Callable, *args, **kwargs) -> Any:
@@ -665,7 +654,7 @@ class CircuitBreakerManager:
         try:
             return await self.embedding_service.call(func, *args, **kwargs)
         except Exception as e:
-            self.logger.error("Embedding service circuit breaker failure", error=str(e))
+            self.logger.error(f"Embedding service circuit breaker failure: error={str(e)}")
             # Could provide embedding fallback here
             raise
     
@@ -717,12 +706,10 @@ class CircuitBreakerManager:
             
             # Log health status
             health = self.get_system_health()
-            self.logger.info("Health check cycle completed",
-                           overall_status=health["overall_status"],
-                           health_percentage=health["health_percentage"])
+            self.logger.info(f"Health check cycle completed: overall_status={health['overall_status']}, health_percentage={health['health_percentage']}")
             
         except Exception as e:
-            self.logger.error("Health check cycle failed", error=str(e))
+            self.logger.error(f"Health check cycle failed: error={str(e)}")
 
 
 # Global circuit breaker manager instance

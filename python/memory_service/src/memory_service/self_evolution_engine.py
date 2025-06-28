@@ -54,7 +54,7 @@ class SelfEvolutionEngine:
     """
     
     def __init__(self):
-        self.logger = logger.bind(component="self_evolution")
+        self.logger = logger
         
         # Learning configuration
         self.learning_enabled = getattr(config.features, 'self_evolution_enabled', True)
@@ -72,10 +72,7 @@ class SelfEvolutionEngine:
         self.confidence_trends: List[Tuple[datetime, float]] = []
         self.performance_metrics: List[Dict[str, Any]] = []
         
-        self.logger.info("Self-Evolution Engine initialized",
-                        learning_enabled=self.learning_enabled,
-                        insight_threshold=self.insight_threshold,
-                        evolution_cycle_hours=self.evolution_cycle_hours)
+        self.logger.info(f"Self-Evolution Engine initialized: learning_enabled={self.learning_enabled}, insight_threshold={self.insight_threshold}, evolution_cycle_hours={self.evolution_cycle_hours}")
     
     async def record_strategic_analysis(
         self, 
@@ -151,9 +148,7 @@ class SelfEvolutionEngine:
         
         try:
             cycle_start = time.time()
-            self.logger.info("Starting self-evolution cycle",
-                           outcomes_to_analyze=len(self.strategic_outcomes),
-                           query_patterns=len(self.query_patterns))
+            self.logger.info(f"Starting self-evolution cycle: outcomes_to_analyze={len(self.strategic_outcomes)}, query_patterns={len(self.query_patterns)}")
             
             insights = []
             
@@ -207,10 +202,7 @@ class SelfEvolutionEngine:
             # Store evolution insights in memory
             await self._store_evolution_insights(actionable_insights)
             
-            self.logger.info("Self-evolution cycle completed",
-                           cycle_duration=cycle_time,
-                           total_insights=len(insights),
-                           actionable_insights=len(actionable_insights))
+            self.logger.info(f"Self-evolution cycle completed: cycle_duration={cycle_time}, total_insights={len(insights)}, actionable_insights={len(actionable_insights)}")
             
             return actionable_insights
             

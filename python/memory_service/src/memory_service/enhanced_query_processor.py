@@ -168,7 +168,7 @@ class EnhancedQueryProcessor:
     """Enhanced query processor with strategic intelligence integration"""
     
     def __init__(self):
-        self.logger = logger.bind(component="enhanced_query_processor")
+        self.logger = logger
         self.classifier = QueryClassifier()
         
         # Performance tracking
