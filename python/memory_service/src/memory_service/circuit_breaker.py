@@ -14,10 +14,8 @@ from dataclasses import dataclass
 
 from .config import config
 from .logging_config import get_logger
-import structlog
 
 logger = get_logger("circuit_breaker")
-structlog_logger = structlog.get_logger("circuit_breaker")
 
 
 class CircuitState(Enum):
@@ -296,12 +294,8 @@ class StrategicIntelligenceCircuitBreaker:
     """
     
     def __init__(self, fallback_config: Optional[FallbackConfig] = None):
-        # Use defensive logging to prevent keyword argument errors
-        try:
-            self.logger = structlog_logger.bind(component="strategic_intelligence_circuit_breaker")
-        except Exception:
-            # Fallback to standard logger if structlog binding fails
-            self.logger = logger
+        # Use standard logger to prevent keyword argument errors
+        self.logger = logger
         self.config = fallback_config or FallbackConfig()
         
         # Main circuit breakers for different components
@@ -630,12 +624,8 @@ class CircuitBreakerManager:
     """
     
     def __init__(self):
-        # Use defensive logging to prevent keyword argument errors
-        try:
-            self.logger = structlog_logger.bind(component="circuit_breaker_manager")
-        except Exception:
-            # Fallback to standard logger if structlog binding fails
-            self.logger = logger
+        # Use standard logger to prevent keyword argument errors
+        self.logger = logger
         
         # Initialize specialized circuit breakers
         self.strategic_intelligence = StrategicIntelligenceCircuitBreaker()

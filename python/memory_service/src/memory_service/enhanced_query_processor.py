@@ -304,7 +304,6 @@ class EnhancedQueryProcessor:
                 }
             }
             
-            # Process with strategic intelligence using circuit breaker protection
             strategic_result = await call_with_strategic_circuit(
                 process_strategic_query, 
                 request.query, 
@@ -381,7 +380,6 @@ class EnhancedQueryProcessor:
                 """
             }
             
-            # Process with enhanced reasoning using circuit breaker protection
             analysis_result = await call_with_reasoning_circuit(
                 jarvis_client.analyze_query_results,
                 request.query,
@@ -440,7 +438,6 @@ class EnhancedQueryProcessor:
                 "conversation_id": request.conversation_id
             }
             
-            # Process with standard reasoning using circuit breaker protection
             analysis_result = await call_with_jarvis_circuit(
                 jarvis_client.analyze_query_results,
                 request.query,
