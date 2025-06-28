@@ -1,38 +1,33 @@
 import js from '@eslint/js';
-import typescript from '@typescript-eslint/eslint-plugin';
-import typescriptParser from '@typescript-eslint/parser';
+import globals from 'globals';
 
 export default [
   js.configs.recommended,
   {
-    files: ['**/*.{js,jsx,ts,tsx}'],
     languageOptions: {
-      parser: typescriptParser,
-      parserOptions: {
-        ecmaVersion: 'latest',
-        sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.es2022,
       },
-    },
-    plugins: {
-      '@typescript-eslint': typescript,
+      ecmaVersion: 2022,
+      sourceType: 'module',
     },
     rules: {
-      '@typescript-eslint/no-unused-vars': 'error',
-      '@typescript-eslint/no-explicit-any': 'warn',
-      'prefer-const': 'error',
-      'no-var': 'error',
-      'no-unused-expressions': 'off',
-      'no-empty-function': 'off',
+      'no-unused-vars': 'warn',
+      'no-console': 'off',
     },
-  },
-  {
     ignores: [
       'node_modules/**',
+      '.yarn/**',
       'dist/**',
       'build/**',
-      'coverage/**',
-      '.yarn/**',
-      '*.config.js',
+      '**/*.min.js',
+      'python/**',
+      'jarvis/**',
+      '*.json',
+      '*.md',
+      '*.yml',
+      '*.yaml',
     ],
   },
 ];

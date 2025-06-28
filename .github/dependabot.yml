@@ -58,11 +58,6 @@ updates:
       - "dependencies"
       - "javascript"
       - "npm"
-    # Only create PRs for security updates on weekends
-    schedule:
-      interval: "daily"
-      time: "04:00"
-      timezone: "UTC"
 
   # Python dependencies via pip (Poetry)
   - package-ecosystem: "pip"

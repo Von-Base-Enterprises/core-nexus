@@ -6,14 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### All-in-One Commands (via Makefile)
 ```bash
-make install          # Install all dependencies (TypeScript + Python)
-make dev              # Start all development servers
-make test             # Run all tests
-make lint             # Run all linters
+make install          # Install all dependencies (Yarn + Poetry)
+make dev              # Start all development servers  
+make test             # Run all tests (primarily Python via Poetry)
+make lint             # Run all linters (ESLint + Python)
 make format           # Auto-format all code
 make type-check       # Run type checking
 make ci               # Full CI pipeline (test + lint + type-check)
 make build            # Build all packages
+```
+
+### Direct Package Manager Commands
+```bash
+# Yarn v4 commands (for linting and formatting)
+yarn install          # Install Node.js dependencies for linting/formatting
+yarn lint              # Run ESLint on JavaScript/TypeScript files
+yarn format            # Format code with Prettier
+yarn ci                # Run yarn CI pipeline
+
+# Poetry commands (for Python services)
+cd python/memory_service
+poetry install         # Install Python dependencies
+poetry run pytest     # Run Python tests
+poetry run ruff check  # Python linting
 ```
 
 ### Python-Specific Commands
@@ -27,19 +42,17 @@ poetry run black .                                      # Format
 poetry run mypy .                                       # Type check
 ```
 
-### TypeScript-Specific Commands
+### Code Quality Commands
 ```bash
-yarn test             # Run all TypeScript tests
-yarn test:watch       # Run tests in watch mode
-yarn lint             # Lint TypeScript code
-yarn lint:fix         # Fix linting issues
-yarn type-check       # TypeScript type checking
-yarn build            # Build all packages
+yarn lint             # Lint JavaScript/TypeScript files (primarily for config files)
+yarn lint:fix         # Fix linting issues automatically
+yarn format           # Format code with Prettier
+yarn format:check     # Check code formatting without changes
 ```
 
 ### Running Single Tests
 - Python: `poetry run pytest -xvs tests/test_file.py::test_function`
-- TypeScript: `yarn test path/to/test.spec.ts`
+- JARVIS: `cd jarvis && python test_jarvis.py`
 
 ### Database Backup Commands
 ```bash
