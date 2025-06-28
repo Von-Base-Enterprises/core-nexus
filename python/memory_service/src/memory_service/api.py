@@ -169,21 +169,9 @@ async def lifespan(app: FastAPI):
             else:
                 pgvector_provider = PgVectorProvider(pgvector_config)
             
-            # Test basic provider health before adding to providers
-            try:
-                health_result = await pgvector_provider.health_check()
-                logger.info(f"PgVector provider health check: {health_result}")
-                
-                providers.append(pgvector_provider)
-                pgvector_config.primary = True  # Make primary if successful
-                logger.info("✅ PgVector provider initialized as primary and healthy")
-            except Exception as health_error:
-                logger.warning(f"PgVector provider created but health check failed: {health_error}")
-                # Add provider anyway but as secondary - let UnifiedStore handle graceful degradation
-                pgvector_config.primary = False
-                providers.append(pgvector_provider)
-                logger.info("⚠️ PgVector provider added as secondary (health check failed)")
-                
+            providers.append(pgvector_provider)
+            pgvector_config.primary = True  # Make primary if successful
+            logger.info("✅ PgVector provider initialized as primary")
         except Exception as e:
             logger.error(f"PgVector provider failed to initialize: {e}")
             logger.warning("System will continue with ChromaDB only - some operations may be limited")

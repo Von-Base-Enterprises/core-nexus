@@ -132,6 +132,7 @@ class APIKeyAuth:
         api_key = self.get_api_key_from_request(request)
         
         if not api_key:
+            logger.warning(f"Authentication failed: No API key provided for {request.url.path} from {request.client.host if request.client else 'unknown'}")
             raise HTTPException(
                 status_code=401,
                 detail={
@@ -145,7 +146,7 @@ class APIKeyAuth:
         if not self.validate_api_key(api_key):
             # Hash the key for logging (security)
             key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:8]
-            logger.warning(f"Invalid API key attempted: {key_hash}...")
+            logger.warning(f"Authentication failed: Invalid API key {key_hash}... for {request.url.path} from {request.client.host if request.client else 'unknown'}")
             
             raise HTTPException(
                 status_code=401,
@@ -158,7 +159,7 @@ class APIKeyAuth:
         
         # Check rate limits
         if not self.check_rate_limit(api_key):
-            logger.warning(f"Rate limit exceeded for API key: {api_key[:8]}...")
+            logger.warning(f"Authentication failed: Rate limit exceeded for API key {api_key[:8]}... for {request.url.path}")
             
             raise HTTPException(
                 status_code=429,
@@ -169,6 +170,8 @@ class APIKeyAuth:
                 }
             )
         
+        # Log successful authentication for debugging
+        logger.debug(f"Authentication successful: API key {api_key[:8]}... for {request.url.path}")
         return api_key
 
 # Global authentication instance

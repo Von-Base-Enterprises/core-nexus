@@ -612,7 +612,7 @@ class StrategicIntelligenceCircuitBreaker:
                     processed += 1
                     
                 except Exception as e:
-                    self.logger.error("Failed to process fallback request", error=str(e))
+                    self.logger.error(f"Failed to process fallback request: error={str(e)}")
             
             self.logger.info(f"Fallback queue processing completed: processed_count={processed}")
 
