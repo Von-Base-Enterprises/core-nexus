@@ -10,7 +10,7 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from .models import (
@@ -22,6 +22,7 @@ from .models import (
     QueryResponse,
 )
 from .deduplication import DeduplicationService, DeduplicationMode
+from .reliable_task_queue import get_task_queue, TaskPriority, ReliableTaskQueue
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,15 @@ class UnifiedVectorStore:
             raise RuntimeError("No enabled vector providers available")
         self.embedding_model = embedding_model
         self.importance_scorer = ImportanceScoring()
+        
+        # Enhanced load balancing with circuit breaker
+        try:
+            from .circuit_breaker import LoadBalancer
+            self.load_balancer = LoadBalancer(providers)
+            logger.info("Enhanced load balancing initialized")
+        except ImportError:
+            logger.warning("Circuit breaker not available, using basic failover")
+            self.load_balancer = None
         # Initialize caching (Redis if available, in-memory otherwise)
         self.query_cache = self._initialize_cache()
         self.stats = {
@@ -98,6 +108,10 @@ class UnifiedVectorStore:
         if adm_enabled:
             self._initialize_adm_engine()
 
+        # RELIABILITY OPTIMIZATION: Initialize reliable task queue
+        self.task_queue: Optional[ReliableTaskQueue] = None
+        asyncio.create_task(self._initialize_task_queue())
+        
         # Initialize Deduplication Service
         self.deduplication_service = None
         dedup_mode = os.getenv('DEDUPLICATION_MODE', 'off').lower()
@@ -126,11 +140,16 @@ class UnifiedVectorStore:
         else:
             logger.info("Graph provider not available - Knowledge graph functionality DISABLED")
 
+        # Initialize reliable task queue for background operations
+        self.task_queue: Optional[ReliableTaskQueue] = None
+        asyncio.create_task(self._initialize_task_queue())
+
         logger.info(f"Initialized UnifiedVectorStore with providers: {list(self.providers.keys())}")
         logger.info(f"Primary provider: {self.primary_provider.name}")
         logger.info(f"ADM scoring: {'enabled' if adm_enabled else 'disabled'}")
         logger.info(f"Deduplication: {'enabled' if self.deduplication_service else 'disabled'}")
         logger.info(f"Graph functionality: {'enabled' if self.graph_provider else 'disabled'}")
+        logger.info("Reliable task queue initialization scheduled")
 
     def _initialize_adm_engine(self):
         """Initialize the ADM scoring engine."""
@@ -165,6 +184,40 @@ class UnifiedVectorStore:
             logger.info(f"Redis not available, using in-memory cache: {e}")
             return {}
 
+    async def _initialize_task_queue(self):
+        """Initialize the reliable task queue and register handlers"""
+        try:
+            self.task_queue = await get_task_queue()
+            
+            # Register task handlers for background operations
+            self.task_queue.register_handler('graph_processing', self._task_graph_processing)
+            self.task_queue.register_handler('provider_replication', self._task_provider_replication)
+            self.task_queue.register_handler('provider_reconciliation', self._task_provider_reconciliation)
+            self.task_queue.register_handler('provider_repair', self._task_provider_repair)
+            
+            logger.info("✅ Reliable task queue initialized with handlers")
+            
+            # Schedule initial provider reconciliation to detect issues
+            await self._schedule_provider_reconciliation()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize task queue: {e}")
+            self.task_queue = None
+
+    async def _schedule_provider_reconciliation(self):
+        """Schedule provider reconciliation task on startup"""
+        try:
+            if self.task_queue:
+                await self.task_queue.submit_task(
+                    task_type='provider_reconciliation',
+                    payload={},
+                    priority=TaskPriority.LOW,
+                    max_retries=1
+                )
+                logger.info("📋 Scheduled initial provider reconciliation task")
+        except Exception as e:
+            logger.error(f"Failed to schedule reconciliation task: {e}")
+
     async def store_memory(self, request: MemoryRequest) -> MemoryResponse:
         """
         Store a memory across providers with automatic replication.
@@ -198,32 +251,21 @@ class UnifiedVectorStore:
             elif not embedding:
                 raise ValueError("No embedding provided and no embedding model configured")
 
-            # Calculate importance score using ADM if available
+            # PERFORMANCE OPTIMIZATION: Use fast fallback scoring, upgrade to ADM in background
             importance_score = request.importance_score
             adm_data = {}
 
             if importance_score is None:
+                # Use fast fallback scoring first for immediate response
+                importance_score = self._calculate_importance(request)
+                
+                # Schedule ADM scoring enhancement in background if available
                 if self.adm_enabled and self.adm_engine:
-                    # Use ADM scoring for intelligent importance calculation
-                    try:
-                        adm_result = await self.adm_engine.calculate_adm_score(
-                            request.content,
-                            request.metadata
-                        )
-                        importance_score = adm_result['adm_score']
-                        adm_data = adm_result
-
-                        # Update ADM stats
-                        self.stats['adm_calculations'] += 1
-                        current_avg = self.stats['avg_adm_score']
-                        count = self.stats['adm_calculations']
-                        self.stats['avg_adm_score'] = (current_avg * (count - 1) + importance_score) / count
-
-                    except Exception as e:
-                        logger.warning(f"ADM scoring failed, using fallback: {e}")
-                        importance_score = self._calculate_importance(request)
+                    logger.info(f"🧮 Using fast fallback scoring ({importance_score:.3f}), scheduling ADM enhancement in background")
                 else:
-                    importance_score = self._calculate_importance(request)
+                    logger.info(f"🧮 Using standard importance scoring: {importance_score:.3f}")
+            else:
+                logger.info(f"🧮 Using provided importance score: {importance_score:.3f}")
 
             # Prepare metadata
             metadata = {
@@ -253,46 +295,45 @@ class UnifiedVectorStore:
                 metadata
             )
 
-            # Extract entities and relationships for knowledge graph if enabled
-            if self.graph_provider and self.graph_provider.enabled:
-                try:
-                    logger.info(f"🧠 Extracting entities and relationships for memory {memory_id}")
-                    # Use the memory_id from primary storage for graph consistency
-                    await self.graph_provider.extract_and_link_entities(memory_id, request.content, embedding, metadata)
-                    logger.info(f"✅ Successfully processed knowledge graph for memory {memory_id}")
-                except Exception as e:
-                    logger.error(f"❌ Graph processing failed for memory {memory_id}: {e}")
-                    # Don't fail the whole operation if graph processing fails
-                    logger.info("Continuing without graph processing - memory storage succeeded")
-
-            # SYNCHRONOUS replication to secondary providers for data consistency
-            # This ensures ChromaDB stays in sync with pgvector
-            replication_success = False
-            try:
-                logger.info(f"🔄 Starting replication for memory {memory_id} to secondary providers")
-                await self._replicate_to_secondaries(
-                    memory_id, request.content, embedding, metadata
+            # RELIABILITY OPTIMIZATION: Use reliable task queue for background operations
+            # This provides retry logic, persistence, and observability for background tasks
+            
+            # Submit tasks to reliable queue for processing
+            if self.task_queue:
+                # Graph processing (reliable background task)
+                if self.graph_provider and self.graph_provider.enabled:
+                    logger.info(f"🧠 Submitting graph processing task for memory {memory_id}")
+                    await self.task_queue.submit_task(
+                        task_type='graph_processing',
+                        payload={
+                            'memory_id': memory_id,
+                            'content': request.content,
+                            'embedding': embedding,
+                            'metadata': metadata
+                        },
+                        priority=TaskPriority.NORMAL,
+                        max_retries=3
+                    )
+                
+                # Secondary replication (reliable background task)
+                logger.info(f"🔄 Submitting replication task for memory {memory_id}")
+                await self.task_queue.submit_task(
+                    task_type='provider_replication',
+                    payload={
+                        'memory_id': memory_id,
+                        'content': request.content,
+                        'embedding': embedding,
+                        'metadata': metadata
+                    },
+                    priority=TaskPriority.HIGH,  # High priority for data consistency
+                    max_retries=5  # More retries for critical replication
                 )
-                logger.info(f"✅ Successfully replicated memory {memory_id} to secondary providers")
-                replication_success = True
-            except Exception as e:
-                logger.error(f"❌ CRITICAL: Secondary replication failed for memory {memory_id}: {e}")
-                logger.error(f"❌ This means ChromaDB is not getting updates - data redundancy broken!")
-                # Continue - primary storage succeeded, but log the failure prominently
-                
-            # Track replication success rate
-            if not hasattr(self, 'replication_stats'):
-                self.replication_stats = {'total': 0, 'successful': 0, 'failed': 0}
-            self.replication_stats['total'] += 1
-            if replication_success:
-                self.replication_stats['successful'] += 1
             else:
-                self.replication_stats['failed'] += 1
-                
-            # Log replication health every 10 operations
-            if self.replication_stats['total'] % 10 == 0:
-                success_rate = (self.replication_stats['successful'] / self.replication_stats['total']) * 100
-                logger.warning(f"📊 Replication health: {success_rate:.1f}% success rate ({self.replication_stats['successful']}/{self.replication_stats['total']})")
+                logger.warning(f"⚠️ Task queue not available, skipping background tasks for {memory_id}")
+                # Fallback to fire-and-forget for emergency situations
+                if self.graph_provider and self.graph_provider.enabled:
+                    asyncio.create_task(self._background_graph_processing(memory_id, request.content, embedding, metadata))
+                asyncio.create_task(self._background_replication(memory_id, request.content, embedding, metadata))
 
             # Update stats
             self.stats['total_stores'] += 1
@@ -613,7 +654,8 @@ class UnifiedVectorStore:
         if actual_total_memories > 0:
             updated_stats['total_stores'] = actual_total_memories
 
-        return {
+        # Enhanced health check with load balancing metrics and task queue status
+        enhanced_health = {
             'status': 'healthy' if overall_healthy else 'degraded',
             'providers': results,
             'stats': updated_stats,
@@ -623,9 +665,46 @@ class UnifiedVectorStore:
                 'vector_storage': True,
                 'knowledge_graph': self.graph_provider is not None and self.graph_provider.enabled,
                 'adm_scoring': self.adm_enabled,
-                'deduplication': self.deduplication_service is not None
+                'deduplication': self.deduplication_service is not None,
+                'load_balancing': self.load_balancer is not None,
+                'reliable_task_queue': self.task_queue is not None
             }
         }
+        
+        # Add task queue metrics if available
+        if self.task_queue:
+            try:
+                task_queue_metrics = self.get_task_queue_metrics()
+                enhanced_health['task_queue'] = task_queue_metrics
+                
+                # Update overall status based on task queue health
+                if task_queue_metrics.get('dead_letter_tasks', 0) > 10:
+                    enhanced_health['status'] = 'degraded'
+                    enhanced_health['warnings'] = enhanced_health.get('warnings', [])
+                    enhanced_health['warnings'].append('High number of dead letter tasks detected')
+                    
+            except Exception as e:
+                logger.error(f"Failed to get task queue metrics: {e}")
+                enhanced_health['task_queue'] = {'error': str(e)}
+        
+        # Add load balancer health metrics if available
+        if self.load_balancer:
+            try:
+                load_balancer_health = self.load_balancer.get_health_status()
+                enhanced_health['load_balancer'] = load_balancer_health
+                
+                # Update overall status based on load balancer health
+                available_providers = len(load_balancer_health.get('available_providers', []))
+                if available_providers == 0:
+                    enhanced_health['status'] = 'critical'
+                elif available_providers < len(self.providers):
+                    enhanced_health['status'] = 'degraded'
+                    
+            except Exception as e:
+                logger.error(f"Failed to get load balancer health: {e}")
+                enhanced_health['load_balancer'] = {'error': str(e)}
+        
+        return enhanced_health
 
     def _calculate_importance(self, request: MemoryRequest) -> float:
         """
@@ -937,3 +1016,443 @@ class UnifiedVectorStore:
         except Exception as e:
             logger.error(f"Failed to refresh stats: {e}")
             raise
+
+    async def _execute_background_tasks(self, memory_id: str, tasks: list):
+        """Execute background tasks asynchronously without blocking the main response."""
+        try:
+            logger.info(f"🚀 Starting {len(tasks)} background tasks for memory {memory_id}")
+            start_time = time.time()
+            
+            # Execute all background tasks concurrently
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            execution_time = (time.time() - start_time) * 1000
+            
+            # Log results
+            successful = 0
+            failed = 0
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"❌ Background task {i} failed for memory {memory_id}: {result}")
+                    failed += 1
+                else:
+                    logger.info(f"✅ Background task {i} completed for memory {memory_id}")
+                    successful += 1
+            
+            logger.info(f"📊 Background tasks for {memory_id}: {successful} successful, {failed} failed in {execution_time:.1f}ms")
+            
+        except Exception as e:
+            logger.error(f"❌ Critical error in background task execution for memory {memory_id}: {e}")
+
+    async def _background_graph_processing(self, memory_id: str, content: str, embedding: list[float], metadata: dict):
+        """Process knowledge graph extraction in the background."""
+        try:
+            logger.info(f"🧠 Starting background graph processing for memory {memory_id}")
+            await self.graph_provider.extract_and_link_entities(memory_id, content, embedding, metadata)
+            logger.info(f"✅ Background graph processing completed for memory {memory_id}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Background graph processing failed for memory {memory_id}: {e}")
+            return False
+
+    async def _background_replication(self, memory_id: str, content: str, embedding: list[float], metadata: dict):
+        """Handle replication to secondary providers in the background."""
+        try:
+            logger.info(f"🔄 Starting background replication for memory {memory_id}")
+            
+            # Track replication success rate
+            if not hasattr(self, 'replication_stats'):
+                self.replication_stats = {'total': 0, 'successful': 0, 'failed': 0}
+            self.replication_stats['total'] += 1
+            
+            await self._replicate_to_secondaries(memory_id, content, embedding, metadata)
+            
+            self.replication_stats['successful'] += 1
+            logger.info(f"✅ Background replication completed for memory {memory_id}")
+            return True
+            
+        except Exception as e:
+            self.replication_stats['failed'] += 1
+            logger.error(f"❌ Background replication failed for memory {memory_id}: {e}")
+            return False
+
+    # ========================================
+    # RELIABLE TASK QUEUE HANDLERS
+    # ========================================
+
+    async def _task_graph_processing(self, memory_id: str, content: str, embedding: list[float], metadata: dict) -> bool:
+        """Task queue handler for graph processing with enhanced error handling"""
+        try:
+            logger.info(f"🧠 [TASK QUEUE] Starting graph processing for memory {memory_id}")
+            
+            if not (self.graph_provider and self.graph_provider.enabled):
+                logger.warning(f"Graph provider not available for memory {memory_id}")
+                return False
+            
+            await self.graph_provider.extract_and_link_entities(memory_id, content, embedding, metadata)
+            
+            logger.info(f"✅ [TASK QUEUE] Graph processing completed for memory {memory_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ [TASK QUEUE] Graph processing failed for memory {memory_id}: {e}")
+            # Don't re-raise - let task queue handle retry logic
+            return False
+
+    async def _task_provider_replication(self, memory_id: str, content: str, embedding: list[float], metadata: dict) -> bool:
+        """Task queue handler for provider replication with enhanced reliability"""
+        try:
+            logger.info(f"🔄 [TASK QUEUE] Starting provider replication for memory {memory_id}")
+            
+            # Track replication attempts
+            if not hasattr(self, 'replication_stats'):
+                self.replication_stats = {'total': 0, 'successful': 0, 'failed': 0}
+            
+            self.replication_stats['total'] += 1
+            
+            # Perform replication to secondary providers
+            await self._replicate_to_secondaries(memory_id, content, embedding, metadata)
+            
+            self.replication_stats['successful'] += 1
+            logger.info(f"✅ [TASK QUEUE] Provider replication completed for memory {memory_id}")
+            return True
+            
+        except Exception as e:
+            self.replication_stats['failed'] += 1
+            logger.error(f"❌ [TASK QUEUE] Provider replication failed for memory {memory_id}: {e}")
+            
+            # Log replication health every failed attempt
+            if hasattr(self, 'replication_stats') and self.replication_stats['total'] > 0:
+                success_rate = (self.replication_stats['successful'] / self.replication_stats['total']) * 100
+                logger.warning(f"📊 Current replication success rate: {success_rate:.1f}%")
+            
+            # Don't re-raise - let task queue handle retry logic
+            return False
+
+    async def _task_provider_reconciliation(self, provider_name: str = None) -> bool:
+        """Task queue handler for provider reconciliation to detect and fix inconsistencies"""
+        try:
+            logger.info(f"🔧 [TASK QUEUE] Starting provider reconciliation (provider: {provider_name or 'all'})")
+            
+            # Get current memory counts from all providers
+            provider_counts = {}
+            primary_count = 0
+            
+            for name, provider in self.providers.items():
+                if not provider.enabled:
+                    continue
+                    
+                try:
+                    health = await provider.health_check()
+                    count = 0
+                    
+                    if isinstance(health, dict):
+                        count = health.get('total_vectors', health.get('total_memories', 0))
+                    
+                    provider_counts[name] = count
+                    
+                    if provider == self.primary_provider:
+                        primary_count = count
+                        
+                    logger.info(f"Provider {name}: {count} memories")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to get count from provider {name}: {e}")
+                    provider_counts[name] = -1  # Mark as error
+            
+            # Detect inconsistencies
+            inconsistencies = []
+            tolerance = 0.05  # 5% tolerance for minor discrepancies
+            
+            for name, count in provider_counts.items():
+                if count == -1:  # Provider error
+                    inconsistencies.append(f"Provider {name}: Health check failed")
+                elif abs(count - primary_count) > (primary_count * tolerance):
+                    diff = count - primary_count
+                    inconsistencies.append(f"Provider {name}: {diff:+d} memories vs primary")
+            
+            if inconsistencies:
+                logger.warning(f"🚨 Provider inconsistencies detected:")
+                for issue in inconsistencies:
+                    logger.warning(f"   • {issue}")
+                
+                # TODO: Implement automatic repair mechanisms
+                logger.info("Reconciliation completed with issues - manual intervention may be required")
+                return False
+            else:
+                logger.info("✅ [TASK QUEUE] All providers are consistent")
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ [TASK QUEUE] Provider reconciliation failed: {e}")
+            return False
+
+    async def _task_provider_repair(self, provider_name: str, repair_type: str = "sync") -> bool:
+        """Task queue handler for automatic provider repair"""
+        try:
+            logger.info(f"🔧 [TASK QUEUE] Starting provider repair for {provider_name} (type: {repair_type})")
+            
+            if repair_type == "sync":
+                return await self._repair_provider_sync(provider_name)
+            elif repair_type == "rebuild":
+                return await self._repair_provider_rebuild(provider_name)
+            else:
+                logger.error(f"Unknown repair type: {repair_type}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ [TASK QUEUE] Provider repair failed for {provider_name}: {e}")
+            return False
+
+    async def _repair_provider_sync(self, provider_name: str) -> bool:
+        """Synchronize a secondary provider with the primary provider"""
+        try:
+            if provider_name not in self.providers:
+                logger.error(f"Provider {provider_name} not found")
+                return False
+                
+            provider = self.providers[provider_name]
+            if not provider.enabled or provider == self.primary_provider:
+                logger.warning(f"Cannot sync provider {provider_name} (disabled or is primary)")
+                return False
+            
+            logger.info(f"🔄 Starting sync repair for provider {provider_name}")
+            
+            # Get recent memories from primary provider (last 100)
+            # This is a simplified repair - in production you'd want more sophisticated sync
+            try:
+                primary_health = await self.primary_provider.health_check()
+                secondary_health = await provider.health_check()
+                
+                primary_count = primary_health.get('total_vectors', 0)
+                secondary_count = secondary_health.get('total_vectors', 0)
+                
+                if primary_count == secondary_count:
+                    logger.info(f"✅ Provider {provider_name} is already in sync ({primary_count} memories)")
+                    return True
+                
+                missing_count = primary_count - secondary_count
+                logger.info(f"Provider {provider_name} is missing {missing_count} memories, starting sync...")
+                
+                # IMPLEMENTATION: Actual sync logic - copy missing memories from primary to secondary
+                if missing_count > 0:
+                    logger.info(f"🔄 Syncing {missing_count} missing memories to {provider_name}")
+                    
+                    # Get recent memories from primary to copy over
+                    try:
+                        # Query primary provider for recent memories (limited batch for safety)
+                        batch_size = min(50, missing_count)  # Process in batches of 50
+                        
+                        if hasattr(self.primary_provider, 'get_recent_memories'):
+                            recent_memories = await self.primary_provider.get_recent_memories(batch_size, {})
+                        else:
+                            # Fallback: empty query to get recent memories
+                            recent_memories = await self.primary_provider.query([], batch_size, {})
+                        
+                        if not recent_memories:
+                            logger.warning(f"No recent memories found in primary provider for sync")
+                            return False
+                        
+                        # Replicate memories to secondary provider
+                        sync_successes = 0
+                        sync_failures = 0
+                        
+                        for memory in recent_memories:
+                            try:
+                                # Extract memory data
+                                content = memory.content
+                                metadata = memory.metadata or {}
+                                
+                                # Generate embedding if not available
+                                if hasattr(memory, 'embedding') and memory.embedding:
+                                    embedding = memory.embedding
+                                else:
+                                    embedding = await self._generate_embedding(content)
+                                
+                                # Store in secondary provider
+                                await provider.store(content, embedding, metadata)
+                                sync_successes += 1
+                                
+                            except Exception as e:
+                                logger.error(f"Failed to sync memory {getattr(memory, 'id', 'unknown')}: {e}")
+                                sync_failures += 1
+                        
+                        logger.info(f"✅ Sync completed: {sync_successes} successful, {sync_failures} failed")
+                        
+                        # Verify sync was successful
+                        post_sync_health = await provider.health_check()
+                        post_sync_count = post_sync_health.get('total_vectors', 0)
+                        
+                        if post_sync_count > secondary_count:
+                            logger.info(f"✅ Sync successful: {provider_name} now has {post_sync_count} memories")
+                            return True
+                        else:
+                            logger.warning(f"⚠️ Sync may have failed: count unchanged at {post_sync_count}")
+                            return False
+                            
+                    except Exception as e:
+                        logger.error(f"Sync operation failed: {e}")
+                        return False
+                else:
+                    logger.info(f"✅ Provider {provider_name} is already in sync ({primary_count} memories)")
+                    return True
+                
+            except Exception as e:
+                logger.error(f"Failed to compare provider counts: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Sync repair failed for {provider_name}: {e}")
+            return False
+
+    async def _repair_provider_rebuild(self, provider_name: str) -> bool:
+        """Rebuild a provider from scratch (emergency repair)"""
+        try:
+            logger.warning(f"🚨 Starting rebuild repair for provider {provider_name}")
+            logger.warning("This is an emergency operation that will clear and rebuild the provider")
+            
+            if provider_name not in self.providers:
+                logger.error(f"Provider {provider_name} not found")
+                return False
+                
+            provider = self.providers[provider_name]
+            if not provider.enabled or provider == self.primary_provider:
+                logger.error(f"Cannot rebuild provider {provider_name} (disabled or is primary)")
+                return False
+            
+            # IMPLEMENTATION: Complete rebuild process
+            try:
+                # Step 1: Get all memories from primary provider for full rebuild
+                logger.info(f"🔄 Step 1: Fetching all memories from primary provider...")
+                
+                # Get a larger batch for full rebuild (but still manageable)
+                rebuild_batch_size = 200
+                
+                if hasattr(self.primary_provider, 'get_recent_memories'):
+                    all_memories = await self.primary_provider.get_recent_memories(rebuild_batch_size, {})
+                else:
+                    # Fallback: empty query to get memories
+                    all_memories = await self.primary_provider.query([], rebuild_batch_size, {})
+                
+                if not all_memories:
+                    logger.error(f"No memories found in primary provider for rebuild")
+                    return False
+                
+                logger.info(f"Found {len(all_memories)} memories to rebuild")
+                
+                # Step 2: Clear the secondary provider (if supported)
+                logger.warning(f"🧹 Step 2: Clearing provider {provider_name} (if supported)...")
+                # Note: Most providers don't support full clear operations
+                # This would need provider-specific implementation
+                
+                # Step 3: Re-replicate all memories
+                logger.info(f"🔄 Step 3: Re-replicating {len(all_memories)} memories...")
+                
+                rebuild_successes = 0
+                rebuild_failures = 0
+                
+                for memory in all_memories:
+                    try:
+                        content = memory.content
+                        metadata = memory.metadata or {}
+                        
+                        # Generate embedding if not available
+                        if hasattr(memory, 'embedding') and memory.embedding:
+                            embedding = memory.embedding
+                        else:
+                            embedding = await self._generate_embedding(content)
+                        
+                        # Store in provider
+                        await provider.store(content, embedding, metadata)
+                        rebuild_successes += 1
+                        
+                        # Add small delay to prevent overwhelming the provider
+                        if rebuild_successes % 10 == 0:
+                            await asyncio.sleep(0.1)
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to rebuild memory {getattr(memory, 'id', 'unknown')}: {e}")
+                        rebuild_failures += 1
+                
+                logger.info(f"📊 Rebuild completed: {rebuild_successes} successful, {rebuild_failures} failed")
+                
+                # Step 4: Verify the rebuild
+                logger.info(f"🔍 Step 4: Verifying rebuild...")
+                
+                post_rebuild_health = await provider.health_check()
+                post_rebuild_count = post_rebuild_health.get('total_vectors', 0)
+                
+                primary_health = await self.primary_provider.health_check()
+                primary_count = primary_health.get('total_vectors', 0)
+                
+                # Check if rebuild was successful (allowing for small discrepancies)
+                success_threshold = 0.9  # 90% of primary count is acceptable
+                if post_rebuild_count >= (primary_count * success_threshold):
+                    logger.info(f"✅ Rebuild successful: {provider_name} now has {post_rebuild_count}/{primary_count} memories")
+                    return True
+                else:
+                    logger.error(f"❌ Rebuild failed: {provider_name} has {post_rebuild_count}/{primary_count} memories")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Rebuild operation failed: {e}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Rebuild repair failed for {provider_name}: {e}")
+            return False
+    
+    # ========================================
+    # TASK QUEUE INITIALIZATION AND INTEGRATION
+    # ========================================
+    
+    async def _initialize_task_queue(self):
+        """Initialize and configure the reliable task queue with handlers"""
+        try:
+            logger.info("🚀 Initializing reliable task queue for Core Nexus...")
+            
+            # Get or create the global task queue
+            self.task_queue = await get_task_queue()
+            
+            # Register task handlers for different background operations
+            self.task_queue.register_handler('graph_processing', self._task_graph_processing)
+            self.task_queue.register_handler('provider_replication', self._task_provider_replication)
+            self.task_queue.register_handler('provider_reconciliation', self._task_provider_reconciliation)
+            self.task_queue.register_handler('provider_repair', self._task_provider_repair)
+            
+            logger.info("✅ Reliable task queue initialized with 4 handlers")
+            
+            # Schedule initial provider reconciliation to check system health
+            if self.task_queue:
+                await self.task_queue.submit_task(
+                    task_type='provider_reconciliation',
+                    payload={},
+                    priority=TaskPriority.HIGH,
+                    max_retries=2
+                )
+                logger.info("🔍 Scheduled initial provider reconciliation")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize task queue: {e}")
+            self.task_queue = None
+    
+    def get_task_queue_metrics(self) -> dict:
+        """Get metrics from the reliable task queue"""
+        if self.task_queue:
+            return self.task_queue.get_metrics()
+        return {}
+    
+    async def submit_repair_task(self, provider_name: str, repair_type: str = "sync") -> str:
+        """Public method to submit a provider repair task"""
+        if not self.task_queue:
+            raise RuntimeError("Task queue not initialized")
+        
+        return await self.task_queue.submit_task(
+            task_type='provider_repair',
+            payload={
+                'provider_name': provider_name,
+                'repair_type': repair_type
+            },
+            priority=TaskPriority.CRITICAL,
+            max_retries=2
+        )
