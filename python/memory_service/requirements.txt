@@ -1,5 +1,5 @@
 # Core Nexus Memory Service Dependencies
-# BUILD_CACHE_BUST: 2025-06-28T02:15:00Z - Force fresh dependency installation
+# BUILD_CACHE_BUST: 2025-06-28T22:45:00Z - Force fresh dependency installation
 
 # Web framework
 fastapi==0.104.1
@@ -26,6 +26,7 @@ openai==1.3.6             # For embeddings integration
 # Async support
 asyncio-pool==0.6.0
 aiofiles==23.2.1              # Async file operations for task queue persistence
+redis>=4.5.0                  # Redis client for caching layer
 
 # Monitoring and logging
 structlog==23.2.0
