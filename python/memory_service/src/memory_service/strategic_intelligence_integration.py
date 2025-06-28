@@ -53,10 +53,7 @@ class StrategicIntelligenceClient:
             headers=headers
         )
         
-        self.logger.info("Strategic Intelligence Client initialized",
-                        url=self.base_url,
-                        enabled=self.enabled,
-                        timeout=self.timeout)
+        self.logger.info(f"Strategic Intelligence Client initialized: url={self.base_url}, enabled={self.enabled}, timeout={self.timeout}")
     
     async def __aenter__(self):
         return self
@@ -73,7 +70,7 @@ class StrategicIntelligenceClient:
             response = await self.client.get(f"{self.base_url}/health", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            self.logger.warning("Strategic intelligence health check failed", error=str(e))
+            self.logger.warning(f"Strategic intelligence health check failed: error={str(e)}")
             return False
     
     async def process_strategic_query(
@@ -135,14 +132,12 @@ class StrategicIntelligenceClient:
                     "analysis_type": "strategic_intelligence",
                     "request_source": "memory_service",
                     "timestamp": time.time(),
-                    **context if context else {}
+                    **(context if context else {})
                 },
                 "priority": "high"
             }
             
-            self.logger.info("Sending strategic intelligence request",
-                           query_preview=query[:100],
-                           context_keys=list(context.keys()) if context else [])
+            self.logger.info(f"Sending strategic intelligence request: query_preview={query[:100]}, context_keys={list(context.keys()) if context else []}")
             
             # Call JARVIS strategic intelligence endpoint
             response = await self.client.post(
@@ -169,25 +164,18 @@ class StrategicIntelligenceClient:
             # Parse the strategic intelligence response
             strategic_result = self._parse_strategic_response(result_data, processing_time)
             
-            self.logger.info("Strategic intelligence analysis completed",
-                           analysis_id=strategic_result.analysis_id,
-                           processing_time=processing_time,
-                           success=strategic_result.success,
-                           confidence=strategic_result.confidence_assessment.get("overall_confidence", 0))
+            self.logger.info(f"Strategic intelligence analysis completed: analysis_id={strategic_result.analysis_id}, processing_time={processing_time}, success={strategic_result.success}, confidence={strategic_result.confidence_assessment.get('overall_confidence', 0)}")
             
             return strategic_result
             
         except httpx.TimeoutException:
-            self.logger.error("Strategic intelligence analysis timed out",
-                            timeout=self.timeout)
+            self.logger.error(f"Strategic intelligence analysis timed out: timeout={self.timeout}")
             return None
         except httpx.HTTPStatusError as e:
-            self.logger.error("Strategic intelligence HTTP error",
-                            status_code=e.response.status_code,
-                            response_text=e.response.text[:500])
+            self.logger.error(f"Strategic intelligence HTTP error: status_code={e.response.status_code}, response_text={e.response.text[:500]}")
             return None
         except Exception as e:
-            self.logger.error("Strategic intelligence analysis failed", error=str(e))
+            self.logger.error(f"Strategic intelligence analysis failed: error={str(e)}")
             return None
     
     def _parse_strategic_response(
@@ -251,7 +239,7 @@ class StrategicIntelligenceClient:
             )
             
         except Exception as e:
-            self.logger.error("Failed to parse strategic response", error=str(e))
+            self.logger.error(f"Failed to parse strategic response: error={str(e)}")
             return StrategicAnalysisResult(
                 success=False,
                 analysis_id=f"error_{int(time.time())}",

@@ -16,6 +16,12 @@ from .models import QueryRequest, QueryResponse, MemoryResponse
 from .jarvis_client import get_jarvis_client, JarvisAnalysisResult
 from .config import config
 from .logging_config import get_logger
+from .circuit_breaker import (
+    call_with_strategic_circuit,
+    call_with_reasoning_circuit,
+    call_with_jarvis_circuit,
+    get_system_health
+)
 
 logger = get_logger("enhanced_query_processor")
 
@@ -194,10 +200,7 @@ class EnhancedQueryProcessor:
         start_time = time.time()
         
         try:
-            self.logger.info("Processing enhanced query",
-                           query_preview=request.query[:100] if request.query else "empty",
-                           include_reasoning=request.include_reasoning,
-                           memory_count=len(base_response.memories))
+            self.logger.info(f"Processing enhanced query: query_preview={request.query[:100] if request.query else 'empty'}, include_reasoning={request.include_reasoning}, memory_count={len(base_response.memories)}")
             
             # Update stats
             self.processing_stats["total_queries"] += 1
@@ -205,11 +208,7 @@ class EnhancedQueryProcessor:
             # Classify the query
             classification = self.classifier.classify_query(request.query)
             
-            self.logger.info("Query classified",
-                           classification=classification["classification"],
-                           strategic_needed=classification["strategic_intelligence_needed"],
-                           enhanced_reasoning=classification["enhanced_reasoning_needed"],
-                           confidence=classification["confidence"])
+            self.logger.info(f"Query classified: classification={classification['classification']}, strategic_needed={classification['strategic_intelligence_needed']}, enhanced_reasoning={classification['enhanced_reasoning_needed']}, confidence={classification['confidence']}")
             
             # Initialize result
             result = EnhancedQueryResult(
@@ -254,18 +253,12 @@ class EnhancedQueryProcessor:
             # Update average processing time
             self._update_processing_stats(processing_time)
             
-            self.logger.info("Enhanced query processing completed",
-                           classification=classification["classification"],
-                           processing_time=processing_time,
-                           has_strategic_analysis=result.strategic_analysis is not None,
-                           has_reasoning_analysis=result.reasoning_analysis is not None)
+            self.logger.info(f"Enhanced query processing completed: classification={classification['classification']}, processing_time={processing_time}, has_strategic_analysis={result.strategic_analysis is not None}, has_reasoning_analysis={result.reasoning_analysis is not None}")
             
             return result
             
         except Exception as e:
-            self.logger.error("Enhanced query processing failed",
-                            query=request.query[:100] if request.query else "empty",
-                            error=str(e))
+            self.logger.error(f"Enhanced query processing failed: query={request.query[:100] if request.query else 'empty'}, error={str(e)}")
             
             # Return base response with error metadata
             processing_time = time.time() - start_time
@@ -311,8 +304,12 @@ class EnhancedQueryProcessor:
                 }
             }
             
-            # Process with strategic intelligence
-            strategic_result = await process_strategic_query(request.query, context)
+            # Process with strategic intelligence using circuit breaker protection
+            strategic_result = await call_with_strategic_circuit(
+                process_strategic_query, 
+                request.query, 
+                context
+            )
             
             if strategic_result and strategic_result.success:
                 result.strategic_analysis = {
@@ -330,10 +327,7 @@ class EnhancedQueryProcessor:
                 result.confidence_assessment = strategic_result.confidence_assessment
                 result.processing_metadata["strategy_applied"] = "strategic_intelligence"
                 
-                self.logger.info("Strategic intelligence processing completed",
-                               analysis_id=strategic_result.analysis_id,
-                               confidence=strategic_result.confidence_assessment.get("overall_confidence", 0),
-                               recommendations_count=len(strategic_result.strategic_recommendations))
+                self.logger.info(f"Strategic intelligence processing completed: analysis_id={strategic_result.analysis_id}, confidence={strategic_result.confidence_assessment.get('overall_confidence', 0)}, recommendations_count={len(strategic_result.strategic_recommendations)}")
             else:
                 # Fallback to enhanced reasoning
                 self.logger.warning("Strategic intelligence processing failed, falling back to enhanced reasoning")
@@ -343,7 +337,7 @@ class EnhancedQueryProcessor:
             return result
             
         except Exception as e:
-            self.logger.error("Strategic intelligence processing failed", error=str(e))
+            self.logger.error(f"Strategic intelligence processing failed: error={str(e)}")
             # Fallback to enhanced reasoning
             result = await self._apply_enhanced_reasoning(request, result)
             result.processing_metadata["strategy_applied"] = "strategic_fallback_to_enhanced"
@@ -387,11 +381,12 @@ class EnhancedQueryProcessor:
                 """
             }
             
-            # Process with enhanced reasoning
-            analysis_result = await jarvis_client.analyze_query_results(
-                query=request.query,
-                memories=result.base_response.memories,
-                additional_context=enhanced_context
+            # Process with enhanced reasoning using circuit breaker protection
+            analysis_result = await call_with_reasoning_circuit(
+                jarvis_client.analyze_query_results,
+                request.query,
+                result.base_response.memories,
+                enhanced_context
             )
             
             if analysis_result and analysis_result.success:
@@ -399,9 +394,7 @@ class EnhancedQueryProcessor:
                 result.reasoning_analysis["enhancement_type"] = "enhanced_reasoning"
                 result.processing_metadata["strategy_applied"] = "enhanced_reasoning"
                 
-                self.logger.info("Enhanced reasoning processing completed",
-                               task_id=analysis_result.task_id,
-                               duration=analysis_result.duration)
+                self.logger.info(f"Enhanced reasoning processing completed: task_id={analysis_result.task_id}, duration={analysis_result.duration}")
             else:
                 # Fallback to standard reasoning
                 result = await self._apply_standard_reasoning(request, result)
@@ -410,7 +403,7 @@ class EnhancedQueryProcessor:
             return result
             
         except Exception as e:
-            self.logger.error("Enhanced reasoning processing failed", error=str(e))
+            self.logger.error(f"Enhanced reasoning processing failed: error={str(e)}")
             # Fallback to standard reasoning
             result = await self._apply_standard_reasoning(request, result)
             result.processing_metadata["strategy_applied"] = "enhanced_fallback_to_standard"
@@ -447,11 +440,12 @@ class EnhancedQueryProcessor:
                 "conversation_id": request.conversation_id
             }
             
-            # Process with standard reasoning
-            analysis_result = await jarvis_client.analyze_query_results(
-                query=request.query,
-                memories=result.base_response.memories,
-                additional_context=standard_context
+            # Process with standard reasoning using circuit breaker protection
+            analysis_result = await call_with_jarvis_circuit(
+                jarvis_client.analyze_query_results,
+                request.query,
+                result.base_response.memories,
+                standard_context
             )
             
             if analysis_result and analysis_result.success:
@@ -459,9 +453,7 @@ class EnhancedQueryProcessor:
                 result.reasoning_analysis["enhancement_type"] = "standard_reasoning"
                 result.processing_metadata["strategy_applied"] = "standard_reasoning"
                 
-                self.logger.info("Standard reasoning processing completed",
-                               task_id=analysis_result.task_id,
-                               duration=analysis_result.duration)
+                self.logger.info(f"Standard reasoning processing completed: task_id={analysis_result.task_id}, duration={analysis_result.duration}")
             else:
                 result.reasoning_analysis = {
                     "success": False,
@@ -472,7 +464,7 @@ class EnhancedQueryProcessor:
             return result
             
         except Exception as e:
-            self.logger.error("Standard reasoning processing failed", error=str(e))
+            self.logger.error(f"Standard reasoning processing failed: error={str(e)}")
             result.reasoning_analysis = {
                 "success": False,
                 "error": f"Analysis error: {str(e)}"
@@ -510,6 +502,34 @@ class EnhancedQueryProcessor:
         })
         
         return stats
+    
+    async def get_system_health_status(self) -> Dict[str, Any]:
+        """Get comprehensive system health including circuit breaker status"""
+        try:
+            # Get circuit breaker health
+            circuit_health = await get_system_health()
+            
+            # Combine with processing stats
+            health_status = {
+                "enhanced_query_processor": {
+                    "processing_stats": self.get_processing_stats(),
+                    "status": "HEALTHY" if self.processing_stats["total_queries"] > 0 else "INACTIVE"
+                },
+                "circuit_breakers": circuit_health,
+                "overall_system_health": circuit_health.get("overall_status", "UNKNOWN"),
+                "timestamp": time.time()
+            }
+            
+            return health_status
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get system health status: error={str(e)}")
+            return {
+                "enhanced_query_processor": {"status": "ERROR", "error": str(e)},
+                "circuit_breakers": {"status": "UNKNOWN"},
+                "overall_system_health": "ERROR",
+                "timestamp": time.time()
+            }
 
 # Global processor instance
 _enhanced_processor: Optional[EnhancedQueryProcessor] = None
@@ -538,3 +558,13 @@ async def process_enhanced_query(
     """
     processor = await get_enhanced_processor()
     return await processor.process_query(request, base_response)
+
+async def get_enhanced_query_system_health() -> Dict[str, Any]:
+    """
+    Get comprehensive system health status for enhanced query processing
+    
+    Returns:
+        Dict containing processor stats and circuit breaker health
+    """
+    processor = await get_enhanced_processor()
+    return await processor.get_system_health_status()

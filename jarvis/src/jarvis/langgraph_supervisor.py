@@ -18,6 +18,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from .config import get_config
 from .gemini_integration import GeminiAgent, create_supervisor_agent, create_analysis_agent, create_planning_agent
 from .core_nexus_bridge import get_bridge, JarvisMemory
+from .strategic_intelligence_processor import StrategicIntelligenceProcessor
 
 logger = structlog.get_logger(__name__)
 config = get_config()
@@ -90,6 +91,9 @@ class JarvisSupervisor:
         self.analysis_agent = create_analysis_agent()
         self.planning_agent = create_planning_agent()
         
+        # Initialize strategic intelligence processor
+        self.strategic_intelligence = StrategicIntelligenceProcessor()
+        
         # Agent mapping
         self.agents = {
             "supervisor": self.supervisor_agent,
@@ -139,6 +143,7 @@ class JarvisSupervisor:
         workflow.add_node("supervisor", self._supervisor_node)
         workflow.add_node("analysis", self._analysis_node)
         workflow.add_node("planning", self._planning_node)
+        workflow.add_node("strategic_intelligence", self._strategic_intelligence_node)
         workflow.add_node("memory_sync", self._memory_sync_node)
         workflow.add_node("decision_maker", self._decision_maker_node)
         workflow.add_node("self_improvement", self._self_improvement_node)
@@ -152,7 +157,8 @@ class JarvisSupervisor:
             self._route_next_agent,
             {
                 "analysis": "analysis",
-                "planning": "planning", 
+                "planning": "planning",
+                "strategic_intelligence": "strategic_intelligence",
                 "memory_sync": "memory_sync",
                 "decision_maker": "decision_maker",
                 "self_improvement": "self_improvement",
@@ -176,6 +182,17 @@ class JarvisSupervisor:
         workflow.add_conditional_edges(
             "planning",
             self._planning_next_step,
+            {
+                "decision_maker": "decision_maker",
+                "supervisor": "supervisor",
+                "end": END
+            }
+        )
+        
+        # Strategic intelligence can go to decision maker or back to supervisor
+        workflow.add_conditional_edges(
+            "strategic_intelligence",
+            self._strategic_intelligence_next_step,
             {
                 "decision_maker": "decision_maker",
                 "supervisor": "supervisor",
@@ -426,6 +443,89 @@ class JarvisSupervisor:
                 "completed_agents": state.get("completed_agents", []) + ["planning"]
             }
     
+    async def _strategic_intelligence_node(self, state: JarvisState) -> Dict[str, Any]:
+        """Strategic intelligence node - advanced strategic analysis"""
+        try:
+            self.logger.info("Strategic intelligence node processing")
+            
+            # Get current task and context
+            task = state.get("current_task", "")
+            task_context = state.get("task_context", {})
+            
+            # Get relevant memories for context
+            bridge = await get_bridge()
+            relevant_memories = await bridge.get_contextual_memories(task, limit=5)
+            
+            # Prepare context for strategic intelligence
+            context = {
+                "original_query": task,
+                "retrieved_memories": [
+                    {
+                        "content": memory.get("content", ""),
+                        "importance_score": memory.get("importance_score", 0.5),
+                        "similarity_score": memory.get("similarity_score", 0.5),
+                        "metadata": memory.get("metadata", {})
+                    }
+                    for memory in relevant_memories
+                ],
+                "task_context": task_context,
+                "agent_outputs": state.get("agent_outputs", {}),
+                "previous_analysis": state.get("system_insights", [])
+            }
+            
+            # Process with strategic intelligence
+            strategic_result = await self.strategic_intelligence.process_strategic_query(
+                query=task, 
+                context=context
+            )
+            
+            # Update state with strategic intelligence results
+            strategic_output = {
+                "analysis_id": strategic_result.analysis_id,
+                "executive_summary": strategic_result.executive_summary,
+                "strategic_recommendations": strategic_result.strategic_recommendations,
+                "confidence_assessment": strategic_result.confidence_assessment,
+                "implementation_plan": strategic_result.implementation_plan,
+                "risk_assessment": strategic_result.risk_assessment,
+                "domain_analyses": strategic_result.domain_analyses,
+                "processing_time": strategic_result.processing_time,
+                "intelligence_sources": strategic_result.intelligence_sources,
+                "success": strategic_result.success
+            }
+            
+            updates = {
+                "agent_outputs": {**state.get("agent_outputs", {}), "strategic_intelligence": strategic_output},
+                "completed_agents": state.get("completed_agents", []) + ["strategic_intelligence"],
+                "messages": [AIMessage(content=strategic_result.executive_summary, name="strategic_intelligence")],
+                "last_update": now_iso()
+            }
+            
+            # Store strategic intelligence insights in memory
+            await bridge.store_jarvis_insight(
+                f"Strategic Intelligence Analysis: {strategic_result.executive_summary}",
+                strategic_result.confidence_assessment.get("overall_confidence", 0) / 100,  # Convert percentage to 0-1
+                "strategic_intelligence",
+                {
+                    "task": task,
+                    "confidence_assessment": strategic_result.confidence_assessment,
+                    "recommendations": strategic_result.strategic_recommendations[:3]  # Store top 3
+                }
+            )
+            
+            self.logger.info("Strategic intelligence completed",
+                           analysis_id=strategic_result.analysis_id,
+                           confidence=strategic_result.confidence_assessment.get("overall_confidence", 0),
+                           recommendations_count=len(strategic_result.strategic_recommendations))
+            
+            return updates
+            
+        except Exception as e:
+            self.logger.error("Strategic intelligence node failed", error=str(e))
+            return {
+                "agent_outputs": {**state.get("agent_outputs", {}), "strategic_intelligence": {"error": str(e)}},
+                "completed_agents": state.get("completed_agents", []) + ["strategic_intelligence"]
+            }
+
     async def _memory_sync_node(self, state: JarvisState) -> Dict[str, Any]:
         """Memory synchronization node - sync with Core Nexus"""
         try:
@@ -581,13 +681,28 @@ class JarvisSupervisor:
         # STATE-BASED ROUTING (not keyword-based)
         analysis_complete = "analysis" in completed_agents
         planning_complete = "planning" in completed_agents
+        strategic_complete = "strategic_intelligence" in completed_agents
         
-        # Progressive workflow logic
-        if not analysis_complete and iteration_count < 6:
-            # Need analysis first
+        # Check if this is a strategic intelligence query
+        current_task = state.get("current_task", "").lower()
+        strategic_indicators = [
+            "market analysis", "strategic", "investment", "competitive", "financial",
+            "business strategy", "market entry", "roi", "revenue", "valuation",
+            "expansion", "growth strategy", "market opportunity", "competitive advantage"
+        ]
+        
+        is_strategic_query = any(indicator in current_task for indicator in strategic_indicators)
+        
+        # Progressive workflow logic with strategic intelligence
+        if is_strategic_query and not strategic_complete and iteration_count < 6:
+            # Strategic query detected - use strategic intelligence first
+            next_route = "strategic_intelligence"
+            reason = "strategic_query_detected"
+        elif not analysis_complete and not strategic_complete and iteration_count < 6:
+            # Need analysis first for non-strategic queries
             next_route = "analysis"
             reason = "analysis_required"
-        elif analysis_complete and not planning_complete and iteration_count < 6:
+        elif analysis_complete and not planning_complete and not strategic_complete and iteration_count < 6:
             # Analysis done, check if planning needed
             analysis_confidence = agent_outputs.get("analysis", {}).get("confidence", 0)
             if analysis_confidence > 0.8 and "simple" in supervisor_decision:
@@ -596,7 +711,7 @@ class JarvisSupervisor:
             else:
                 next_route = "planning"
                 reason = "planning_required"
-        elif analysis_complete or planning_complete:
+        elif strategic_complete or analysis_complete or planning_complete:
             # At least one major agent completed - ready for decision
             next_route = "decision_maker"
             reason = "sufficient_information_for_decision"
@@ -614,6 +729,8 @@ class JarvisSupervisor:
                         reason=reason,
                         analysis_complete=analysis_complete,
                         planning_complete=planning_complete,
+                        strategic_complete=strategic_complete,
+                        is_strategic_query=is_strategic_query,
                         workflow_efficiency=f"{iteration_count} iterations")
         
         return next_route
@@ -670,6 +787,35 @@ class JarvisSupervisor:
         self.logger.info("Planning routing decision",
                         planning_confidence=confidence,
                         analysis_confidence=analysis_output.get("confidence", 0),
+                        iteration=iteration_count,
+                        next_step=next_step,
+                        reason=reason)
+        
+        return next_step
+    
+    def _strategic_intelligence_next_step(self, state: JarvisState) -> str:
+        """Intelligent routing after strategic intelligence analysis"""
+        strategic_output = state.get("agent_outputs", {}).get("strategic_intelligence", {})
+        confidence = strategic_output.get("confidence_assessment", {}).get("overall_confidence", 0)
+        iteration_count = state.get("iteration_count", 0)
+        success = strategic_output.get("success", False)
+        
+        # Strategic intelligence usually goes directly to decision maker
+        if success and confidence > 50:  # Strategic intelligence uses percentage scores
+            next_step = "decision_maker"
+            reason = "strategic_analysis_complete_make_decision"
+        elif not success and iteration_count < 5:
+            # Failed strategic analysis - return to supervisor for different approach
+            next_step = "supervisor"
+            reason = "strategic_analysis_failed_need_supervisor"
+        else:
+            # Fallback - make decision with available information
+            next_step = "decision_maker"
+            reason = "strategic_analysis_fallback_make_decision"
+        
+        self.logger.info("Strategic intelligence routing decision",
+                        confidence=confidence,
+                        success=success,
                         iteration=iteration_count,
                         next_step=next_step,
                         reason=reason)

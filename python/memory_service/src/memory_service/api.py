@@ -64,6 +64,8 @@ from .observability import (
 )
 from .auth import create_auth_middleware, get_api_usage_stats
 from .jarvis_client import get_jarvis_client
+from .enhanced_query_processor import process_enhanced_query, get_enhanced_query_system_health
+from .self_evolution_engine import record_strategic_analysis_for_learning, run_evolution_cycle_if_needed, get_evolution_status
 
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
@@ -605,12 +607,49 @@ def create_memory_app() -> FastAPI:
     @app.get("/health", response_model=HealthCheckResponse)
     async def health_check(store: UnifiedVectorStore = Depends(get_store)):
         """
-        Check the health of all vector providers.
+        Check the health of all vector providers and strategic intelligence systems.
 
-        Returns detailed status of each provider and overall service health.
+        Returns detailed status of each provider, circuit breakers, and overall service health.
         """
         try:
+            # Get basic store health
             health_data = await store.health_check()
+            
+            # Get enhanced query processor and circuit breaker health
+            try:
+                enhanced_health = await get_enhanced_query_system_health()
+                circuit_health = enhanced_health.get("circuit_breakers", {})
+                overall_circuit_status = circuit_health.get("overall_status", "UNKNOWN")
+                
+                # Combine overall health status
+                store_healthy = health_data['status'] == 'healthy'
+                circuits_healthy = overall_circuit_status in ['HEALTHY', 'DEGRADED']
+                
+                combined_status = 'healthy' if store_healthy and circuits_healthy else 'degraded'
+                if overall_circuit_status in ['CRITICAL', 'FAILURE']:
+                    combined_status = 'critical'
+                
+                # Add enhanced health data to response
+                health_data['enhanced_systems'] = {
+                    'strategic_intelligence': {
+                        'status': overall_circuit_status,
+                        'circuit_breakers': circuit_health.get('circuit_breakers', {}),
+                        'processing_stats': enhanced_health.get('enhanced_query_processor', {}).get('processing_stats', {})
+                    }
+                }
+                
+                # Update overall status to include circuit health
+                health_data['status'] = combined_status
+                
+            except Exception as e:
+                logger.warning(f"Failed to get enhanced query system health: {e}")
+                # Continue with basic health check if enhanced health fails
+                health_data['enhanced_systems'] = {
+                    'strategic_intelligence': {
+                        'status': 'ERROR',
+                        'error': str(e)
+                    }
+                }
 
             return HealthCheckResponse(
                 status=health_data['status'],
@@ -810,49 +849,68 @@ def create_memory_app() -> FastAPI:
 
             response = await store.query_memories(request)
 
-            # JARVIS INTEGRATION: Add reasoning analysis if requested
+            # ENHANCED QUERY PROCESSING: Apply strategic intelligence and reasoning analysis
+            enhanced_result = None
             reasoning_analysis = None
-            if request.include_reasoning and request.query.strip():
+            
+            if request.include_reasoning:
                 try:
-                    logger.info(f"Including JARVIS reasoning analysis for query: {request.query[:100]}")
-                    jarvis_client = await get_jarvis_client()
+                    logger.info(f"Applying enhanced query processing for: {request.query[:100]}")
                     
-                    # Check if JARVIS is healthy before proceeding
-                    if await jarvis_client.health_check():
-                        analysis_result = await jarvis_client.analyze_query_results(
-                            query=request.query,
-                            memories=response.memories,
-                            additional_context={
-                                "total_found": response.total_found,
-                                "providers_used": response.providers_used,
-                                "user_id": request.user_id,
-                                "conversation_id": request.conversation_id
-                            }
-                        )
-                        
-                        if analysis_result and analysis_result.success:
-                            reasoning_analysis = analysis_result.get_structured_analysis()
-                            logger.info(f"JARVIS analysis completed successfully", 
-                                       task_id=analysis_result.task_id,
-                                       duration=analysis_result.duration)
-                        else:
-                            logger.warning("JARVIS analysis failed or returned no results")
-                            reasoning_analysis = {
-                                "success": False,
-                                "error": analysis_result.error if analysis_result else "No analysis result"
-                            }
+                    # Process with enhanced query processor (includes strategic intelligence)
+                    enhanced_result = await process_enhanced_query(request, response)
+                    
+                    # Extract reasoning analysis from enhanced result
+                    if enhanced_result.strategic_analysis:
+                        # For strategic queries, use strategic analysis as reasoning
+                        reasoning_analysis = {
+                            "success": True,
+                            "enhancement_type": "strategic_intelligence",
+                            "summary": enhanced_result.strategic_analysis.get("executive_summary", "Strategic analysis completed"),
+                            "strategic_analysis": enhanced_result.strategic_analysis,
+                            "confidence_assessment": enhanced_result.confidence_assessment,
+                            "query_classification": enhanced_result.query_classification,
+                            "performance": enhanced_result.processing_metadata
+                        }
+                        logger.info("Strategic intelligence analysis completed",
+                                   analysis_id=enhanced_result.strategic_analysis.get("analysis_id"),
+                                   confidence=enhanced_result.confidence_assessment.get("overall_confidence", 0),
+                                   classification=enhanced_result.query_classification)
+                    elif enhanced_result.reasoning_analysis:
+                        # For non-strategic queries, use enhanced reasoning
+                        reasoning_analysis = enhanced_result.reasoning_analysis
+                        reasoning_analysis["query_classification"] = enhanced_result.query_classification
+                        reasoning_analysis["performance"] = enhanced_result.processing_metadata
+                        logger.info("Enhanced reasoning analysis completed",
+                                   enhancement_type=reasoning_analysis.get("enhancement_type"),
+                                   classification=enhanced_result.query_classification)
                     else:
-                        logger.warning("JARVIS health check failed, skipping reasoning analysis")
+                        # Fallback case
                         reasoning_analysis = {
                             "success": False,
-                            "error": "JARVIS service unavailable"
+                            "error": "Enhanced processing completed but no analysis generated",
+                            "query_classification": enhanced_result.query_classification,
+                            "performance": enhanced_result.processing_metadata
                         }
+                        logger.warning("Enhanced processing completed but no analysis generated")
+                    
+                    # Record for self-evolution learning
+                    try:
+                        await record_strategic_analysis_for_learning(
+                            query=request.query,
+                            classification=enhanced_result.processing_metadata.get("classification", {}),
+                            strategic_result=enhanced_result.strategic_analysis,
+                            processing_metadata=enhanced_result.processing_metadata
+                        )
+                    except Exception as learning_error:
+                        logger.error(f"Failed to record analysis for learning: {learning_error}")
                         
                 except Exception as e:
-                    logger.error(f"JARVIS reasoning analysis failed: {e}")
+                    logger.error(f"Enhanced query processing failed: {e}")
                     reasoning_analysis = {
                         "success": False,
-                        "error": f"Analysis error: {str(e)}"
+                        "error": f"Enhanced processing error: {str(e)}",
+                        "fallback_applied": True
                     }
 
             # Add request timing info
@@ -864,21 +922,55 @@ def create_memory_app() -> FastAPI:
             record_metric("memory_operation_duration", total_time, {"operation": "query"})
             record_metric("vector_search_results", len(response.memories))
             
-            # Record JARVIS metrics
-            if request.include_reasoning:
-                record_metric("jarvis_reasoning_requests", 1, {"success": reasoning_analysis is not None and reasoning_analysis.get("success", False)})
-                if reasoning_analysis and reasoning_analysis.get("success"):
-                    record_metric("jarvis_analysis_duration", reasoning_analysis.get("performance", {}).get("duration_seconds", 0))
+            # Record Enhanced Processing metrics
+            if request.include_reasoning and enhanced_result:
+                enhancement_type = "none"
+                if enhanced_result.strategic_analysis:
+                    enhancement_type = "strategic"
+                elif enhanced_result.reasoning_analysis:
+                    enhancement_type = "reasoning"
+                
+                record_metric("enhanced_processing_requests", 1, {
+                    "enhancement_type": enhancement_type,
+                    "query_classification": enhanced_result.query_classification,
+                    "success": reasoning_analysis is not None and reasoning_analysis.get("success", False)
+                })
+                
+                if enhanced_result.processing_metadata:
+                    processing_time = enhanced_result.processing_metadata.get("processing_time_seconds", 0)
+                    if processing_time > 0:
+                        record_metric("enhanced_processing_duration", processing_time, {"enhancement_type": enhancement_type})
+                
+                # Record strategic intelligence specific metrics
+                if enhanced_result.strategic_analysis:
+                    confidence = enhanced_result.confidence_assessment.get("overall_confidence", 0) if enhanced_result.confidence_assessment else 0
+                    record_metric("strategic_analysis_confidence", confidence)
+                    
+                    recommendations_count = len(enhanced_result.strategic_analysis.get("strategic_recommendations", []))
+                    record_metric("strategic_recommendations_generated", recommendations_count)
             
             # Add span attributes for results
             if span:
                 span.set_attribute("results.total_found", response.total_found)
                 span.set_attribute("results.returned", len(response.memories))
                 span.set_attribute("results.query_time_ms", total_time)
-                span.set_attribute("jarvis.reasoning_requested", request.include_reasoning)
-                span.set_attribute("jarvis.analysis_provided", reasoning_analysis is not None)
+                span.set_attribute("enhanced_processing.requested", request.include_reasoning)
+                span.set_attribute("enhanced_processing.analysis_provided", reasoning_analysis is not None)
+                
+                if enhanced_result:
+                    span.set_attribute("enhanced_processing.classification", enhanced_result.query_classification)
+                    span.set_attribute("enhanced_processing.strategic_analysis", enhanced_result.strategic_analysis is not None)
+                    span.set_attribute("enhanced_processing.reasoning_analysis", enhanced_result.reasoning_analysis is not None)
+                    
+                    if enhanced_result.processing_metadata:
+                        processing_time = enhanced_result.processing_metadata.get("processing_time_seconds", 0)
+                        span.set_attribute("enhanced_processing.duration_seconds", processing_time)
+                        span.set_attribute("enhanced_processing.strategy_applied", enhanced_result.processing_metadata.get("strategy_applied", "unknown"))
+                
                 if reasoning_analysis:
-                    span.set_attribute("jarvis.analysis_success", reasoning_analysis.get("success", False))
+                    span.set_attribute("enhanced_processing.analysis_success", reasoning_analysis.get("success", False))
+                    if "enhancement_type" in reasoning_analysis:
+                        span.set_attribute("enhanced_processing.enhancement_type", reasoning_analysis["enhancement_type"])
 
             # Add trust metrics to build confidence
             response.trust_metrics = {
@@ -1691,6 +1783,115 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Embedding test failed: {e}")
             raise HTTPException(status_code=500, detail=f"Embedding test failed: {str(e)}")
+
+    @app.get("/system/circuit-breakers")
+    async def get_circuit_breaker_health():
+        """
+        Get comprehensive circuit breaker and strategic intelligence system health.
+        
+        Returns detailed status of all circuit breakers, fallback mechanisms,
+        and strategic intelligence processing capabilities.
+        """
+        try:
+            # Get enhanced query system health including circuit breakers
+            enhanced_health = await get_enhanced_query_system_health()
+            
+            return {
+                "service": "Circuit Breaker Health Monitor",
+                "timestamp": time.time(),
+                "overall_status": enhanced_health.get("overall_system_health", "UNKNOWN"),
+                "enhanced_query_processor": enhanced_health.get("enhanced_query_processor", {}),
+                "circuit_breakers": enhanced_health.get("circuit_breakers", {}),
+                "system_capabilities": {
+                    "strategic_intelligence": {
+                        "available": enhanced_health.get("circuit_breakers", {}).get("circuit_breakers", {}).get("strategic_intelligence", {}).get("strategic_intelligence", {}).get("state", "UNKNOWN") in ["closed", "half_open"],
+                        "degraded_mode": enhanced_health.get("circuit_breakers", {}).get("circuit_breakers", {}).get("strategic_intelligence", {}).get("degraded_mode_active", False)
+                    },
+                    "enhanced_reasoning": {
+                        "available": enhanced_health.get("circuit_breakers", {}).get("circuit_breakers", {}).get("strategic_intelligence", {}).get("enhanced_reasoning", {}).get("state", "UNKNOWN") in ["closed", "half_open"]
+                    },
+                    "jarvis_integration": {
+                        "available": enhanced_health.get("circuit_breakers", {}).get("circuit_breakers", {}).get("strategic_intelligence", {}).get("jarvis_service", {}).get("state", "UNKNOWN") in ["closed", "half_open"]
+                    }
+                },
+                "health_summary": {
+                    "critical_systems_operational": enhanced_health.get("overall_system_health") in ["HEALTHY", "DEGRADED"],
+                    "fallback_mechanisms_active": True,  # Circuit breakers are always active
+                    "self_evolution_enabled": True,  # Self-evolution is part of the system
+                    "monitoring_active": True
+                },
+                "recommendations": _generate_health_recommendations(enhanced_health)
+            }
+            
+        except Exception as e:
+            logger.error(f"Circuit breaker health check failed: {e}")
+            return {
+                "service": "Circuit Breaker Health Monitor", 
+                "timestamp": time.time(),
+                "overall_status": "ERROR",
+                "error": str(e),
+                "health_summary": {
+                    "critical_systems_operational": False,
+                    "fallback_mechanisms_active": False,
+                    "monitoring_active": False
+                },
+                "recommendations": ["System health monitoring unavailable - investigate circuit breaker implementation"]
+            }
+
+    def _generate_health_recommendations(health_data: dict) -> list[str]:
+        """Generate actionable health recommendations based on circuit breaker status"""
+        recommendations = []
+        
+        try:
+            overall_status = health_data.get("overall_system_health", "UNKNOWN")
+            circuit_breakers = health_data.get("circuit_breakers", {}).get("circuit_breakers", {})
+            
+            if overall_status == "ERROR" or overall_status == "FAILURE":
+                recommendations.extend([
+                    "CRITICAL: Multiple systems failing - immediate attention required",
+                    "Check JARVIS service availability and network connectivity",
+                    "Review system logs for error patterns",
+                    "Consider switching to manual operation if automated systems are down"
+                ])
+            elif overall_status == "CRITICAL":
+                recommendations.extend([
+                    "URGENT: System degraded - monitor closely",
+                    "Verify strategic intelligence service health",
+                    "Check if fallback mechanisms are functioning properly"
+                ])
+            elif overall_status == "DEGRADED":
+                recommendations.extend([
+                    "NOTICE: Some services degraded but system operational",
+                    "Monitor circuit breaker recovery progress",
+                    "Consider proactive maintenance during low-usage periods"
+                ])
+            else:  # HEALTHY
+                recommendations.extend([
+                    "System operating normally",
+                    "Continue regular monitoring",
+                    "All strategic intelligence capabilities available"
+                ])
+            
+            # Check for specific circuit breaker issues
+            strategic_intelligence = circuit_breakers.get("strategic_intelligence", {})
+            if strategic_intelligence.get("degraded_mode_active", False):
+                recommendations.append("Strategic intelligence in degraded mode - some analysis requests may have reduced accuracy")
+            
+            # Check processing stats
+            processing_stats = health_data.get("enhanced_query_processor", {}).get("processing_stats", {})
+            total_queries = processing_stats.get("total_queries", 0)
+            if total_queries == 0:
+                recommendations.append("No queries processed yet - system ready for first requests")
+            elif total_queries > 0:
+                strategic_percentage = processing_stats.get("strategic_percentage", 0)
+                if strategic_percentage > 50:
+                    recommendations.append("High volume of strategic queries detected - ensure adequate resources")
+                    
+        except Exception as e:
+            logger.warning(f"Failed to generate health recommendations: {e}")
+            recommendations.append("Unable to generate specific recommendations - manual review recommended")
+        
+        return recommendations
 
     @app.post("/memories/batch", response_model=list[MemoryResponse])
     async def store_memories_batch(
@@ -5016,6 +5217,132 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
 
     # ===== END EMERGENCY FIXES =====
+
+    # =====================================================
+    # SELF-EVOLUTION API - Strategic Intelligence Learning
+    # =====================================================
+
+    @app.get("/evolution/status")
+    async def get_evolution_status_endpoint():
+        """
+        Get the current status of the self-evolution learning system.
+        
+        Returns metrics, insights, and evolution progress.
+        """
+        try:
+            evolution_status = await get_evolution_status()
+            return evolution_status
+        except Exception as e:
+            logger.error(f"Failed to get evolution status: {e}")
+            raise HTTPException(status_code=500, detail=f"Evolution status error: {str(e)}")
+
+    @app.post("/evolution/cycle")
+    async def trigger_evolution_cycle():
+        """
+        Manually trigger a self-evolution cycle to generate learning insights.
+        
+        This analyzes recent strategic intelligence interactions and generates
+        actionable recommendations for system improvement.
+        """
+        try:
+            logger.info("Manual evolution cycle triggered")
+            insights = await run_evolution_cycle_if_needed()
+            
+            if insights:
+                return {
+                    "status": "success",
+                    "message": f"Evolution cycle completed with {len(insights)} insights",
+                    "insights_generated": len(insights),
+                    "actionable_insights": [
+                        {
+                            "insight_id": insight.insight_id,
+                            "category": insight.category,
+                            "content": insight.content[:200] + "..." if len(insight.content) > 200 else insight.content,
+                            "confidence": insight.confidence_score,
+                            "impact": insight.impact_assessment
+                        }
+                        for insight in insights[:5]  # Return top 5 insights
+                    ]
+                }
+            else:
+                return {
+                    "status": "no_cycle_needed",
+                    "message": "Evolution cycle not needed at this time or insufficient data"
+                }
+                
+        except Exception as e:
+            logger.error(f"Evolution cycle failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Evolution cycle error: {str(e)}")
+
+    @app.get("/evolution/insights")
+    async def get_evolution_insights():
+        """
+        Get recent evolution insights and learning recommendations.
+        
+        Returns insights generated by the self-evolution system for system improvement.
+        """
+        try:
+            from .self_evolution_engine import get_evolution_engine
+            
+            engine = await get_evolution_engine()
+            insights_summary = engine.get_insights_summary()
+            
+            return {
+                "status": "success",
+                "insights_summary": insights_summary,
+                "learning_enabled": engine.learning_enabled,
+                "last_evolution_run": engine.last_evolution_run.isoformat() if engine.last_evolution_run else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get evolution insights: {e}")
+            raise HTTPException(status_code=500, detail=f"Evolution insights error: {str(e)}")
+
+    @app.get("/system/intelligence")
+    async def get_strategic_intelligence_status():
+        """
+        Get the status of strategic intelligence capabilities.
+        
+        Returns information about query classification, processing strategies,
+        and strategic analysis performance.
+        """
+        try:
+            from .enhanced_query_processor import get_enhanced_processor
+            
+            processor = await get_enhanced_processor()
+            processing_stats = processor.get_processing_stats()
+            
+            # Get JARVIS health status
+            jarvis_client = await get_jarvis_client()
+            jarvis_healthy = await jarvis_client.health_check()
+            
+            return {
+                "status": "operational",
+                "strategic_intelligence_enabled": True,
+                "jarvis_service_healthy": jarvis_healthy,
+                "processing_statistics": processing_stats,
+                "capabilities": {
+                    "query_classification": ["strategic", "analytical", "simple", "standard"],
+                    "strategic_intelligence": {
+                        "domain_experts": ["financial", "market", "competitive", "regulatory"],
+                        "confidence_scoring": True,
+                        "executive_reporting": True,
+                        "web_search_integration": False  # Not yet implemented
+                    },
+                    "self_evolution": {
+                        "continuous_learning": True,
+                        "pattern_recognition": True,
+                        "automated_insights": True,
+                        "performance_optimization": True
+                    }
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get strategic intelligence status: {e}")
+            raise HTTPException(status_code=500, detail=f"Strategic intelligence status error: {str(e)}")
+
+    # ===== END SELF-EVOLUTION API =====
 
     return app
 

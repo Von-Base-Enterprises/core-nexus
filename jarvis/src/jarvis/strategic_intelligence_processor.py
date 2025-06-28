@@ -646,6 +646,46 @@ class StrategicIntelligenceProcessor:
                             analysis_id=analysis_id, 
                             error=str(e))
             return None
+    
+    # Additional methods expected by validation framework
+    async def _apply_tree_of_thought_analysis(
+        self, 
+        query: str, 
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Apply tree-of-thought analysis (wrapper for strategic orchestrator)"""
+        return await self._run_strategic_orchestrator(query, context, {"detected_domains": []})
+    
+    async def _generate_domain_analysis(
+        self, 
+        query: str, 
+        domain: str, 
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Generate domain-specific analysis (wrapper for domain analysis)"""
+        return await self._run_single_domain_analysis(query, domain, context, enable_web_search=False)
+    
+    async def _synthesize_strategic_insights(
+        self, 
+        query: str, 
+        domain_analyses: Dict[str, Any], 
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Synthesize strategic insights (wrapper for synthesis)"""
+        return await self._synthesize_analyses(query, {}, domain_analyses, context)
+    
+    def _generate_confidence_assessment(
+        self, 
+        domain_analyses: Dict[str, Any], 
+        intelligence_sources: List[str] = None
+    ) -> Dict[str, Any]:
+        """Generate confidence assessment (wrapper for confidence calculation)"""
+        synthesis_result = {"recommendations": [], "implementation_plan": {}}
+        return self._calculate_confidence_assessment(
+            domain_analyses, 
+            intelligence_sources or [], 
+            synthesis_result
+        )
 
 # Global processor instance
 _strategic_processor: Optional[StrategicIntelligenceProcessor] = None

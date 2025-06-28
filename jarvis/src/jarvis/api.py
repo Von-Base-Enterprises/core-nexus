@@ -18,6 +18,7 @@ from .config import get_config
 from .langgraph_supervisor import get_supervisor
 from .core_nexus_bridge import get_bridge
 from .gemini_integration import GeminiAgent
+from .strategic_intelligence_processor import StrategicIntelligenceProcessor
 
 logger = structlog.get_logger(__name__)
 config = get_config()
@@ -74,6 +75,26 @@ class MemorySearchRequest(BaseModel):
     """Request model for memory search"""
     query: str = Field(..., description="Search query")
     limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
+
+class StrategicIntelligenceRequest(BaseModel):
+    """Request model for strategic intelligence analysis"""
+    task: str = Field(..., description="Strategic query for analysis")
+    context: Optional[Dict[str, Any]] = Field(None, description="Additional context for analysis")
+    priority: Optional[str] = Field("high", description="Analysis priority")
+
+class StrategicIntelligenceResponse(BaseModel):
+    """Response model for strategic intelligence analysis"""
+    success: bool
+    analysis_id: str
+    executive_summary: str
+    strategic_recommendations: List[str]
+    confidence_assessment: Dict[str, Any]
+    implementation_plan: Dict[str, Any]
+    risk_assessment: Dict[str, Any]
+    domain_analyses: Dict[str, Any]
+    processing_time: float
+    intelligence_sources: List[str]
+    error: Optional[str] = None
 
 # Application state
 app_state = {
@@ -332,6 +353,137 @@ async def get_jarvis_insights():
     except Exception as e:
         logger.error("Insights retrieval failed", error=str(e))
         raise HTTPException(status_code=500, detail=f"Insights retrieval failed: {str(e)}")
+
+@app.post("/strategic-intelligence", response_model=StrategicIntelligenceResponse)
+async def process_strategic_intelligence(request: StrategicIntelligenceRequest, background_tasks: BackgroundTasks):
+    """Process strategic intelligence analysis through JARVIS Strategic Intelligence Framework"""
+    try:
+        # Generate analysis ID
+        app_state["task_counter"] += 1
+        analysis_id = f"strategic-{app_state['task_counter']}-{int(datetime.now().timestamp())}"
+        
+        logger.info("Strategic intelligence request received", 
+                   analysis_id=analysis_id, 
+                   task=request.task[:100],
+                   priority=request.priority)
+        
+        # Get JARVIS supervisor with Strategic Intelligence Processor
+        supervisor = await get_supervisor()
+        
+        # Process through strategic intelligence node directly
+        start_time = datetime.now(timezone.utc)
+        
+        # Create JARVIS state for strategic intelligence processing
+        from .langgraph_supervisor import JarvisState
+        strategic_state: JarvisState = {
+            "messages": [],
+            "current_task": request.task,
+            "task_context": request.context or {},
+            "next_agent": "strategic_intelligence",
+            "completed_agents": [],
+            "relevant_memories": [],
+            "system_insights": [],
+            "supervisor_decision": "",
+            "agent_outputs": {},
+            "iteration_count": 0,
+            "start_time": start_time.isoformat(),
+            "last_update": start_time.isoformat(),
+            "learning_opportunities": [],
+            "improvement_suggestions": []
+        }
+        
+        # Process through strategic intelligence
+        result = await supervisor._strategic_intelligence_node(strategic_state)
+        
+        # Calculate processing time
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
+        
+        # Extract strategic intelligence result
+        strategic_result = result.get("strategic_intelligence_result", {})
+        
+        # Store result for learning (background task)
+        background_tasks.add_task(
+            store_strategic_analysis_memory,
+            analysis_id,
+            request.task,
+            strategic_result,
+            processing_time
+        )
+        
+        # Return structured strategic intelligence response
+        return StrategicIntelligenceResponse(
+            success=strategic_result.get("success", True),
+            analysis_id=analysis_id,
+            executive_summary=strategic_result.get("executive_summary", "Strategic analysis completed"),
+            strategic_recommendations=strategic_result.get("strategic_recommendations", []),
+            confidence_assessment=strategic_result.get("confidence_assessment", {}),
+            implementation_plan=strategic_result.get("implementation_plan", {}),
+            risk_assessment=strategic_result.get("risk_assessment", {}),
+            domain_analyses=strategic_result.get("domain_analyses", {}),
+            processing_time=processing_time,
+            intelligence_sources=strategic_result.get("intelligence_sources", ["jarvis_strategic_intelligence"]),
+            error=strategic_result.get("error")
+        )
+        
+    except Exception as e:
+        logger.error("Strategic intelligence processing failed", 
+                    analysis_id=analysis_id if 'analysis_id' in locals() else "unknown", 
+                    error=str(e))
+        
+        # Return error response
+        return StrategicIntelligenceResponse(
+            success=False,
+            analysis_id=analysis_id if 'analysis_id' in locals() else f"error-{int(datetime.now().timestamp())}",
+            executive_summary=f"Strategic intelligence analysis failed: {str(e)}",
+            strategic_recommendations=["Retry analysis after resolving technical issues"],
+            confidence_assessment={"overall_confidence": 0, "decision_recommendation": "DEFER"},
+            implementation_plan={"immediate_actions": ["Technical issue resolution required"]},
+            risk_assessment={"high_risks": ["Analysis system unavailable"]},
+            domain_analyses={},
+            processing_time=0.0,
+            intelligence_sources=[],
+            error=str(e)
+        )
+
+async def store_strategic_analysis_memory(analysis_id: str, task: str, result: dict, processing_time: float):
+    """Store strategic analysis in memory for learning (background task)"""
+    try:
+        bridge = await get_bridge()
+        
+        from .core_nexus_bridge import JarvisMemory
+        memory = JarvisMemory(
+            content=f"""Strategic Intelligence Analysis Complete
+            
+Analysis ID: {analysis_id}
+Task: {task}
+
+Executive Summary:
+{result.get('executive_summary', 'No summary available')}
+
+Strategic Recommendations:
+{'; '.join(result.get('strategic_recommendations', []))}
+
+Confidence Assessment: {result.get('confidence_assessment', {})}
+Processing Time: {processing_time:.2f}s
+""",
+            importance_score=0.9,  # High importance for strategic analysis
+            metadata={
+                "agent_type": "strategic_intelligence",
+                "analysis_id": analysis_id,
+                "task_type": "strategic_analysis",
+                "processing_time": processing_time,
+                "success": result.get("success", True),
+                "confidence": result.get("confidence_assessment", {}).get("overall_confidence", 0),
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        await bridge.store_memory(memory)
+        logger.info("Strategic analysis stored in memory", analysis_id=analysis_id)
+        
+    except Exception as e:
+        logger.error("Failed to store strategic analysis memory", 
+                    analysis_id=analysis_id, error=str(e))
 
 async def cleanup_task(task_id: str, delay: int = 0):
     """Clean up completed task from memory"""
