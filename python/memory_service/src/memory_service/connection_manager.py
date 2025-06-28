@@ -125,6 +125,30 @@ class OptimizedConnectionPool:
         self._initialization_lock = asyncio.Lock()
         self._is_initialized = False
         
+        # Detect environment type for appropriate optimizations
+        self.is_managed_postgres = self._detect_managed_postgres()
+        if self.is_managed_postgres:
+            logger.info("Detected managed PostgreSQL environment - using compatible settings")
+    
+    def _detect_managed_postgres(self) -> bool:
+        """Detect if running on managed PostgreSQL service"""
+        # Check for managed PostgreSQL indicators
+        host = config.database.HOST.lower()
+        
+        # Common managed PostgreSQL hostnames
+        managed_indicators = [
+            'render.com',           # Render.com managed PostgreSQL
+            'amazonaws.com',        # AWS RDS
+            'database.azure.com',   # Azure Database
+            'googleusercontent.com', # Google Cloud SQL
+            'heroku.com',           # Heroku Postgres
+            'planetscale.com',      # PlanetScale
+            'supabase.com',         # Supabase
+            'neon.tech'             # Neon
+        ]
+        
+        return any(indicator in host for indicator in managed_indicators)
+        
     async def initialize(self) -> bool:
         """Initialize the connection pool with optimized settings"""
         async with self._initialization_lock:
@@ -132,7 +156,8 @@ class OptimizedConnectionPool:
                 return True
             
             try:
-                logger.info("Initializing optimized connection pool for 1GB RAM...")
+                environment_type = "managed PostgreSQL" if self.is_managed_postgres else "self-hosted PostgreSQL"
+                logger.info(f"Initializing optimized connection pool for {environment_type}...")
                 
                 # Build connection string
                 conn_str = (
@@ -140,14 +165,17 @@ class OptimizedConnectionPool:
                     f"{config.database.HOST}:{config.database.PORT}/{config.database.DATABASE}"
                 )
                 
+                # Get appropriate server settings based on environment
+                server_settings = self._get_optimized_server_settings()
+                
                 # Initialize pool with optimized settings
                 self.pool = await asyncpg.create_pool(
                     conn_str,
                     min_size=config.database.POOL_MIN_SIZE,
                     max_size=config.database.POOL_MAX_SIZE,
                     command_timeout=config.database.COMMAND_TIMEOUT,
-                    init=self._init_connection,
-                    server_settings=self._get_optimized_server_settings()
+                    init=self._init_connection_safe,
+                    server_settings=server_settings
                 )
                 
                 # Test pool connectivity
@@ -169,8 +197,8 @@ class OptimizedConnectionPool:
                 self._is_initialized = False
                 return False
     
-    async def _init_connection(self, conn: asyncpg.Connection):
-        """Initialize each connection with optimized settings"""
+    async def _init_connection_safe(self, conn: asyncpg.Connection):
+        """Initialize each connection with safe settings for managed PostgreSQL"""
         try:
             # Set search path
             await conn.execute("SET search_path TO public, pg_catalog")
@@ -188,7 +216,40 @@ class OptimizedConnectionPool:
             except Exception as e:
                 logger.warning(f"Vector type registration failed: {e}")
             
-            # Optimize connection settings for vector operations
+            # Apply session-level optimizations based on environment
+            if self.is_managed_postgres:
+                # Conservative settings for managed PostgreSQL
+                await self._apply_managed_postgres_settings(conn)
+            else:
+                # Full optimizations for self-hosted PostgreSQL
+                await self._apply_selfhosted_postgres_settings(conn)
+            
+            logger.debug(f"Connection {id(conn)} initialized with environment-appropriate settings")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize connection: {e}")
+            raise
+    
+    async def _apply_managed_postgres_settings(self, conn: asyncpg.Connection):
+        """Apply conservative settings for managed PostgreSQL services"""
+        try:
+            # Only session-level parameters that are widely supported
+            await conn.execute(f"SET work_mem = '{min(config.database.WORK_MEM_MB, 4)}MB'")  # Cap at 4MB for managed
+            await conn.execute("SET random_page_cost = 1.1")  # Optimized for SSD
+            await conn.execute("SET seq_page_cost = 1.0")
+            
+            # Enable basic query optimization
+            await conn.execute("SET enable_hashjoin = on")
+            await conn.execute("SET enable_mergejoin = on")
+            
+            logger.debug("Applied managed PostgreSQL settings")
+        except Exception as e:
+            logger.warning(f"Some managed PostgreSQL settings failed: {e}")
+    
+    async def _apply_selfhosted_postgres_settings(self, conn: asyncpg.Connection):
+        """Apply full optimizations for self-hosted PostgreSQL"""
+        try:
+            # Full memory optimizations
             await conn.execute(f"SET work_mem = '{config.database.WORK_MEM_MB}MB'")
             await conn.execute(f"SET maintenance_work_mem = '{config.database.MAINTENANCE_WORK_MEM_MB}MB'")
             await conn.execute("SET random_page_cost = 1.1")  # Optimized for SSD
@@ -205,21 +266,19 @@ class OptimizedConnectionPool:
             await conn.execute("SET parallel_setup_cost = 100")
             await conn.execute("SET parallel_tuple_cost = 0.1")
             
-            logger.debug(f"Connection {id(conn)} initialized with optimized settings")
-            
+            logger.debug("Applied self-hosted PostgreSQL settings")
         except Exception as e:
-            logger.error(f"Failed to initialize connection: {e}")
-            raise
+            logger.warning(f"Some self-hosted PostgreSQL settings failed: {e}")
+    
     
     def _get_optimized_server_settings(self) -> Dict[str, str]:
-        """Get optimized server settings for the connection pool"""
+        """Get optimized server settings for the connection pool (session-level only)"""
+        # Only include session-level parameters that work on managed PostgreSQL (Render.com)
+        # Removed server-level parameters: wal_buffers, checkpoint_completion_target, jit
         return {
-            'synchronous_commit': 'on',  # Ensure data consistency
-            'wal_buffers': '16MB',       # Optimize WAL performance
-            'checkpoint_completion_target': '0.9',  # Spread out checkpoints
-            'jit': 'off',                # Disable JIT for predictable performance
-            'log_statement': 'none',     # Reduce logging overhead
-            'log_min_duration_statement': '1000'  # Only log slow queries
+            'synchronous_commit': 'on',  # Ensure data consistency (session-level)
+            'log_statement': 'none',     # Reduce logging overhead (session-level)
+            'log_min_duration_statement': '1000'  # Only log slow queries (session-level)
         }
     
     @asynccontextmanager
