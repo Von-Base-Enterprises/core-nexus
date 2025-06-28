@@ -1,4 +1,5 @@
 # Core Nexus Memory Service Dependencies
+# BUILD_CACHE_BUST: 2025-06-28T02:15:00Z - Force fresh dependency installation
 
 # Web framework
 fastapi==0.104.1
@@ -24,6 +25,7 @@ openai==1.3.6             # For embeddings integration
 
 # Async support
 asyncio-pool==0.6.0
+aiofiles==23.2.1              # Async file operations for task queue persistence
 
 # Monitoring and logging
 structlog==23.2.0
@@ -32,7 +34,11 @@ loguru==0.7.2
 # Development and testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
+pytest-cov==4.1.0         # Test coverage reporting
+pytest-mock==3.12.0       # Enhanced mocking capabilities
+pytest-timeout==2.2.0     # Test timeout management
 httpx==0.25.2             # For testing FastAPI endpoints
+faker==19.13.0            # Test data generation
 
 # Production utilities
 gunicorn==21.2.0

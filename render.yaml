@@ -7,7 +7,7 @@ services:
     plan: starter
     branch: main
     rootDir: python/memory_service
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir -r requirements.txt && python -c "import aiofiles; print('✅ aiofiles imported successfully')"
     startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     envVars:
@@ -121,3 +121,31 @@ services:
         value: "INFO"
       - key: LANGGRAPH_CHECKPOINT_BACKEND
         value: "memory"
+
+  # JARVIS Health Monitoring Service
+  - type: worker
+    name: jarvis-health-monitor
+    env: python
+    region: oregon
+    plan: starter
+    branch: main
+    rootDir: ./
+    buildCommand: pip install httpx asyncio
+    startCommand: python jarvis_health_monitor.py
+    envVars:
+      - key: JARVIS_URL
+        value: https://jarvis-ai-agent-aa4m.onrender.com
+      - key: CORE_NEXUS_URL
+        value: https://core-nexus-memory-service.onrender.com
+      - key: CHECK_INTERVAL
+        value: "300"  # 5 minutes
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: ALERT_WEBHOOK_URL
+        sync: false  # Set Slack/Discord webhook URL in Render dashboard
+      - key: ALERT_EMAIL
+        sync: false  # Set alert email in Render dashboard
+      - key: SMTP_USER
+        sync: false  # Set SMTP user in Render dashboard
+      - key: SMTP_PASSWORD
+        sync: false  # Set SMTP password in Render dashboard

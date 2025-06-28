@@ -5,6 +5,15 @@ Provides HTTP endpoints for the Core Nexus Long Term Memory Module,
 wrapping the UnifiedVectorStore with proper error handling and validation.
 """
 
+# DEPLOYMENT VERIFICATION: Ensure critical dependencies are available at startup
+try:
+    import aiofiles
+    print("✅ DEPLOYMENT CHECK: aiofiles imported successfully")
+except ImportError as e:
+    print(f"❌ DEPLOYMENT ERROR: Failed to import aiofiles - {e}")
+    print("🔍 DIAGNOSIS: Check that aiofiles==23.2.1 is installed in requirements.txt")
+    raise
+
 import asyncio
 import hashlib
 import json
@@ -53,6 +62,8 @@ from .observability import (
     trace_operation,
     record_metric
 )
+from .auth import create_auth_middleware, get_api_usage_stats
+from .jarvis_client import get_jarvis_client
 
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
@@ -445,7 +456,29 @@ def create_memory_app() -> FastAPI:
 
     app = FastAPI(
         title="Core Nexus Memory Service",
-        description="Unified Long Term Memory Module with multi-provider vector storage",
+        description="""
+        Unified Long Term Memory Module with multi-provider vector storage for AI agents.
+        
+        ## Authentication
+        
+        API requests require authentication via the `X-API-Key` header:
+        
+        ```
+        X-API-Key: your-api-key-here
+        ```
+        
+        Default development API keys:
+        - `dev-key-12345` - Development/testing
+        - `core-nexus-agent-key` - Default agent key
+        
+        ## Features
+        
+        - Multi-provider vector storage (pgvector, ChromaDB, Pinecone)
+        - Semantic search with embeddings
+        - Knowledge graph integration
+        - High availability with automatic failover
+        - Real-time health monitoring
+        """,
         version="0.1.0",
         lifespan=lifespan
     )
@@ -458,6 +491,9 @@ def create_memory_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Add authentication middleware (before tracing for security)
+    app.middleware("http")(create_auth_middleware())
     
     # Add OpenTelemetry request tracing middleware
     if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
@@ -588,28 +624,102 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Health check failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    # @app.get("/metrics") - DISABLED FOR STABLE DEPLOYMENT
-    # async def metrics_endpoint():
-    #     """
-    #     Prometheus metrics endpoint.
-    #
-    #     Returns service metrics in Prometheus text format for monitoring and alerting.
-    #     """
-    #     try:
-    #         # Collect current metrics
-    #         if unified_store:
-    #             await metrics_collector.collect_service_metrics(unified_store)
-    #
-    #         # Return Prometheus metrics
-    #         metrics_data = get_metrics()
-    #         return Response(
-    #             content=metrics_data,
-    #             media_type=CONTENT_TYPE_LATEST,
-    #             headers={"Cache-Control": "no-cache"}
-    #         )
-    #     except Exception as e:
-    #         logger.error(f"Metrics collection failed: {e}")
-    #         raise HTTPException(status_code=500, detail="Metrics collection failed")
+    @app.get("/metrics")
+    async def metrics_endpoint(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Prometheus metrics endpoint with defensive implementation.
+
+        Returns service metrics in Prometheus text format for monitoring and alerting.
+        """
+        try:
+            import time
+            
+            # Collect basic metrics safely
+            health_data = await store.health_check()
+            stats = await store.get_stats()
+            uptime = time.time() - getattr(app.state, 'start_time', time.time())
+            
+            # Generate Prometheus metrics format
+            metrics_lines = [
+                "# HELP core_nexus_memories_total Total number of memories stored",
+                "# TYPE core_nexus_memories_total counter",
+                f"core_nexus_memories_total {stats.get('total_stores', 0)}",
+                "",
+                "# HELP core_nexus_uptime_seconds Service uptime in seconds", 
+                "# TYPE core_nexus_uptime_seconds counter",
+                f"core_nexus_uptime_seconds {uptime:.0f}",
+                "",
+                "# HELP core_nexus_avg_query_time_ms Average query time in milliseconds",
+                "# TYPE core_nexus_avg_query_time_ms gauge",
+                f"core_nexus_avg_query_time_ms {stats.get('avg_query_time', 0):.1f}",
+                "",
+                "# HELP core_nexus_total_queries Total number of queries processed",
+                "# TYPE core_nexus_total_queries counter", 
+                f"core_nexus_total_queries {stats.get('total_queries', 0)}",
+                "",
+                "# HELP core_nexus_service_health Service health status (1=healthy, 0=unhealthy)",
+                "# TYPE core_nexus_service_health gauge",
+                f"core_nexus_service_health {1 if health_data.get('status') == 'healthy' else 0}",
+                ""
+            ]
+            
+            # Add provider-specific metrics
+            for provider_name, status in health_data.get('providers', {}).items():
+                provider_healthy = 1 if status.get('status') == 'healthy' else 0
+                metrics_lines.extend([
+                    f"# HELP core_nexus_provider_health Provider health status for {provider_name}",
+                    f"# TYPE core_nexus_provider_health gauge",
+                    f"core_nexus_provider_health{{provider=\"{provider_name}\"}} {provider_healthy}",
+                    ""
+                ])
+                
+                # Add provider usage stats
+                usage = stats.get('provider_usage', {}).get(provider_name, 0)
+                metrics_lines.extend([
+                    f"# HELP core_nexus_provider_usage Total operations per provider",
+                    f"# TYPE core_nexus_provider_usage counter", 
+                    f"core_nexus_provider_usage{{provider=\"{provider_name}\"}} {usage}",
+                    ""
+                ])
+            
+            # Add performance metrics if available
+            if hasattr(store, 'replication_stats'):
+                replication_total = getattr(store.replication_stats, 'total', 0)
+                replication_successful = getattr(store.replication_stats, 'successful', 0)
+                
+                metrics_lines.extend([
+                    "# HELP core_nexus_replication_total Total replication attempts",
+                    "# TYPE core_nexus_replication_total counter",
+                    f"core_nexus_replication_total {replication_total}",
+                    "",
+                    "# HELP core_nexus_replication_successful Successful replication attempts", 
+                    "# TYPE core_nexus_replication_successful counter",
+                    f"core_nexus_replication_successful {replication_successful}",
+                    ""
+                ])
+            
+            metrics_content = "\n".join(metrics_lines)
+            
+            return Response(
+                content=metrics_content,
+                media_type="text/plain; version=0.0.4; charset=utf-8",
+                headers={"Cache-Control": "no-cache"}
+            )
+            
+        except Exception as e:
+            logger.error(f"Metrics collection failed: {e}")
+            # Return basic error metrics instead of failing completely
+            error_metrics = [
+                "# HELP core_nexus_metrics_error Metrics collection error",
+                "# TYPE core_nexus_metrics_error gauge", 
+                "core_nexus_metrics_error 1",
+                f"# Error: {str(e)[:100]}"
+            ]
+            return Response(
+                content="\n".join(error_metrics),
+                media_type="text/plain; version=0.0.4; charset=utf-8",
+                headers={"Cache-Control": "no-cache"}
+            )
 
     # @app.get("/db/stats") - DISABLED FOR STABLE DEPLOYMENT
     # async def database_stats():
@@ -690,6 +800,7 @@ def create_memory_app() -> FastAPI:
                 span.set_attribute("query.limit", request.limit)
                 span.set_attribute("query.min_similarity", request.min_similarity)
                 span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
+                span.set_attribute("query.include_reasoning", request.include_reasoning)
 
             # Fix for empty query returning only 3 results
             if not request.query or request.query.strip() == "":
@@ -699,20 +810,75 @@ def create_memory_app() -> FastAPI:
 
             response = await store.query_memories(request)
 
+            # JARVIS INTEGRATION: Add reasoning analysis if requested
+            reasoning_analysis = None
+            if request.include_reasoning and request.query.strip():
+                try:
+                    logger.info(f"Including JARVIS reasoning analysis for query: {request.query[:100]}")
+                    jarvis_client = await get_jarvis_client()
+                    
+                    # Check if JARVIS is healthy before proceeding
+                    if await jarvis_client.health_check():
+                        analysis_result = await jarvis_client.analyze_query_results(
+                            query=request.query,
+                            memories=response.memories,
+                            additional_context={
+                                "total_found": response.total_found,
+                                "providers_used": response.providers_used,
+                                "user_id": request.user_id,
+                                "conversation_id": request.conversation_id
+                            }
+                        )
+                        
+                        if analysis_result and analysis_result.success:
+                            reasoning_analysis = analysis_result.get_structured_analysis()
+                            logger.info(f"JARVIS analysis completed successfully", 
+                                       task_id=analysis_result.task_id,
+                                       duration=analysis_result.duration)
+                        else:
+                            logger.warning("JARVIS analysis failed or returned no results")
+                            reasoning_analysis = {
+                                "success": False,
+                                "error": analysis_result.error if analysis_result else "No analysis result"
+                            }
+                    else:
+                        logger.warning("JARVIS health check failed, skipping reasoning analysis")
+                        reasoning_analysis = {
+                            "success": False,
+                            "error": "JARVIS service unavailable"
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"JARVIS reasoning analysis failed: {e}")
+                    reasoning_analysis = {
+                        "success": False,
+                        "error": f"Analysis error: {str(e)}"
+                    }
+
             # Add request timing info
             total_time = (time.time() - start_time) * 1000
-            logger.info(f"Query completed in {total_time:.1f}ms, found {response.total_found} memories, returned {len(response.memories)}")
+            logger.info(f"Query completed in {total_time:.1f}ms, found {response.total_found} memories, returned {len(response.memories)}, reasoning: {reasoning_analysis is not None}")
             
             # Record metrics
             record_metric("memory_operations_total", 1, {"operation": "query", "status": "success"})
             record_metric("memory_operation_duration", total_time, {"operation": "query"})
             record_metric("vector_search_results", len(response.memories))
             
+            # Record JARVIS metrics
+            if request.include_reasoning:
+                record_metric("jarvis_reasoning_requests", 1, {"success": reasoning_analysis is not None and reasoning_analysis.get("success", False)})
+                if reasoning_analysis and reasoning_analysis.get("success"):
+                    record_metric("jarvis_analysis_duration", reasoning_analysis.get("performance", {}).get("duration_seconds", 0))
+            
             # Add span attributes for results
             if span:
                 span.set_attribute("results.total_found", response.total_found)
                 span.set_attribute("results.returned", len(response.memories))
                 span.set_attribute("results.query_time_ms", total_time)
+                span.set_attribute("jarvis.reasoning_requested", request.include_reasoning)
+                span.set_attribute("jarvis.analysis_provided", reasoning_analysis is not None)
+                if reasoning_analysis:
+                    span.set_attribute("jarvis.analysis_success", reasoning_analysis.get("success", False))
 
             # Add trust metrics to build confidence
             response.trust_metrics = {
@@ -727,8 +893,12 @@ def create_memory_app() -> FastAPI:
                 "original_query": request.query,
                 "limit_requested": request.limit,
                 "actual_returned": len(response.memories),
-                "api_version": "1.1.0-fixed"
+                "api_version": "1.1.0-fixed",
+                "reasoning_requested": request.include_reasoning
             }
+
+            # Add JARVIS reasoning analysis to response
+            response.reasoning_analysis = reasoning_analysis
 
             return response
 
