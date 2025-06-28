@@ -6,6 +6,7 @@ Provides persistent, retryable task execution with observability
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, asdict
@@ -91,10 +92,14 @@ class ReliableTaskQueue:
     """
     
     def __init__(self, 
-                 storage_dir: str = "/tmp/core_nexus_tasks",
+                 storage_dir: str = None,
                  max_concurrent_tasks: int = 10,
                  worker_interval: float = 1.0,
                  enable_persistence: bool = True):
+        
+        # Configure storage directory with environment variable fallback
+        if storage_dir is None:
+            storage_dir = os.getenv("TASK_QUEUE_STORAGE_DIR", "/tmp/core_nexus_tasks")
         
         self.storage_dir = Path(storage_dir)
         self.max_concurrent_tasks = max_concurrent_tasks
@@ -124,9 +129,19 @@ class ReliableTaskQueue:
             'avg_execution_time': 0.0
         }
         
-        # Create storage directory
+        # Create storage directory with error handling
         if self.enable_persistence:
-            self.storage_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                self.storage_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Task queue storage directory ready: {self.storage_dir}")
+            except PermissionError as e:
+                logger.error(f"Cannot create task queue storage directory {self.storage_dir}: {e}")
+                logger.warning("Disabling task persistence due to storage access issues")
+                self.enable_persistence = False
+            except Exception as e:
+                logger.error(f"Unexpected error creating storage directory: {e}")
+                logger.warning("Disabling task persistence due to storage access issues")
+                self.enable_persistence = False
             
         logger.info(f"Reliable task queue initialized: storage={storage_dir}, max_concurrent={max_concurrent_tasks}")
     
