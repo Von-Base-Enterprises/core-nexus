@@ -301,9 +301,21 @@ async def lifespan(app: FastAPI):
                     "password": pgvector_password,
                     "table_name": os.getenv("TABLE_NAME", "vector_memories"),
                     "embedding_dim": 1536,
-                    "distance_metric": "cosine"
+                    "distance_metric": "cosine",
+                    "hnsw_m": int(os.getenv("HNSW_M", "48")),
+                    "hnsw_ef_construction": int(os.getenv("HNSW_EF_CONSTRUCTION", "200"))
                 }
             )
+            
+            logger.info("🔧 PgVector configuration:")
+            logger.info(f"   Host: {pgvector_host}")
+            logger.info(f"   Port: {os.getenv('PGVECTOR_PORT', '5432')}")
+            logger.info(f"   Database: {os.getenv('PGVECTOR_DATABASE', 'nexus_memory_db')}")
+            logger.info(f"   User: {os.getenv('PGVECTOR_USER', 'nexus_memory_db_user')}")
+            logger.info(f"   Password: {'***SET***' if pgvector_password else 'NOT_SET'}")
+            logger.info(f"   Table: {os.getenv('TABLE_NAME', 'vector_memories')}")
+            logger.info(f"   HNSW M: {os.getenv('HNSW_M', '48')}")
+            logger.info(f"   HNSW EF Construction: {os.getenv('HNSW_EF_CONSTRUCTION', '200')}")
             
         # Only try to initialize pgvector if configuration is available
         if pgvector_config:
@@ -1834,6 +1846,28 @@ def create_memory_app() -> FastAPI:
             except Exception as e2:
                 logger.error(f"Even empty response failed: {e2}")
                 raise HTTPException(status_code=500, detail=f"Complete system failure: {str(e)}")
+
+    @app.get("/debug/simple-memories")
+    async def debug_simple_memories(store: UnifiedVectorStore = Depends(get_store)):
+        """Debug endpoint to test memory retrieval without complex models."""
+        try:
+            # Try the existing store first
+            memories = await store.query_memories("", limit=3)
+            
+            return {
+                "status": "success",
+                "count": len(memories),
+                "source": "unified_store",
+                "memories": [{"id": m.id, "content": m.content[:50] + "..."} for m in memories[:3]]
+            }
+        except Exception as store_error:
+            # If store fails, don't try emergency retrieval from API context to avoid deadlock
+            return {
+                "status": "error", 
+                "error": str(store_error),
+                "type": str(type(store_error).__name__),
+                "note": "Store query failed - emergency retrieval disabled in API context"
+            }
 
     @app.get("/memories/stats", response_model=MemoryStats)
     async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):

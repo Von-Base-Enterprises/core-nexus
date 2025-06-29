@@ -442,11 +442,14 @@ class PgVectorProvider(VectorProvider):
             try:
                 import asyncpg
 
-                # Build connection string
+                # Build connection string with SSL configuration for Render PostgreSQL
                 conn_str = (
                     f"postgresql://{config['user']}:{config['password']}@"
                     f"{config['host']}:{config['port']}/{config['database']}"
+                    "?sslmode=require"
                 )
+                
+                logger.info(f"PgVector connection string: postgresql://{config['user']}:***@{config['host']}:{config['port']}/{config['database']}?sslmode=require")
 
                 # Initialize pool with vector type registration and performance optimizations
                 async def init_connection(conn):
@@ -474,23 +477,55 @@ class PgVectorProvider(VectorProvider):
                 
                 # PERFORMANCE OPTIMIZATION: Enhanced connection pool for high-performance vector workloads
                 # Optimized for 500+ concurrent requests with sub-500ms query targets
-                self.connection_pool = await asyncpg.create_pool(
-                    conn_str,
-                    min_size=config.get('pool_min_size', 10),  # Configurable min connections
-                    max_size=config.get('pool_max_size', 50),  # Configurable max connections
-                    command_timeout=config.get('command_timeout', 60),  # Configurable command timeout
-                    max_inactive_connection_lifetime=config.get('max_inactive_connection_lifetime', 300),  # Configurable connection lifetime
-                    init=init_connection,  # Register vector type and optimize each connection
-                    server_settings={
-                        'synchronous_commit': 'on',  # Ensure synchronous commits for consistency
-                        'jit': 'on',  # Enable JIT compilation for complex vector operations
-                        'statement_timeout': '20s',  # Prevent runaway queries (reduced from 30s)
-                        'idle_in_transaction_session_timeout': '30s',  # Faster cleanup (reduced from 60s)
-                        'tcp_keepalives_idle': '300',  # Keep connections alive for 5 minutes
-                        'tcp_keepalives_interval': '30',  # Check every 30 seconds
-                        'tcp_keepalives_count': '3'  # Retry 3 times before closing
-                    }
-                )
+                # Try SSL connection first, fallback to prefer mode if required fails
+                try:
+                    self.connection_pool = await asyncpg.create_pool(
+                        conn_str,
+                        min_size=config.get('pool_min_size', 10),  # Configurable min connections
+                        max_size=config.get('pool_max_size', 50),  # Configurable max connections
+                        command_timeout=config.get('command_timeout', 60),  # Configurable command timeout
+                        max_inactive_connection_lifetime=config.get('max_inactive_connection_lifetime', 300),  # Configurable connection lifetime
+                        init=init_connection,  # Register vector type and optimize each connection
+                        server_settings={
+                            'synchronous_commit': 'on',  # Ensure synchronous commits for consistency
+                            'jit': 'on',  # Enable JIT compilation for complex vector operations
+                            'statement_timeout': '20s',  # Prevent runaway queries (reduced from 30s)
+                            'idle_in_transaction_session_timeout': '30s',  # Faster cleanup (reduced from 60s)
+                            'tcp_keepalives_idle': '300',  # Keep connections alive for 5 minutes
+                            'tcp_keepalives_interval': '30',  # Check every 30 seconds
+                            'tcp_keepalives_count': '3'  # Retry 3 times before closing
+                        }
+                    )
+                    logger.info("✅ PostgreSQL connection pool created with sslmode=require")
+                except Exception as ssl_error:
+                    logger.warning(f"SSL required mode failed: {ssl_error}")
+                    logger.info("🔄 Trying SSL prefer mode as fallback...")
+                    
+                    # Fallback to sslmode=prefer
+                    conn_str_fallback = (
+                        f"postgresql://{config['user']}:{config['password']}@"
+                        f"{config['host']}:{config['port']}/{config['database']}"
+                        "?sslmode=prefer"
+                    )
+                    
+                    self.connection_pool = await asyncpg.create_pool(
+                        conn_str_fallback,
+                        min_size=config.get('pool_min_size', 10),
+                        max_size=config.get('pool_max_size', 50),
+                        command_timeout=config.get('command_timeout', 60),
+                        max_inactive_connection_lifetime=config.get('max_inactive_connection_lifetime', 300),
+                        init=init_connection,
+                        server_settings={
+                            'synchronous_commit': 'on',
+                            'jit': 'on',
+                            'statement_timeout': '20s',
+                            'idle_in_transaction_session_timeout': '30s',
+                            'tcp_keepalives_idle': '300',
+                            'tcp_keepalives_interval': '30',
+                            'tcp_keepalives_count': '3'
+                        }
+                    )
+                    logger.info("✅ PostgreSQL connection pool created with sslmode=prefer fallback")
 
                 # Initialize database schema
                 async with self.connection_pool.acquire() as conn:
@@ -518,11 +553,13 @@ class PgVectorProvider(VectorProvider):
                     # m: Configurable connections per layer for better recall (default 48 vs pgvector default 16)
                     # ef_construction: Configurable construction parameter for better index quality (default 200 vs pgvector default 64)
                     # These parameters optimize for sub-500ms query performance with high accuracy
+                    hnsw_m = config.get('hnsw_m', 48)
+                    hnsw_ef_construction = config.get('hnsw_ef_construction', 200)
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding_hnsw
                         ON {self.table_name}
                         USING hnsw (embedding vector_cosine_ops)
-                        WITH (m = {config.database.HNSW_M}, ef_construction = {config.database.HNSW_EF_CONSTRUCTION})
+                        WITH (m = {hnsw_m}, ef_construction = {hnsw_ef_construction})
                     """)
 
                     await conn.execute(f"""
@@ -550,6 +587,9 @@ class PgVectorProvider(VectorProvider):
                 raise
             except Exception as e:
                 logger.error(f"Failed to initialize PgVector: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Database config: host={config.get('host', 'NOT_SET')}, user={config.get('user', 'NOT_SET')}, db={config.get('database', 'NOT_SET')}")
+                logger.error(f"SSL mode attempted: {conn_str.split('?')[-1] if '?' in conn_str else 'none'}")
                 self.enabled = False
                 raise
 
