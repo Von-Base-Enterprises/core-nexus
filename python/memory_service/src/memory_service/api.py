@@ -19,15 +19,16 @@ import hashlib
 import json
 import logging
 import os
+from pathlib import Path
 import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 import asyncpg
 
@@ -51,9 +52,21 @@ from .models import (
     ProviderConfig,
     QueryRequest,
     QueryResponse,
+    # Agent Coordination Models
+    AgentProfile,
+    AgentActivity,
+    TaskDefinition,
+    TaskAssignment,
+    ConflictDetection,
+    HandoffRequest,
+    CoordinationMessage,
+    CoordinationMetrics,
+    CoordinationDashboard,
 )
 from .providers import ChromaProvider, PgVectorProvider, PineconeProvider, GraphProvider
 from .unified_store import UnifiedVectorStore
+from .coordination_engine import AgentCoordinationEngine
+from .websocket_manager import WebSocketManager
 from .observability import (
     initialize_observability,
     ObservabilityConfig,
@@ -80,6 +93,8 @@ logger = get_logger("api")
 
 # Global instances
 unified_store: UnifiedVectorStore | None = None
+coordination_engine: AgentCoordinationEngine | None = None
+websocket_manager: WebSocketManager | None = None
 usage_collector: Any = None  # Type: UsageCollector when implemented
 memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
 bulk_import_service: BulkImportService | None = None
@@ -90,7 +105,7 @@ emergency_retrieval: Any = None  # Emergency retrieval system
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
-    global unified_store, usage_collector, memory_dashboard, bulk_import_service, memory_export_service, emergency_retrieval
+    global unified_store, coordination_engine, websocket_manager, usage_collector, memory_dashboard, bulk_import_service, memory_export_service, emergency_retrieval
 
     # Startup
     logger.info("Initializing Core Nexus Memory Service...")
@@ -410,10 +425,34 @@ async def lifespan(app: FastAPI):
             logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
 
     # Initialize bulk import service (simplified version without Redis)
-    global bulk_import_service, memory_export_service
+    global bulk_import_service, memory_export_service, coordination_engine, websocket_manager
     bulk_import_service = BulkImportService(unified_store)
     memory_export_service = MemoryExportService(unified_store)
     logger.info("Bulk import/export services initialized")
+
+    # Initialize Agent Coordination Engine (without WebSocket manager initially)
+    try:
+        coordination_engine = AgentCoordinationEngine(
+            unified_store=unified_store,
+            embedding_model=embedding_model
+        )
+        logger.info("🤖 Agent Coordination Engine initialized - Ready for multi-agent orchestration")
+    except Exception as e:
+        logger.error(f"Failed to initialize Agent Coordination Engine: {e}")
+        coordination_engine = None
+
+    # Initialize WebSocket Manager for real-time coordination
+    try:
+        websocket_manager = WebSocketManager(coordination_engine=coordination_engine)
+        
+        # Now update coordination engine with WebSocket manager reference
+        if coordination_engine:
+            coordination_engine.websocket_manager = websocket_manager
+            
+        logger.info("🔌 WebSocket Manager initialized - Real-time agent communication enabled")
+    except Exception as e:
+        logger.error(f"Failed to initialize WebSocket Manager: {e}")
+        websocket_manager = None
 
     # Initialize emergency retrieval system (CRITICAL FOUNDATION FIX)
     try:
@@ -595,7 +634,11 @@ def create_memory_app() -> FastAPI:
                 "memory_operations": "/memories",
                 "search": "/memories/query", 
                 "statistics": "/stats",
-                "individual_memory": "/memories/{id}"
+                "individual_memory": "/memories/{id}",
+                "coordination_dashboard": "/coordination/dashboard/ui",
+                "coordination_api": "/coordination/dashboard",
+                "activity_history": "/coordination/activity-history",
+                "activity_log_flush": "/coordination/flush-logs"
             },
             "key_endpoints": [
                 {
@@ -622,6 +665,26 @@ def create_memory_app() -> FastAPI:
                     "path": "/stats",
                     "method": "GET",
                     "description": "Basic service statistics"
+                },
+                {
+                    "path": "/coordination/dashboard/ui",
+                    "method": "GET",
+                    "description": "Real-time agent coordination dashboard (web interface)"
+                },
+                {
+                    "path": "/coordination/dashboard",
+                    "method": "GET", 
+                    "description": "Agent coordination dashboard data (API)"
+                },
+                {
+                    "path": "/coordination/activity-history",
+                    "method": "GET",
+                    "description": "Comprehensive activity history for coordination analysis"
+                },
+                {
+                    "path": "/coordination/flush-logs",
+                    "method": "POST",
+                    "description": "Manually flush activity logs to Memory Service"
                 }
             ],
             "foundation_status": "strong",
@@ -5360,6 +5423,423 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Failed to get strategic intelligence status: {e}")
             raise HTTPException(status_code=500, detail=f"Strategic intelligence status error: {str(e)}")
+
+    # ===== AGENT COORDINATION API =====
+
+    @app.post("/coordination/agents/register", status_code=201)
+    async def register_agent(agent_profile: AgentProfile):
+        """Register a new agent with the coordination system."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            success = await coordination_engine.register_agent(agent_profile)
+            if success:
+                return {"status": "registered", "agent_id": agent_profile.agent_id}
+            else:
+                raise HTTPException(status_code=400, detail="Failed to register agent")
+                
+        except Exception as e:
+            logger.error(f"Failed to register agent: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.put("/coordination/agents/{agent_id}/activity")
+    async def update_agent_activity(agent_id: str, activity_update: dict):
+        """Update agent activity status."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            success = await coordination_engine.update_agent_activity(agent_id, activity_update)
+            if success:
+                return {"status": "updated", "agent_id": agent_id}
+            else:
+                raise HTTPException(status_code=404, detail="Agent not found")
+                
+        except Exception as e:
+            logger.error(f"Failed to update agent activity: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/coordination/tasks/assign")
+    async def assign_task(task_definition: TaskDefinition, preferred_agent: str = None):
+        """Assign a task to the most suitable agent."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            assignment = await coordination_engine.assign_task(task_definition, preferred_agent)
+            if assignment:
+                return {
+                    "status": "assigned",
+                    "assignment_id": str(assignment.assignment_id),
+                    "assigned_agent": assignment.assigned_agent_id
+                }
+            else:
+                raise HTTPException(status_code=503, detail="No suitable agent available")
+                
+        except Exception as e:
+            logger.error(f"Failed to assign task: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/coordination/handoffs")
+    async def request_handoff(handoff_request: HandoffRequest):
+        """Request a context-aware handoff between agents."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            success = await coordination_engine.request_handoff(handoff_request)
+            if success:
+                return {
+                    "status": "handoff_requested",
+                    "handoff_id": str(handoff_request.handoff_id)
+                }
+            else:
+                raise HTTPException(status_code=400, detail="Handoff request failed")
+                
+        except Exception as e:
+            logger.error(f"Failed to process handoff request: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/dashboard", response_model=CoordinationDashboard)
+    async def get_coordination_dashboard():
+        """Get real-time coordination dashboard data."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            dashboard = await coordination_engine.get_coordination_dashboard()
+            return dashboard
+            
+        except Exception as e:
+            logger.error(f"Failed to get coordination dashboard: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/dashboard/ui", response_class=HTMLResponse)
+    async def get_coordination_dashboard_ui():
+        """Serve the real-time coordination dashboard web interface."""
+        try:
+            # Get the path to the dashboard HTML file
+            dashboard_path = Path(__file__).parent / "dashboard.html"
+            
+            if not dashboard_path.exists():
+                raise HTTPException(status_code=404, detail="Dashboard HTML file not found")
+            
+            # Read and return the HTML content
+            with open(dashboard_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+                
+            return HTMLResponse(content=html_content, status_code=200)
+            
+        except Exception as e:
+            logger.error(f"Failed to serve coordination dashboard UI: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/agents")
+    async def get_active_agents():
+        """Get list of currently active agents."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            return {
+                "active_agents": list(coordination_engine.active_agents.values()),
+                "agent_profiles": list(coordination_engine.agent_profiles.values()),
+                "total_agents": len(coordination_engine.active_agents)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get active agents: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/conflicts")
+    async def get_active_conflicts():
+        """Get list of active conflicts requiring resolution."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            active_conflicts = [
+                conflict for conflict in coordination_engine.conflict_history
+                if conflict.resolution_status in ["detected", "in_progress"]
+            ]
+            
+            return {
+                "active_conflicts": active_conflicts,
+                "total_conflicts": len(active_conflicts),
+                "resolved_today": len([
+                    c for c in coordination_engine.conflict_history
+                    if c.resolved_at and c.resolved_at.date() == datetime.now().date()
+                ])
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get active conflicts: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/metrics", response_model=CoordinationMetrics)
+    async def get_coordination_metrics():
+        """Get coordination system performance metrics."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            return coordination_engine.coordination_metrics
+            
+        except Exception as e:
+            logger.error(f"Failed to get coordination metrics: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/coordination/activity-history")
+    async def get_coordination_activity_history(
+        agent_id: Optional[str] = Query(None, description="Filter by specific agent ID"),
+        category: Optional[str] = Query(None, description="Filter by activity category"),
+        hours_back: int = Query(24, description="Hours of history to retrieve", ge=1, le=168),
+        limit: int = Query(100, description="Maximum number of activities to return", ge=1, le=1000)
+    ):
+        """Get comprehensive activity history for coordination analysis and learning."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            # Get activity history
+            activities = await coordination_engine.get_activity_history(
+                agent_id=agent_id,
+                category=category,
+                hours_back=hours_back,
+                limit=limit
+            )
+            
+            # Generate summary statistics
+            total_activities = len(activities)
+            categories = set()
+            agents = set()
+            importance_counts = {"low": 0, "normal": 0, "high": 0, "critical": 0}
+            
+            for activity in activities:
+                metadata = activity.get('metadata', {})
+                categories.add(metadata.get('category', 'unknown'))
+                if metadata.get('agent_id'):
+                    agents.add(metadata['agent_id'])
+                importance = metadata.get('importance', 'normal')
+                if importance in importance_counts:
+                    importance_counts[importance] += 1
+            
+            return {
+                "activities": activities,
+                "summary": {
+                    "total_activities": total_activities,
+                    "unique_agents": len(agents),
+                    "categories_involved": list(categories),
+                    "importance_distribution": importance_counts,
+                    "time_range_hours": hours_back,
+                    "filters_applied": {
+                        "agent_id": agent_id,
+                        "category": category
+                    }
+                },
+                "metadata": {
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "coordination_engine_version": "enhanced_v1.0"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get activity history: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/coordination/flush-logs")
+    async def flush_coordination_activity_logs():
+        """Manually flush pending activity logs to Memory Service for immediate persistence."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            await coordination_engine.flush_activity_logs()
+            
+            return {
+                "status": "success",
+                "message": "Activity logs flushed to Memory Service",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to flush activity logs: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # ===== END AGENT COORDINATION API =====
+
+    # ===== WEBSOCKET ENDPOINTS FOR REAL-TIME COORDINATION =====
+
+    @app.websocket("/ws/coordination/{agent_id}")
+    async def websocket_coordination_endpoint(websocket: WebSocket, agent_id: str, agent_type: str = None, workspace: str = None):
+        """WebSocket endpoint for real-time agent coordination."""
+        try:
+            if not websocket_manager:
+                await websocket.close(code=1011, reason="WebSocket manager not available")
+                return
+            
+            # Connect the agent
+            connected = await websocket_manager.connect_agent(
+                websocket=websocket,
+                agent_id=agent_id,
+                agent_type=agent_type,
+                workspace=workspace
+            )
+            
+            if not connected:
+                await websocket.close(code=1011, reason="Failed to connect agent")
+                return
+            
+            try:
+                # Keep connection alive and handle messages
+                while True:
+                    # Receive message from agent
+                    message_text = await websocket.receive_text()
+                    message_data = json.loads(message_text)
+                    
+                    # Process the message
+                    await websocket_manager.handle_agent_message(agent_id, message_data)
+                    
+            except WebSocketDisconnect:
+                logger.info(f"Agent {agent_id} disconnected normally")
+            except Exception as e:
+                logger.error(f"WebSocket error for agent {agent_id}: {e}")
+            finally:
+                # Clean up connection
+                await websocket_manager.disconnect_agent(agent_id, "connection_closed")
+                
+        except Exception as e:
+            logger.error(f"WebSocket endpoint error for agent {agent_id}: {e}")
+            try:
+                await websocket.close(code=1011, reason=f"Server error: {str(e)}")
+            except:
+                pass
+
+    @app.websocket("/ws/coordination/monitor")
+    async def websocket_monitor_endpoint(websocket: WebSocket):
+        """WebSocket endpoint for monitoring all agent coordination activity."""
+        try:
+            if not websocket_manager:
+                await websocket.close(code=1011, reason="WebSocket manager not available")
+                return
+            
+            await websocket.accept()
+            logger.info("Coordination monitor connected")
+            
+            # Register as a special monitoring connection
+            monitor_id = f"monitor_{int(time.time())}"
+            
+            try:
+                # Send initial status
+                status = await websocket_manager.get_connection_status()
+                await websocket.send_text(json.dumps({
+                    "type": "initial_status",
+                    "data": status,
+                    "timestamp": datetime.utcnow().isoformat()
+                }))
+                
+                # Keep connection alive and send periodic updates
+                while True:
+                    # Send status update every 10 seconds
+                    await asyncio.sleep(10)
+                    
+                    status = await websocket_manager.get_connection_status()
+                    dashboard = await coordination_engine.get_coordination_dashboard() if coordination_engine else None
+                    
+                    await websocket.send_text(json.dumps({
+                        "type": "status_update",
+                        "data": {
+                            "connection_status": status,
+                            "coordination_dashboard": dashboard.dict() if dashboard else None
+                        },
+                        "timestamp": datetime.utcnow().isoformat()
+                    }))
+                    
+            except WebSocketDisconnect:
+                logger.info("Coordination monitor disconnected")
+            except Exception as e:
+                logger.error(f"Monitor WebSocket error: {e}")
+                
+        except Exception as e:
+            logger.error(f"Monitor WebSocket endpoint error: {e}")
+            try:
+                await websocket.close(code=1011, reason=f"Server error: {str(e)}")
+            except:
+                pass
+
+    @app.get("/ws/status")
+    async def get_websocket_status():
+        """Get WebSocket connection status and statistics."""
+        try:
+            if not websocket_manager:
+                return {"status": "unavailable", "error": "WebSocket manager not initialized"}
+            
+            status = await websocket_manager.get_connection_status()
+            return {
+                "status": "available",
+                "websocket_manager": status,
+                "endpoints": {
+                    "agent_coordination": "/ws/coordination/{agent_id}?agent_type={type}&workspace={workspace}",
+                    "system_monitor": "/ws/coordination/monitor"
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get WebSocket status: {e}")
+            return {"status": "error", "error": str(e)}
+
+    @app.post("/ws/broadcast")
+    async def broadcast_message_to_agents(message_type: str, data: dict, target_workspace: str = None, target_agent_type: str = None):
+        """Broadcast a message to connected agents via WebSocket."""
+        try:
+            if not websocket_manager:
+                raise HTTPException(status_code=503, detail="WebSocket manager not available")
+            
+            sent_count = await websocket_manager.broadcast_message(
+                message_type=message_type,
+                data=data,
+                target_workspace=target_workspace,
+                target_agent_type=target_agent_type
+            )
+            
+            return {
+                "status": "broadcast_sent",
+                "message_type": message_type,
+                "recipients": sent_count,
+                "target_workspace": target_workspace,
+                "target_agent_type": target_agent_type
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to broadcast message: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ws/send")
+    async def send_direct_message(target_agent_id: str, message_type: str, data: dict):
+        """Send a direct message to a specific agent via WebSocket."""
+        try:
+            if not websocket_manager:
+                raise HTTPException(status_code=503, detail="WebSocket manager not available")
+            
+            success = await websocket_manager.send_message(
+                target_agent_id=target_agent_id,
+                message_type=message_type,
+                data=data
+            )
+            
+            return {
+                "status": "message_sent" if success else "message_queued",
+                "target_agent_id": target_agent_id,
+                "message_type": message_type,
+                "delivered_immediately": success
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to send direct message: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # ===== END WEBSOCKET ENDPOINTS =====
 
     # ===== END SELF-EVOLUTION API =====
 
