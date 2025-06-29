@@ -970,9 +970,21 @@ def create_memory_app() -> FastAPI:
         try:
             import time
             
-            # Collect basic metrics safely
+            # Collect basic metrics safely with defensive programming
             health_data = await store.health_check()
-            stats = await store.get_stats()
+            
+            # PRODUCTION FIX: Handle missing get_stats method gracefully
+            try:
+                stats = await store.get_stats()
+            except (AttributeError, Exception) as e:
+                logger.warning(f"get_stats method not available: {e}, using fallback stats")
+                # Fallback to basic stats from store attributes
+                stats = {
+                    'total_stores': getattr(store, 'stats', {}).get('total_stores', 0),
+                    'avg_query_time': getattr(store, 'stats', {}).get('avg_query_time', 0.0),
+                    'provider_usage': getattr(store, 'stats', {}).get('provider_usage', {}),
+                }
+            
             uptime = time.time() - getattr(app.state, 'start_time', time.time())
             
             # Generate Prometheus metrics format
@@ -2173,14 +2185,24 @@ def create_memory_app() -> FastAPI:
             provider_info = []
 
             for name, provider in store.providers.items():
-                provider_stats = await provider.get_stats()
+                # PRODUCTION FIX: Handle missing provider get_stats method gracefully
+                try:
+                    provider_stats = await provider.get_stats()
+                except (AttributeError, Exception) as e:
+                    logger.warning(f"Provider {name} get_stats failed: {e}, using fallback")
+                    provider_stats = {
+                        'status': 'unknown',
+                        'error': str(e),
+                        'enabled': provider.enabled
+                    }
+                
                 provider_info.append({
                     'name': name,
                     'enabled': provider.enabled,
                     'primary': provider == store.primary_provider,
                     'config': {
-                        'retry_count': provider.config.retry_count,
-                        'timeout_seconds': provider.config.timeout_seconds
+                        'retry_count': getattr(provider.config, 'retry_count', 3),
+                        'timeout_seconds': getattr(provider.config, 'timeout_seconds', 30)
                     },
                     'stats': provider_stats
                 })
