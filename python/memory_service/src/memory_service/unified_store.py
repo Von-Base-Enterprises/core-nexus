@@ -10,6 +10,7 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from uuid import UUID
 
@@ -23,8 +24,148 @@ from .models import (
 )
 from .deduplication import DeduplicationService, DeduplicationMode
 from .reliable_task_queue import get_task_queue, TaskPriority, ReliableTaskQueue
+from .monitoring import get_error_monitor, ErrorCategory
 
 logger = logging.getLogger(__name__)
+
+
+class ProviderCircuitBreaker:
+    """
+    Circuit breaker for individual vector providers to prevent cascade failures.
+    
+    EMERGENCY FIX: Protects against provider failures causing system-wide outages.
+    """
+    
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 300, test_request_interval: int = 30):
+        self.failure_threshold = failure_threshold  # failures before opening circuit
+        self.recovery_timeout = recovery_timeout    # seconds to wait before testing recovery
+        self.test_request_interval = test_request_interval  # seconds between test requests
+        
+        # Circuit state
+        self.state = 'closed'  # closed, open, half_open
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.last_success_time = datetime.utcnow()
+        self.last_test_time = None
+        
+        # Statistics
+        self.total_requests = 0
+        self.total_failures = 0
+        self.total_successes = 0
+    
+    def can_attempt(self) -> bool:
+        """Check if circuit breaker allows an operation attempt."""
+        now = datetime.utcnow()
+        self.total_requests += 1
+        
+        if self.state == 'closed':
+            return True
+        elif self.state == 'open':
+            # Check if recovery timeout has passed
+            if (self.last_failure_time and 
+                (now - self.last_failure_time).total_seconds() > self.recovery_timeout):
+                self.state = 'half_open'
+                self.last_test_time = now
+                logger.info(f"Circuit breaker moving to half-open state for recovery test")
+                return True
+            return False
+        elif self.state == 'half_open':
+            # Allow test requests with throttling
+            if (not self.last_test_time or 
+                (now - self.last_test_time).total_seconds() > self.test_request_interval):
+                self.last_test_time = now
+                return True
+            return False
+        
+        return False
+    
+    def record_success(self):
+        """Record a successful operation."""
+        self.total_successes += 1
+        self.last_success_time = datetime.utcnow()
+        
+        if self.state == 'half_open':
+            # Recovery successful, close circuit
+            old_state = self.state
+            self.state = 'closed'
+            self.failure_count = 0
+            logger.info(f"Circuit breaker closed - provider recovered")
+            
+            # Report recovery to monitoring system
+            try:
+                monitor = get_error_monitor()
+                monitor.record_circuit_breaker_event(
+                    provider=getattr(self, '_provider_name', 'unknown'),
+                    old_state=old_state,
+                    new_state='closed',
+                    reason="Recovery successful"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to report circuit breaker recovery: {e}")
+                
+        elif self.state == 'closed':
+            # Gradually reduce failure count on success
+            self.failure_count = max(0, self.failure_count - 1)
+    
+    def record_failure(self, error: Exception):
+        """Record a failed operation."""
+        self.total_failures += 1
+        self.failure_count += 1
+        self.last_failure_time = datetime.utcnow()
+        
+        if self.failure_count >= self.failure_threshold:
+            if self.state != 'open':
+                old_state = self.state
+                self.state = 'open'
+                logger.error(f"Circuit breaker OPENED after {self.failure_count} failures. Last error: {error}")
+                
+                # Report to monitoring system
+                try:
+                    monitor = get_error_monitor()
+                    monitor.record_circuit_breaker_event(
+                        provider=getattr(self, '_provider_name', 'unknown'),
+                        old_state=old_state,
+                        new_state='open',
+                        reason=f"Failure threshold exceeded: {self.failure_count} failures"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to report circuit breaker event: {e}")
+                    
+        elif self.state == 'half_open':
+            # Test failed, go back to open
+            old_state = self.state
+            self.state = 'open'
+            logger.warning(f"Circuit breaker test failed, returning to open state: {error}")
+            
+            # Report to monitoring system
+            try:
+                monitor = get_error_monitor()
+                monitor.record_circuit_breaker_event(
+                    provider=getattr(self, '_provider_name', 'unknown'),
+                    old_state=old_state,
+                    new_state='open',
+                    reason=f"Recovery test failed: {error}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to report circuit breaker event: {e}")
+    
+    def get_status(self) -> dict:
+        """Get circuit breaker status for monitoring."""
+        uptime = (datetime.utcnow() - self.last_success_time).total_seconds() if self.last_success_time else None
+        downtime = (datetime.utcnow() - self.last_failure_time).total_seconds() if self.last_failure_time else None
+        
+        return {
+            'state': self.state,
+            'failure_count': self.failure_count,
+            'total_requests': self.total_requests,
+            'total_failures': self.total_failures,
+            'total_successes': self.total_successes,
+            'success_rate': self.total_successes / max(1, self.total_requests),
+            'uptime_seconds': uptime,
+            'downtime_seconds': downtime,
+            'last_failure': self.last_failure_time.isoformat() if self.last_failure_time else None,
+            'last_success': self.last_success_time.isoformat() if self.last_success_time else None
+        }
 
 
 class VectorProvider(ABC):
@@ -34,6 +175,15 @@ class VectorProvider(ABC):
         self.config = config
         self.name = config.name
         self.enabled = config.enabled
+        
+        # EMERGENCY FIX: Add circuit breaker to prevent cascade failures
+        self.circuit_breaker = ProviderCircuitBreaker(
+            failure_threshold=config.config.get('circuit_breaker_failure_threshold', 5),
+            recovery_timeout=config.config.get('circuit_breaker_recovery_timeout', 300),
+            test_request_interval=config.config.get('circuit_breaker_test_interval', 30)
+        )
+        # Set provider name for monitoring
+        self.circuit_breaker._provider_name = self.name
 
     @abstractmethod
     async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
@@ -59,6 +209,30 @@ class VectorProvider(ABC):
     async def get_stats(self) -> dict[str, Any]:
         """Get provider statistics."""
         pass
+
+    def is_available(self) -> bool:
+        """Check if provider is available (enabled and circuit breaker allows)."""
+        return self.enabled and self.circuit_breaker.can_attempt()
+    
+    def record_success(self):
+        """Record successful operation with circuit breaker."""
+        self.circuit_breaker.record_success()
+    
+    def record_failure(self, error: Exception):
+        """Record failed operation with circuit breaker."""
+        self.circuit_breaker.record_failure(error)
+        
+        # Temporarily disable provider if circuit breaker is open
+        if self.circuit_breaker.state == 'open':
+            logger.warning(f"Provider {self.name} temporarily disabled due to circuit breaker")
+    
+    def get_circuit_breaker_status(self) -> dict:
+        """Get circuit breaker status for monitoring."""
+        return {
+            'provider': self.name,
+            'enabled': self.enabled,
+            **self.circuit_breaker.get_status()
+        }
 
 
 class UnifiedVectorStore:
@@ -101,7 +275,9 @@ class UnifiedVectorStore:
             'adm_calculations': 0,
             'avg_adm_score': 0.0,
             'duplicates_prevented': 0,
-            'storage_saved_bytes': 0
+            'storage_saved_bytes': 0,
+            'total_failures': 0,
+            'failover_successes': 0
         }
         
         # Schedule initial stats sync after initialization
@@ -232,6 +408,8 @@ class UnifiedVectorStore:
         start_time = time.time()
 
         try:
+            # Initialize monitoring for this request
+            monitor = get_error_monitor()
             # Check for duplicates first if deduplication is enabled
             if self.deduplication_service:
                 dedup_result = await self.deduplication_service.check_duplicate(
@@ -300,50 +478,40 @@ class UnifiedVectorStore:
                 metadata
             )
 
-            # RELIABILITY OPTIMIZATION: Use reliable task queue for background operations
-            # This provides retry logic, persistence, and observability for background tasks
+            # PERFORMANCE OPTIMIZATION: Use fire-and-forget async tasks for background operations
+            # This ensures the primary storage response is not blocked by background tasks
             
-            # Submit tasks to reliable queue for processing
-            if self.task_queue:
-                # Graph processing (reliable background task)
-                if self.graph_provider and self.graph_provider.enabled:
-                    logger.info(f"🧠 Submitting graph processing task for memory {memory_id}")
-                    await self.task_queue.submit_task(
-                        task_type='graph_processing',
-                        payload={
-                            'memory_id': memory_id,
-                            'content': request.content,
-                            'embedding': embedding,
-                            'metadata': metadata
-                        },
-                        priority=TaskPriority.NORMAL,
-                        max_retries=3
-                    )
-                
-                # Secondary replication (reliable background task)
-                logger.info(f"🔄 Submitting replication task for memory {memory_id}")
-                await self.task_queue.submit_task(
-                    task_type='provider_replication',
-                    payload={
-                        'memory_id': memory_id,
-                        'content': request.content,
-                        'embedding': embedding,
-                        'metadata': metadata
-                    },
-                    priority=TaskPriority.HIGH,  # High priority for data consistency
-                    max_retries=5  # More retries for critical replication
-                )
-            else:
-                logger.warning(f"⚠️ Task queue not available, skipping background tasks for {memory_id}")
-                # Fallback to fire-and-forget for emergency situations
-                if self.graph_provider and self.graph_provider.enabled:
-                    asyncio.create_task(self._background_graph_processing(memory_id, request.content, embedding, metadata))
-                asyncio.create_task(self._background_replication(memory_id, request.content, embedding, metadata))
+            # Schedule background tasks asynchronously (non-blocking)
+            try:
+                if self.task_queue:
+                    # Use asyncio.create_task for non-blocking background submission
+                    if self.graph_provider and self.graph_provider.enabled:
+                        asyncio.create_task(self._submit_graph_task(memory_id, request.content, embedding, metadata))
+                    
+                    # Submit replication task in background
+                    asyncio.create_task(self._submit_replication_task(memory_id, request.content, embedding, metadata))
+                else:
+                    # Direct fire-and-forget fallback
+                    if self.graph_provider and self.graph_provider.enabled:
+                        asyncio.create_task(self._background_graph_processing(memory_id, request.content, embedding, metadata))
+                    asyncio.create_task(self._background_replication(memory_id, request.content, embedding, metadata))
+            except Exception as e:
+                # Don't let background task errors affect main storage response
+                logger.warning(f"Background task scheduling failed (non-critical): {e}")
 
             # Update stats
             self.stats['total_stores'] += 1
             self.stats['provider_usage'][self.primary_provider.name] += 1
 
+            # Record successful request for monitoring
+            duration_ms = (time.time() - start_time) * 1000
+            monitor.record_request(
+                duration_ms=duration_ms,
+                success=True,
+                provider=self.primary_provider.name if self.primary_provider else None,
+                operation="store_memory"
+            )
+            
             logger.info(f"Stored memory {memory_id} in {time.time() - start_time:.3f}s")
 
             return MemoryResponse(
@@ -354,8 +522,93 @@ class UnifiedVectorStore:
             )
 
         except Exception as e:
-            logger.error(f"Failed to store memory: {e}")
-            raise
+            # EMERGENCY FIX: Replace catastrophic catch-all with provider failover
+            logger.error(f"Primary storage failed, attempting failover: {e}")
+            
+            # Record error for monitoring
+            monitor.record_error(
+                error=e,
+                category=ErrorCategory.PROVIDER_FAILURE,
+                provider=self.primary_provider.name if self.primary_provider else None,
+                component="unified_store",
+                operation="store_memory"
+            )
+            
+            # Record failure for primary provider
+            if self.primary_provider:
+                self.primary_provider.record_failure(e)
+            
+            # Attempt failover to healthy secondary providers
+            available_providers = [p for p in self.providers.values() 
+                                 if p != self.primary_provider and p.is_available()]
+            
+            if not available_providers:
+                logger.error("🚨 TOTAL SYSTEM FAILURE: No providers available for failover")
+                self.stats['total_failures'] += 1
+                raise Exception(f"All providers failed or unavailable. Last error: {e}")
+            
+            logger.warning(f"🔄 Attempting failover to {len(available_providers)} providers")
+            
+            # Try each available provider
+            for failover_provider in available_providers:
+                try:
+                    logger.info(f"🔄 Failover attempt with {failover_provider.name}")
+                    memory_id = await self._store_with_retry(
+                        failover_provider, request.content, embedding, metadata
+                    )
+                    
+                    # Success! Record and return
+                    failover_provider.record_success()
+                    self.stats['total_stores'] += 1
+                    self.stats['provider_usage'][failover_provider.name] += 1
+                    self.stats['failover_successes'] = self.stats.get('failover_successes', 0) + 1
+                    
+                    # Record successful failover for monitoring
+                    duration_ms = (time.time() - start_time) * 1000
+                    monitor.record_request(
+                        duration_ms=duration_ms,
+                        success=True,
+                        provider=failover_provider.name,
+                        operation="store_memory_failover"
+                    )
+                    
+                    logger.info(f"✅ Failover successful: stored memory {memory_id} via {failover_provider.name}")
+                    
+                    return MemoryResponse(
+                        id=memory_id,
+                        content=request.content,
+                        metadata=metadata,
+                        importance_score=importance_score
+                    )
+                    
+                except Exception as failover_error:
+                    logger.warning(f"❌ Failover to {failover_provider.name} failed: {failover_error}")
+                    failover_provider.record_failure(failover_error)
+                    
+                    # Record failover error for monitoring
+                    monitor.record_error(
+                        error=failover_error,
+                        category=ErrorCategory.PROVIDER_FAILURE,
+                        provider=failover_provider.name,
+                        component="unified_store",
+                        operation="store_memory_failover"
+                    )
+                    continue
+            
+            # All failover attempts failed
+            logger.error("🚨 COMPLETE FAILOVER FAILURE: All providers exhausted")
+            self.stats['total_failures'] += 1
+            
+            # Record total failure for monitoring
+            duration_ms = (time.time() - start_time) * 1000
+            monitor.record_request(
+                duration_ms=duration_ms,
+                success=False,
+                provider="all_providers",
+                operation="store_memory_total_failure"
+            )
+            
+            raise Exception(f"Primary and all failover providers failed. Original error: {e}")
 
     async def query_memories(self, request: QueryRequest) -> QueryResponse:
         """
@@ -366,18 +619,31 @@ class UnifiedVectorStore:
         start_time = time.time()
 
         try:
-            # Check cache first (simple key based on query + filters)
+            # PERFORMANCE: Clean cache periodically (every 100 queries)
+            if not hasattr(self, '_query_count'):
+                self._query_count = 0
+            self._query_count += 1
+            if self._query_count % 100 == 0:
+                self._cleanup_query_cache()
+            
+            # PERFORMANCE: Check cache first with optimized key generation
             cache_key = self._get_cache_key(request)
             if cache_key in self.query_cache:
                 cached_result = self.query_cache[cache_key]
                 if time.time() - cached_result['timestamp'] < 300:  # 5 min cache
-                    logger.debug(f"Cache hit for query: {request.query[:50]}...")
+                    # PERFORMANCE: Reduce logging in hot path
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Cache hit for query: {request.query[:50]}...")
                     return cached_result['response']
+                else:
+                    # Remove expired entry
+                    del self.query_cache[cache_key]
 
-            # EMERGENCY FIX: If empty query, use bulletproof emergency retrieval
-            logger.info(f"🔍 EMPTY QUERY CHECK: query='{request.query}', is_empty={not request.query or request.query.strip() == ''}")
-            if not request.query or request.query.strip() == "":
-                logger.info("🚨 EMPTY QUERY DETECTED: Using bulletproof emergency retrieval")
+            # PERFORMANCE: Fast path for empty queries with reduced logging
+            is_empty_query = not request.query or request.query.strip() == ""
+            if is_empty_query:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("Empty query detected, using emergency retrieval")
                 
                 try:
                     # Use the proven emergency retrieval system
@@ -454,110 +720,80 @@ class UnifiedVectorStore:
             use_graph_provider = False
             graph_memories = []
             
-            # Provider routing decision logging
-            logger.debug(f"Query processing: '{request.query}' with filters: {request.filters}")
+            # PERFORMANCE: Streamlined provider selection with minimal logging
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Query processing: '{request.query}' with filters: {request.filters}")
             
-            # CRITICAL FIX: Much more restrictive graph provider selection
-            # Only use graph provider for EXPLICIT entity relationship queries with actual entity filter values
-            should_use_graph = False
-            
-            if self.graph_provider and self.graph_provider.enabled:
+            # PERFORMANCE: Fast graph provider decision
+            if self.graph_provider and self.graph_provider.enabled and request.filters:
                 # Check for explicit entity filters with actual values
-                entity_filters = {}
-                if request.filters:
-                    entity_filters = {k: v for k, v in request.filters.items() 
-                                    if k in ['entity_name', 'entity_type', 'relationship_type'] 
-                                    and v is not None and str(v).strip()}
-                
-                logger.debug(f"Entity filters found: {entity_filters}")
+                entity_filters = {k: v for k, v in request.filters.items() 
+                                if k in ['entity_name', 'entity_type', 'relationship_type'] 
+                                and v is not None and str(v).strip()}
                 
                 # ONLY use graph if we have explicit entity filters with non-empty values
                 if entity_filters:
-                    logger.info(f"🧠 Using graph provider for entity query: {entity_filters}")
                     try:
-                        graph_memories = await self.graph_provider.query(
-                            query_embedding or [], request.limit, request.filters
+                        # PERFORMANCE: Add timeout for graph queries
+                        graph_memories = await asyncio.wait_for(
+                            self.graph_provider.query(query_embedding or [], request.limit, request.filters),
+                            timeout=10.0  # 10 second timeout for graph queries
                         )
                         if graph_memories:
-                            logger.info(f"✅ Graph provider returned {len(graph_memories)} results")
                             use_graph_provider = True
-                        else:
-                            logger.debug("Graph query returned no results, will attempt fallback")
-                    except Exception as e:
-                        logger.error(f"❌ Graph query failed: {e}, will attempt fallback")
-                else:
-                    logger.debug("No entity filters found, using vector search")
-            else:
-                logger.debug("Graph provider not available, using vector search")
+                            if logger.isEnabledFor(logging.DEBUG):
+                                logger.debug(f"Graph provider returned {len(graph_memories)} results")
+                    except (Exception, asyncio.TimeoutError) as e:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"Graph query failed: {e}, using vector fallback")
             
-            # DECISIVE ROUTING LOGIC WITH BULLETPROOF FALLBACK
+            # PERFORMANCE: Streamlined routing logic with minimal logging
             if use_graph_provider and graph_memories:
                 memories = graph_memories
                 providers_used = ['graph']
-                logger.info(f"✅ FINAL ROUTING → GRAPH: {len(memories)} memories from graph provider")
             elif use_graph_provider and not graph_memories:
-                # CRITICAL FALLBACK: If graph provider was selected but returned no results, fall back to pgvector
-                logger.warning(f"🔄 GRAPH FALLBACK: Graph provider returned 0 results, falling back to pgvector")
-                logger.info(f"🔍 FALLBACK TO VECTOR SEARCH: {len(providers_to_query)} providers available")
-                
+                # PERFORMANCE: Fast fallback to primary provider
                 if query_embedding and providers_to_query:
                     try:
                         provider = providers_to_query[0]  # Use primary provider (pgvector)
-                        logger.info(f"🔍 FALLBACK PROVIDER: Using {provider.name}")
-                        memories = await self._query_provider(
-                            provider,
-                            query_embedding,
-                            request
-                        )
+                        memories = await self._query_provider(provider, query_embedding, request)
                         providers_used = [f'{provider.name}_fallback']
-                        logger.info(f"✅ FALLBACK SUCCESS → {provider.name.upper()}: {len(memories)} memories recovered")
                     except Exception as e:
-                        logger.error(f"❌ Fallback search failed: {e}")
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"Fallback search failed: {e}")
                         memories = []
                         providers_used = ['graph_failed']
                 else:
-                    logger.error("❌ No fallback providers available or no embedding")
                     memories = []
                     providers_used = ['graph_failed']
             elif query_embedding:
-                # FORCE PGVECTOR ROUTING for non-entity queries
-                logger.info(f"🔍 ROUTING TO VECTOR SEARCH: {len(providers_to_query)} providers available")
-                logger.info(f"   Available providers: {[p.name for p in providers_to_query]}")
-                
+                # PERFORMANCE: Fast vector search routing
                 try:
-                    # Query providers (potentially in parallel for better performance)
                     if len(providers_to_query) == 1:
-                        # Single provider query
+                        # PERFORMANCE: Single provider - direct query
                         provider = providers_to_query[0]
-                        logger.info(f"🔍 SINGLE PROVIDER QUERY: Using {provider.name}")
-                        memories = await self._query_provider(
-                            provider,
-                            query_embedding,
-                            request
-                        )
+                        memories = await self._query_provider(provider, query_embedding, request)
                         providers_used = [provider.name]
-                        logger.info(f"✅ FINAL ROUTING → {provider.name.upper()}: {len(memories)} memories returned")
                     else:
-                        # Multi-provider query with result aggregation
-                        logger.info(f"🔍 MULTI PROVIDER QUERY: Querying {[p.name for p in providers_to_query]}")
+                        # PERFORMANCE: Multi-provider parallel query
                         memories, providers_used = await self._query_multiple_providers(
-                            providers_to_query,
-                            query_embedding,
-                            request
+                            providers_to_query, query_embedding, request
                         )
-                        logger.info(f"✅ FINAL ROUTING → MULTIPLE: {len(memories)} memories from {providers_used}")
                 except Exception as e:
-                    logger.error(f"❌ Vector search failed: {e}")
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(f"Vector search failed: {e}")
                     memories = []
                     providers_used = []
             else:
-                logger.warning("❌ NO ROUTING: No query embedding generated, returning empty results")
+                # PERFORMANCE: No embedding available
                 memories = []
                 providers_used = []
             
-            # EMERGENCY FIX: If vector search returns no results, use text search
-            if not memories and request.query:
-                logger.warning(f"Vector search returned 0 results for '{request.query}', trying text search")
+            # PERFORMANCE: Optional text search fallback (only if specifically needed)
+            if not memories and request.query and len(request.query) > 3:
+                # Only attempt text search for longer queries to avoid noise
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Vector search returned 0 results, trying text search")
                 
                 pgvector = self.providers.get('pgvector')
                 if pgvector and pgvector.enabled:
@@ -735,17 +971,72 @@ class UnifiedVectorStore:
         total_score = content_score + base_score + context_boost
         return max(scoring.min_score, min(scoring.max_score, total_score))
 
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID from any available provider."""
+        logger.debug(f"Retrieving memory {memory_id}")
+        
+        # Try primary provider first
+        if self.primary_provider:
+            try:
+                memory = await self.primary_provider.retrieve(memory_id)
+                if memory:
+                    logger.debug(f"Retrieved memory {memory_id} from primary provider {self.primary_provider.name}")
+                    return memory
+            except Exception as e:
+                logger.warning(f"Failed to retrieve from primary provider {self.primary_provider.name}: {e}")
+        
+        # Try secondary providers
+        for provider in self.providers.values():
+            if provider == self.primary_provider or not provider.enabled:
+                continue
+            
+            try:
+                memory = await provider.retrieve(memory_id)
+                if memory:
+                    logger.debug(f"Retrieved memory {memory_id} from secondary provider {provider.name}")
+                    return memory
+            except Exception as e:
+                logger.warning(f"Failed to retrieve from provider {provider.name}: {e}")
+        
+        logger.debug(f"Memory {memory_id} not found in any provider")
+        return None
+
     async def _store_with_retry(self, provider: VectorProvider, content: str,
                                embedding: list[float], metadata: dict[str, Any]) -> UUID:
-        """Store with retry logic."""
+        """Store with retry logic and circuit breaker protection."""
+        
+        # EMERGENCY FIX: Check circuit breaker before attempting
+        if not provider.is_available():
+            raise Exception(f"Provider {provider.name} unavailable (circuit breaker: {provider.circuit_breaker.state})")
+        
+        last_error = None
         for attempt in range(provider.config.retry_count):
             try:
-                return await provider.store(content, embedding, metadata)
+                # Check circuit breaker for each attempt
+                if not provider.circuit_breaker.can_attempt():
+                    raise Exception(f"Provider {provider.name} circuit breaker blocked attempt {attempt + 1}")
+                
+                result = await provider.store(content, embedding, metadata)
+                
+                # Record success
+                provider.record_success()
+                logger.debug(f"✅ Store successful on attempt {attempt + 1} for {provider.name}")
+                return result
+                
             except Exception as e:
+                last_error = e
+                provider.record_failure(e)
+                
                 if attempt == provider.config.retry_count - 1:
-                    raise
-                logger.warning(f"Store attempt {attempt + 1} failed for {provider.name}: {e}")
-                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    # Final attempt failed, circuit breaker will handle state change
+                    logger.error(f"❌ Final attempt {attempt + 1} failed for {provider.name}: {e}")
+                    raise e
+                
+                # Calculate backoff with jitter to prevent thundering herd
+                backoff_time = (2 ** attempt) + (time.time() % 1.0)  # Add jitter
+                logger.warning(f"⚠️ Store attempt {attempt + 1} failed for {provider.name}: {e}")
+                logger.info(f"🔄 Retrying in {backoff_time:.2f}s...")
+                await asyncio.sleep(backoff_time)
 
     async def _replicate_to_secondaries(self, memory_id: UUID, content: str,
                                        embedding: list[float], metadata: dict[str, Any]):
@@ -841,42 +1132,48 @@ class UnifiedVectorStore:
 
     async def _query_provider(self, provider: VectorProvider, query_embedding: list[float],
                              request: QueryRequest) -> list[MemoryResponse]:
-        """Query a single provider with proper error handling."""
+        """
+        PERFORMANCE OPTIMIZED: Query a single provider with timeout and streamlined logic.
+        Target: Individual provider queries under 200ms.
+        """
         try:
+            # PERFORMANCE: Add timeout to prevent slow queries from blocking
+            query_timeout = 15.0  # 15 second timeout per provider
+            
             # Check if this is an empty query (zero vector or no embedding)
             is_empty_query = not query_embedding or all(v == 0.0 for v in query_embedding)
             
             if is_empty_query:
-                # Use get_recent_memories if available (currently only PgVectorProvider)
+                # PERFORMANCE: Streamlined empty query handling - prefer fastest path
                 if hasattr(provider, 'get_recent_memories'):
-                    logger.info(f"Using get_recent_memories for empty query on {provider.name}")
-                    try:
-                        results = await provider.get_recent_memories(request.limit * 2, request.filters or {})
-                    except Exception as e:
-                        logger.error(f"get_recent_memories failed: {e}")
-                        # Try emergency search as last resort
-                        if provider.name == 'pgvector' and hasattr(provider, 'connection_pool'):
-                            from .search_fix import EmergencySearchFix
-                            emergency = EmergencySearchFix(provider.connection_pool, getattr(provider, "table_name", "vector_memories"))
-                            results = await emergency.emergency_search_all(request.limit * 2)
-                        else:
-                            results = []
+                    # Fast path: Use optimized recent memories query
+                    results = await asyncio.wait_for(
+                        provider.get_recent_memories(request.limit * 2, request.filters or {}),
+                        timeout=query_timeout
+                    )
                 else:
-                    # Fall back to regular query for providers without get_recent_memories
-                    logger.info(f"Provider {provider.name} doesn't support get_recent_memories, using regular query")
-                    results = await provider.query(query_embedding, request.limit * 2, request.filters)
+                    # Fallback: Use regular query
+                    results = await asyncio.wait_for(
+                        provider.query(query_embedding, request.limit * 2, request.filters),
+                        timeout=query_timeout
+                    )
             else:
-                # Regular vector similarity query
-                results = await provider.query(query_embedding, request.limit * 2, request.filters)
+                # PERFORMANCE: Direct vector query with timeout
+                results = await asyncio.wait_for(
+                    provider.query(query_embedding, request.limit * 2, request.filters),
+                    timeout=query_timeout
+                )
             
-            # Update provider usage stats
+            # PERFORMANCE: Update stats without expensive logging
             self.stats['provider_usage'][provider.name] = self.stats['provider_usage'].get(provider.name, 0) + 1
             
             return results
             
+        except asyncio.TimeoutError:
+            logger.warning(f"Query timeout ({query_timeout}s) for provider {provider.name}")
+            raise
         except Exception as e:
             logger.error(f"Query failed for provider {provider.name}: {e}")
-            # Re-raise the exception to be handled by _query_multiple_providers
             raise
 
     async def _query_multiple_providers(self, providers: list[VectorProvider],
@@ -922,17 +1219,60 @@ class UnifiedVectorStore:
         return filtered
 
     def _get_cache_key(self, request: QueryRequest) -> str:
-        """Generate cache key for query."""
-        # Simple cache key - in production, use more sophisticated hashing
+        """
+        PERFORMANCE OPTIMIZED: Generate efficient cache key using hash.
+        Target: Cache key generation under 1ms.
+        """
+        # PERFORMANCE: Use hash instead of string concatenation for better memory efficiency
         key_parts = [
-            request.query,
+            request.query or "",
             str(request.limit),
             str(request.min_similarity),
             str(sorted(request.filters.items()) if request.filters else ""),
             request.user_id or "",
             request.conversation_id or ""
         ]
-        return "|".join(key_parts)
+        # Use hash for consistent short keys that are memory efficient
+        import hashlib
+        cache_string = "|".join(key_parts)
+        return hashlib.md5(cache_string.encode()).hexdigest()
+    
+    def _cleanup_query_cache(self):
+        """
+        PERFORMANCE: Clean up expired cache entries to prevent memory bloat.
+        Called periodically to maintain cache performance.
+        """
+        try:
+            current_time = time.time()
+            cache_ttl = 300  # 5 minutes
+            
+            # Remove expired entries
+            expired_keys = [
+                key for key, cached_data in self.query_cache.items()
+                if current_time - cached_data['timestamp'] > cache_ttl
+            ]
+            
+            for key in expired_keys:
+                del self.query_cache[key]
+                
+            # PERFORMANCE: Limit cache size to prevent memory bloat (LRU eviction)
+            max_cache_size = 1000
+            if len(self.query_cache) > max_cache_size:
+                # Remove oldest entries
+                sorted_items = sorted(
+                    self.query_cache.items(),
+                    key=lambda x: x[1]['timestamp']
+                )
+                
+                # Remove oldest 20% when cache is full
+                num_to_remove = len(sorted_items) - int(max_cache_size * 0.8)
+                for key, _ in sorted_items[:num_to_remove]:
+                    del self.query_cache[key]
+                    
+            logger.debug(f"Cache cleanup completed: {len(self.query_cache)} entries remaining")
+            
+        except Exception as e:
+            logger.warning(f"Cache cleanup failed (non-critical): {e}")
     
     async def _sync_initial_stats(self):
         """Synchronize initial stats with actual database counts."""
@@ -1080,6 +1420,38 @@ class UnifiedVectorStore:
             self.replication_stats['failed'] += 1
             logger.error(f"❌ Background replication failed for memory {memory_id}: {e}")
             return False
+
+    async def _submit_graph_task(self, memory_id: str, content: str, embedding: list[float], metadata: dict):
+        """Submit graph processing task to the task queue (fire-and-forget)."""
+        try:
+            if self.task_queue and self.graph_provider and self.graph_provider.enabled:
+                await self.task_queue.submit_task(
+                    task_id=f"graph_processing_{memory_id}",
+                    handler=self._task_graph_processing,
+                    args=(memory_id, content, embedding, metadata),
+                    priority=TaskPriority.MEDIUM,
+                    retry_count=2,
+                    timeout_seconds=60
+                )
+                logger.debug(f"🧠 Graph processing task submitted for memory {memory_id}")
+        except Exception as e:
+            logger.warning(f"Failed to submit graph processing task for memory {memory_id}: {e}")
+
+    async def _submit_replication_task(self, memory_id: str, content: str, embedding: list[float], metadata: dict):
+        """Submit replication task to the task queue (fire-and-forget)."""
+        try:
+            if self.task_queue:
+                await self.task_queue.submit_task(
+                    task_id=f"replication_{memory_id}",
+                    handler=self._task_replication,
+                    args=(memory_id, content, embedding, metadata),
+                    priority=TaskPriority.LOW,
+                    retry_count=3,
+                    timeout_seconds=120
+                )
+                logger.debug(f"🔄 Replication task submitted for memory {memory_id}")
+        except Exception as e:
+            logger.warning(f"Failed to submit replication task for memory {memory_id}: {e}")
 
     # ========================================
     # RELIABLE TASK QUEUE HANDLERS

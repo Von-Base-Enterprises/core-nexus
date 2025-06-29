@@ -25,6 +25,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,6 +81,7 @@ from .auth import create_auth_middleware, get_api_usage_stats
 from .jarvis_client import get_jarvis_client
 from .enhanced_query_processor import process_enhanced_query, get_enhanced_query_system_health
 from .self_evolution_engine import record_strategic_analysis_for_learning, run_evolution_cycle_if_needed, get_evolution_status
+from .monitoring import get_error_monitor, ErrorMonitor, HealthMetrics
 
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
@@ -529,6 +531,15 @@ async def lifespan(app: FastAPI):
         # logger.info("Memory dashboard initialized")
         memory_dashboard = None
 
+        # Initialize comprehensive error monitoring and alerting system
+        try:
+            monitor = get_error_monitor()
+            await monitor.start_monitoring()
+            logger.info("🔍 Comprehensive error monitoring and alerting system initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize monitoring system: {e}")
+            # Continue without monitoring rather than failing startup
+
         # Set startup time for uptime tracking
         import time
         app.state.start_time = time.time()
@@ -591,6 +602,14 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Memory Service...")
+    
+    # Shutdown monitoring system
+    try:
+        monitor = get_error_monitor()
+        await monitor.stop_monitoring()
+        logger.info("🔍 Error monitoring system shutdown completed")
+    except Exception as e:
+        logger.warning(f"Error during monitoring shutdown: {e}")
     
     # Log system shutdown (ADDED: Missing integration point)
     if coordination_engine:
@@ -812,12 +831,80 @@ def create_memory_app() -> FastAPI:
     @app.get("/health", response_model=HealthCheckResponse)
     async def health_check(store: UnifiedVectorStore = Depends(get_store)):
         """
-        Check the health of all vector providers and strategic intelligence systems.
+        Fast health check optimized for production monitoring (<50ms target).
 
-        Returns detailed status of each provider, circuit breakers, and overall service health.
+        Returns essential health status with minimal latency for load balancers and monitoring.
+        Use /health/detailed for comprehensive diagnostics.
         """
         try:
-            # Get basic store health
+            # PERFORMANCE OPTIMIZATION: Fast path health check
+            start_time = time.time()
+            
+            # Quick provider availability check (no deep health checks)
+            available_providers = {}
+            primary_healthy = False
+            
+            for name, provider in store.providers.items():
+                if provider.enabled and provider.circuit_breaker.state != 'open':
+                    available_providers[name] = {
+                        "status": "healthy",
+                        "primary": provider == store.primary_provider
+                    }
+                    if provider == store.primary_provider:
+                        primary_healthy = True
+                else:
+                    available_providers[name] = {
+                        "status": "degraded" if provider.enabled else "disabled",
+                        "primary": provider == store.primary_provider
+                    }
+            
+            # Determine overall status quickly
+            if primary_healthy and len(available_providers) > 0:
+                status = "healthy"
+            elif len(available_providers) > 0:
+                status = "degraded"
+            else:
+                status = "unhealthy"
+            
+            # Get basic stats without expensive operations
+            uptime_seconds = time.time() - getattr(app.state, 'start_time', time.time())
+            
+            health_response = HealthCheckResponse(
+                status=status,
+                providers=available_providers,
+                total_memories=store.stats.get('total_stores', 0),  # From cache
+                avg_query_time_ms=store.stats.get('avg_query_time', 0.0),  # From cache
+                uptime_seconds=uptime_seconds
+            )
+            
+            # Log if health check is too slow
+            check_time = (time.time() - start_time) * 1000
+            if check_time > 50:
+                logger.warning(f"Health check took {check_time:.1f}ms (target <50ms)")
+            
+            return health_response
+            
+        except Exception as e:
+            logger.error(f"Fast health check failed: {e}")
+            # Return minimal response to prevent complete failure
+            return HealthCheckResponse(
+                status="degraded",
+                providers={},
+                total_memories=0,
+                avg_query_time_ms=0.0,
+                uptime_seconds=0.0
+            )
+
+    @app.get("/health/detailed")
+    async def detailed_health_check(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Comprehensive health check with full diagnostics (may be slower).
+
+        Returns detailed status of all providers, circuit breakers, and system components.
+        Use for debugging and detailed monitoring - not suitable for load balancer health checks.
+        """
+        try:
+            # Get full store health (including provider-specific checks)
             health_data = await store.health_check()
             
             # Get enhanced query processor and circuit breaker health
@@ -856,17 +943,22 @@ def create_memory_app() -> FastAPI:
                     }
                 }
 
-            return HealthCheckResponse(
-                status=health_data['status'],
-                providers=health_data['providers'],
-                total_memories=health_data['stats']['total_stores'],
-                avg_query_time_ms=health_data['stats']['avg_query_time'],
-                uptime_seconds=(time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0
-            )
+            return {
+                "status": health_data['status'],
+                "providers": health_data['providers'],
+                "stats": health_data.get('stats', {}),
+                "enhanced_systems": health_data.get('enhanced_systems', {}),
+                "uptime_seconds": (time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0,
+                "check_type": "detailed"
+            }
 
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.error(f"Detailed health check failed: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "check_type": "detailed"
+            }
 
     @app.get("/metrics")
     async def metrics_endpoint(store: UnifiedVectorStore = Depends(get_store)):
@@ -963,6 +1055,163 @@ def create_memory_app() -> FastAPI:
                 content="\n".join(error_metrics),
                 media_type="text/plain; version=0.0.4; charset=utf-8",
                 headers={"Cache-Control": "no-cache"}
+            )
+
+    @app.get("/monitoring/health")
+    async def monitoring_health_status():
+        """
+        Comprehensive system health monitoring status.
+        
+        Returns detailed health metrics including error rates, response times,
+        circuit breaker states, and provider health.
+        """
+        try:
+            monitor = get_error_monitor()
+            health_status = await monitor.get_health_status()
+            
+            return JSONResponse(content={
+                "timestamp": health_status.timestamp.isoformat(),
+                "total_requests": health_status.total_requests,
+                "total_errors": health_status.total_errors,
+                "error_rate": health_status.error_rate,
+                "avg_response_time_ms": health_status.avg_response_time,
+                "circuit_breaker_states": health_status.circuit_breaker_states,
+                "provider_health": health_status.provider_health,
+                "connection_pool_stats": health_status.connection_pool_stats,
+                "memory_usage": health_status.memory_usage,
+                "active_alerts": health_status.active_alerts,
+                "overall_health": "healthy" if health_status.error_rate < 0.05 and health_status.active_alerts == 0 else "degraded"
+            })
+            
+        except Exception as e:
+            logger.error(f"Monitoring health check failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to get monitoring health status", "detail": str(e)}
+            )
+
+    @app.get("/monitoring/errors")
+    async def monitoring_error_summary(hours: int = Query(24, ge=1, le=168)):
+        """
+        Error summary for the specified time period.
+        
+        Returns categorized error counts and trends for analysis.
+        """
+        try:
+            monitor = get_error_monitor()
+            error_summary = await monitor.get_error_summary(hours=hours)
+            
+            return JSONResponse(content=error_summary)
+            
+        except Exception as e:
+            logger.error(f"Error summary generation failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to generate error summary", "detail": str(e)}
+            )
+
+    @app.get("/monitoring/alerts")
+    async def monitoring_active_alerts():
+        """
+        Get current active alerts and recent alert history.
+        
+        Returns all active alerts that require attention.
+        """
+        try:
+            monitor = get_error_monitor()
+            
+            # Get active alerts
+            active_alerts = [alert.to_dict() for alert in monitor.active_alerts.values()]
+            
+            # Get recent alert history (last 50)
+            recent_alerts = [alert.to_dict() for alert in list(monitor.alert_history)[-50:]]
+            
+            return JSONResponse(content={
+                "active_alerts": active_alerts,
+                "active_count": len(active_alerts),
+                "recent_alerts": recent_alerts,
+                "total_alerts_today": len([a for a in monitor.alert_history 
+                                         if (datetime.utcnow() - a.timestamp).days == 0])
+            })
+            
+        except Exception as e:
+            logger.error(f"Alert retrieval failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to get alerts", "detail": str(e)}
+            )
+
+    @app.post("/monitoring/alerts/{alert_id}/resolve")
+    async def monitoring_resolve_alert(alert_id: str, resolution_note: str = None):
+        """
+        Manually resolve an active alert.
+        
+        Marks the specified alert as resolved with an optional note.
+        """
+        try:
+            monitor = get_error_monitor()
+            
+            if alert_id not in monitor.active_alerts:
+                raise HTTPException(status_code=404, detail="Alert not found")
+            
+            await monitor.resolve_alert(alert_id, resolution_note)
+            
+            return JSONResponse(content={
+                "success": True,
+                "message": f"Alert {alert_id} resolved successfully",
+                "resolution_note": resolution_note
+            })
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Alert resolution failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to resolve alert", "detail": str(e)}
+            )
+
+    @app.get("/monitoring/circuit-breakers")
+    async def monitoring_circuit_breaker_status(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Get detailed circuit breaker status for all providers.
+        
+        Returns current state, statistics, and recent events for each provider.
+        """
+        try:
+            monitor = get_error_monitor()
+            
+            # Get circuit breaker status from all providers
+            circuit_status = {}
+            for provider_name, provider in store.providers.items():
+                if hasattr(provider, 'circuit_breaker'):
+                    circuit_status[provider_name] = provider.get_circuit_breaker_status()
+            
+            # Get recent circuit breaker events
+            recent_events = [
+                {
+                    "timestamp": event["timestamp"].isoformat(),
+                    "provider": event["provider"],
+                    "old_state": event["old_state"],
+                    "new_state": event["new_state"],
+                    "reason": event["reason"]
+                }
+                for event in list(monitor.circuit_breaker_events)[-20:]  # Last 20 events
+            ]
+            
+            return JSONResponse(content={
+                "circuit_breakers": circuit_status,
+                "recent_events": recent_events,
+                "overall_status": "healthy" if all(
+                    cb.get("state") == "closed" for cb in circuit_status.values()
+                ) else "degraded"
+            })
+            
+        except Exception as e:
+            logger.error(f"Circuit breaker status check failed: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Failed to get circuit breaker status", "detail": str(e)}
             )
 
     # @app.get("/db/stats") - DISABLED FOR STABLE DEPLOYMENT
@@ -1390,16 +1639,24 @@ def create_memory_app() -> FastAPI:
                 except Exception as e:
                     logger.error(f"Temporary emergency retrieval failed: {e}")
             
-            # Approach 3: Try unified store as last resort
+            # Approach 3: Try unified store retrieve method
             if not memory:
                 try:
-                    logger.warning(f"Emergency approaches failed, trying unified store for memory {memory_id}")
-                    # This would require implementing get_by_id in unified store
-                    # For now, we'll just log and return 404
-                    logger.warning("Unified store get_by_id not implemented")
+                    logger.info(f"Emergency approaches failed, trying unified store retrieve for memory {memory_id}")
+                    from uuid import UUID
+                    memory_uuid = UUID(memory_id)
+                    memory = await store.retrieve(memory_uuid)
                     
+                    if memory:
+                        logger.info(f"✅ Unified store retrieve found memory {memory_id}")
+                        return memory
+                    else:
+                        logger.info(f"Unified store retrieve returned None for memory {memory_id}")
+                    
+                except ValueError as e:
+                    logger.error(f"Invalid UUID format for memory {memory_id}: {e}")
                 except Exception as e:
-                    logger.error(f"Unified store lookup failed: {e}")
+                    logger.error(f"Unified store retrieve failed: {e}")
             
             # If all approaches failed
             logger.info(f"❌ Memory {memory_id} not found in any system")

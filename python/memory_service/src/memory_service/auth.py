@@ -132,7 +132,15 @@ class APIKeyAuth:
         api_key = self.get_api_key_from_request(request)
         
         if not api_key:
-            logger.warning(f"Authentication failed: No API key provided for {request.url.path} from {request.client.host if request.client else 'unknown'}")
+            # Safely get client host without causing exceptions
+            client_host = 'unknown'
+            try:
+                if request.client and hasattr(request.client, 'host'):
+                    client_host = request.client.host
+            except Exception:
+                pass
+            
+            logger.warning(f"Authentication failed: No API key provided for {request.url.path} from {client_host}")
             raise HTTPException(
                 status_code=401,
                 detail={
@@ -146,7 +154,16 @@ class APIKeyAuth:
         if not self.validate_api_key(api_key):
             # Hash the key for logging (security)
             key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:8]
-            logger.warning(f"Authentication failed: Invalid API key {key_hash}... for {request.url.path} from {request.client.host if request.client else 'unknown'}")
+            
+            # Safely get client host without causing exceptions
+            client_host = 'unknown'
+            try:
+                if request.client and hasattr(request.client, 'host'):
+                    client_host = request.client.host
+            except Exception:
+                pass
+            
+            logger.warning(f"Authentication failed: Invalid API key {key_hash}... for {request.url.path} from {client_host}")
             
             raise HTTPException(
                 status_code=401,
