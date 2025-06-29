@@ -212,8 +212,23 @@ class ChromaProvider(VectorProvider):
                 logger.info(f"   Collection name: {self.collection.name}")
                 logger.info(f"   Collection count before: {self.collection.count()}")
                 
-                # Clean metadata - ChromaDB doesn't accept None values
-                clean_metadata = {k: v for k, v in metadata.items() if v is not None}
+                # Clean metadata - ChromaDB only accepts str, int, float, bool, or None values
+                clean_metadata = {}
+                for k, v in metadata.items():
+                    if v is None:
+                        continue
+                    elif isinstance(v, (str, int, float, bool)):
+                        clean_metadata[k] = v
+                    elif isinstance(v, (dict, list, tuple)):
+                        # Convert complex types to JSON strings
+                        try:
+                            clean_metadata[k] = json.dumps(v)
+                        except Exception as e:
+                            logger.warning(f"Failed to serialize metadata field {k}: {e}")
+                            clean_metadata[k] = str(v)[:100]  # Truncate to 100 chars
+                    else:
+                        # Convert other types to strings
+                        clean_metadata[k] = str(v)
                 logger.info(f"   Metadata cleaned: {len(metadata)} -> {len(clean_metadata)} fields")
                 
                 self.collection.add(
