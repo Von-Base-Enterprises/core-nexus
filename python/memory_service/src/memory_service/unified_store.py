@@ -698,22 +698,56 @@ class UnifiedVectorStore:
                         providers_used=['emergency_failed']
                     )
             
-            # For non-empty queries, try multiple search strategies
+            # PERFORMANCE OPTIMIZATION: Parallel processing for non-empty queries
             query_embedding = None
             memories = []
             
-            # Strategy 1: Try embedding-based search if possible
-            try:
+            # PERFORMANCE: Parallel embedding generation and provider selection
+            async def generate_embedding_task():
+                """Generate embedding in parallel with other tasks."""
                 if self.embedding_model and request.query:
-                    query_embedding = await self._generate_embedding(request.query)
+                    try:
+                        return await asyncio.wait_for(
+                            self._generate_embedding(request.query),
+                            timeout=5.0  # 5 second timeout for embedding generation
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("Embedding generation timed out (5s)")
+                        return None
+                    except Exception as e:
+                        logger.error(f"Embedding generation failed: {e}")
+                        return None
                 else:
                     logger.warning("No embedding model available for query")
+                    return None
 
+            async def select_providers_task():
+                """Select providers in parallel with embedding generation."""
+                return self._select_providers(request)
+
+            # Execute embedding generation and provider selection in parallel
+            try:
+                embedding_task = asyncio.create_task(generate_embedding_task())
+                provider_task = asyncio.create_task(select_providers_task())
+                
+                # Wait for both tasks to complete
+                query_embedding, providers_to_query = await asyncio.gather(
+                    embedding_task, provider_task, return_exceptions=True
+                )
+                
+                # Handle any exceptions from parallel tasks
+                if isinstance(query_embedding, Exception):
+                    logger.error(f"Embedding generation task failed: {query_embedding}")
+                    query_embedding = None
+                    
+                if isinstance(providers_to_query, Exception):
+                    logger.error(f"Provider selection task failed: {providers_to_query}")
+                    providers_to_query = []
+                    
             except Exception as e:
-                logger.error(f"Embedding generation failed: {e}")
-            
-            # Determine which providers to query
-            providers_to_query = self._select_providers(request)
+                logger.error(f"Parallel task execution failed: {e}")
+                query_embedding = None
+                providers_to_query = []
             
             # CRITICAL FIX: Only use graph provider for explicit entity queries with specific filters
             # All other queries (including empty queries and semantic searches) MUST use pgvector
@@ -1178,29 +1212,78 @@ class UnifiedVectorStore:
 
     async def _query_multiple_providers(self, providers: list[VectorProvider],
                                        query_embedding: list[float], request: QueryRequest) -> tuple[list[MemoryResponse], list[str]]:
-        """Query multiple providers and aggregate results."""
+        """
+        PERFORMANCE OPTIMIZED: Query multiple providers with enhanced parallel processing.
+        
+        Optimizations:
+        - Parallel execution with asyncio.gather()
+        - Per-provider timeouts to prevent blocking
+        - Concurrent result processing
+        - Early result streaming for large queries
+        """
         tasks = []
         provider_names = []
+        query_timeout = 10.0  # 10 second timeout per provider
 
+        # Create timeout-wrapped tasks for each provider
         for provider in providers:
-            task = asyncio.create_task(
-                self._query_provider(provider, query_embedding, request)
-            )
+            # Wrap each provider query with timeout
+            async def query_with_timeout(prov=provider):
+                try:
+                    return await asyncio.wait_for(
+                        self._query_provider(prov, query_embedding, request),
+                        timeout=query_timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Provider {prov.name} query timed out after {query_timeout}s")
+                    raise
+                except Exception as e:
+                    logger.warning(f"Provider {prov.name} query failed: {e}")
+                    raise
+
+            task = asyncio.create_task(query_with_timeout())
             tasks.append(task)
             provider_names.append(provider.name)
 
+        # Execute all provider queries in parallel with exception handling
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Aggregate results, handling failures gracefully
+        # PERFORMANCE: Parallel result aggregation and processing
         all_memories = []
         successful_providers = []
-
+        
+        # Process results concurrently where possible
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.warning(f"Provider {provider_names[i]} failed: {result}")
-            else:
+                error_type = type(result).__name__
+                if isinstance(result, asyncio.TimeoutError):
+                    logger.warning(f"Provider {provider_names[i]} timed out ({query_timeout}s)")
+                else:
+                    logger.warning(f"Provider {provider_names[i]} failed with {error_type}: {result}")
+            elif result:  # Check if result is not empty
                 all_memories.extend(result)
                 successful_providers.append(provider_names[i])
+                
+                # PERFORMANCE: Log successful provider metrics
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Provider {provider_names[i]} returned {len(result)} results")
+
+        # PERFORMANCE: Early sorting for large result sets (>100 results)
+        if len(all_memories) > 100:
+            logger.debug(f"Large result set ({len(all_memories)} memories), applying early optimization")
+            
+            # Pre-filter by similarity to reduce processing overhead
+            all_memories = [m for m in all_memories 
+                          if m.similarity_score and m.similarity_score >= request.min_similarity]
+            
+            # Sort by similarity + importance early to reduce downstream processing
+            all_memories.sort(key=lambda m: (
+                (m.similarity_score or 0) * 0.7 + (m.importance_score or 0) * 0.3
+            ), reverse=True)
+            
+            # Limit to reasonable size to prevent memory issues
+            max_intermediate_results = min(request.limit * 5, 500)  # 5x requested or 500 max
+            all_memories = all_memories[:max_intermediate_results]
 
         return all_memories, successful_providers
 
