@@ -1847,27 +1847,14 @@ def create_memory_app() -> FastAPI:
                 logger.error(f"Even empty response failed: {e2}")
                 raise HTTPException(status_code=500, detail=f"Complete system failure: {str(e)}")
 
-    @app.get("/debug/simple-memories")
-    async def debug_simple_memories(store: UnifiedVectorStore = Depends(get_store)):
-        """Debug endpoint to test memory retrieval without complex models."""
-        try:
-            # Try the existing store first
-            memories = await store.query_memories("", limit=3)
-            
-            return {
-                "status": "success",
-                "count": len(memories),
-                "source": "unified_store",
-                "memories": [{"id": m.id, "content": m.content[:50] + "..."} for m in memories[:3]]
-            }
-        except Exception as store_error:
-            # If store fails, don't try emergency retrieval from API context to avoid deadlock
-            return {
-                "status": "error", 
-                "error": str(store_error),
-                "type": str(type(store_error).__name__),
-                "note": "Store query failed - emergency retrieval disabled in API context"
-            }
+    @app.get("/debug/basic-test")
+    async def debug_basic_test():
+        """Most basic test - no dependencies, no complex operations."""
+        return {
+            "status": "success",
+            "message": "Basic endpoint works",
+            "timestamp": datetime.now().isoformat()
+        }
 
     @app.get("/memories/stats", response_model=MemoryStats)
     async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
