@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Core Nexus Agent Coordination Dashboard</title>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #1e40af;
+            --success-color: #059669;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --text-color: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            padding: 1.5rem 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1.1rem;
+        }
+
+        .connection-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 1rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-connected {
+            background-color: rgba(5, 150, 105, 0.2);
+            color: #10b981;
+            border: 1px solid rgba(5, 150, 105, 0.3);
+        }
+
+        .status-disconnected {
+            background-color: rgba(220, 38, 38, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(220, 38, 38, 0.3);
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .card-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            font-size: 1.125rem;
+        }
+
+        .agent-card {
+            background-color: rgba(30, 41, 59, 0.8);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.2s ease-in-out;
+        }
+
+        .agent-card:hover {
+            background-color: rgba(30, 41, 59, 1);
+            transform: translateY(-1px);
+        }
+
+        .agent-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .agent-name {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .agent-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-online { background-color: rgba(5, 150, 105, 0.2); color: #10b981; }
+        .status-working { background-color: rgba(37, 99, 235, 0.2); color: #3b82f6; }
+        .status-idle { background-color: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+        .status-blocked { background-color: rgba(220, 38, 38, 0.2); color: #ef4444; }
+
+        .agent-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: rgba(51, 65, 85, 0.5);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+            transition: width 0.3s ease-in-out;
+        }
+
+        .conflict-item {
+            background-color: rgba(220, 38, 38, 0.1);
+            border-left: 4px solid var(--danger-color);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .conflict-severity {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .severity-high { background-color: rgba(220, 38, 38, 0.2); color: #ef4444; }
+        .severity-medium { background-color: rgba(217, 119, 6, 0.2); color: #f59e0b; }
+        .severity-low { background-color: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+
+        .task-item {
+            background-color: rgba(37, 99, 235, 0.1);
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .task-priority {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .priority-high { background-color: rgba(220, 38, 38, 0.2); color: #ef4444; }
+        .priority-medium { background-color: rgba(217, 119, 6, 0.2); color: #f59e0b; }
+        .priority-low { background-color: rgba(5, 150, 105, 0.2); color: #10b981; }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .two-column {
+            grid-column: span 2;
+        }
+
+        .no-data {
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 2rem;
+        }
+
+        .refresh-indicator {
+            display: inline-block;
+            margin-left: 0.5rem;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .timestamp {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: right;
+            margin-top: 1rem;
+        }
+
+        .workspace-utilization {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .workspace-item {
+            background-color: rgba(30, 41, 59, 0.5);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+
+        .workspace-name {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .workspace-count {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .header {
+                padding: 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>Core Nexus Agent Coordination Dashboard</h1>
+                <p>Real-time Multi-Agent Development Orchestration</p>
+            </div>
+            <div class="connection-status" id="connectionStatus">
+                <div class="status-indicator"></div>
+                <span>Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- System Overview -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">System Overview</div>
+                    <div class="card-subtitle">Real-time coordination metrics</div>
+                </div>
+            </div>
+            <div id="systemMetrics">
+                <div class="metric">
+                    <span class="metric-label">Active Agents</span>
+                    <span class="metric-value" id="activeAgents">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Active Tasks</span>
+                    <span class="metric-value" id="activeTasks">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Tasks Completed Today</span>
+                    <span class="metric-value" id="tasksCompletedToday">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Active Conflicts</span>
+                    <span class="metric-value" id="activeConflicts">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Coordination Efficiency</span>
+                    <span class="metric-value" id="coordinationEfficiency">-</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">System Health</span>
+                    <span class="metric-value" id="systemHealth">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Agents -->
+        <div class="card two-column">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Active Agents <span id="refreshIndicator" class="refresh-indicator" style="display: none;">↻</span></div>
+                    <div class="card-subtitle">Current agent status and activities</div>
+                </div>
+            </div>
+            <div id="agentsList">
+                <div class="no-data">No active agents</div>
+            </div>
+        </div>
+
+        <!-- Workspace Utilization -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Workspace Utilization</div>
+                    <div class="card-subtitle">Agents per workspace</div>
+                </div>
+            </div>
+            <div class="workspace-utilization" id="workspaceUtilization">
+                <div class="no-data">No workspace data</div>
+            </div>
+        </div>
+
+        <!-- Active Conflicts -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Active Conflicts</div>
+                    <div class="card-subtitle">Conflicts requiring resolution</div>
+                </div>
+            </div>
+            <div id="conflictsList">
+                <div class="no-data">No active conflicts</div>
+            </div>
+        </div>
+
+        <!-- Recent Tasks -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Recent Tasks</div>
+                    <div class="card-subtitle">Latest task assignments</div>
+                </div>
+            </div>
+            <div id="tasksList">
+                <div class="no-data">No recent tasks</div>
+            </div>
+        </div>
+
+        <!-- System Alerts -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">System Alerts</div>
+                    <div class="card-subtitle">Important notifications</div>
+                </div>
+            </div>
+            <div id="alertsList">
+                <div class="no-data">No active alerts</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class CoordinationDashboard {
+            constructor() {
+                this.websocket = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 5000;
+                this.lastUpdate = null;
+                
+                this.init();
+            }
+
+            init() {
+                this.connect();
+                this.setupEventListeners();
+            }
+
+            connect() {
+                try {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/ws/coordination/monitor`;
+                    
+                    this.websocket = new WebSocket(wsUrl);
+                    
+                    this.websocket.onopen = () => {
+                        console.log('Connected to coordination dashboard');
+                        this.isConnected = true;
+                        this.reconnectAttempts = 0;
+                        this.updateConnectionStatus('connected');
+                    };
+                    
+                    this.websocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (error) {
+                            console.error('Error parsing WebSocket message:', error);
+                        }
+                    };
+                    
+                    this.websocket.onclose = () => {
+                        console.log('Disconnected from coordination dashboard');
+                        this.isConnected = false;
+                        this.updateConnectionStatus('disconnected');
+                        this.attemptReconnect();
+                    };
+                    
+                    this.websocket.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus('disconnected');
+                    };
+                    
+                } catch (error) {
+                    console.error('Error connecting to WebSocket:', error);
+                    this.attemptReconnect();
+                }
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+                    
+                    setTimeout(() => {
+                        this.connect();
+                    }, this.reconnectDelay);
+                } else {
+                    console.error('Max reconnect attempts reached');
+                    this.updateConnectionStatus('failed');
+                }
+            }
+
+            updateConnectionStatus(status) {
+                const statusElement = document.getElementById('connectionStatus');
+                const statusText = statusElement.querySelector('span');
+                
+                statusElement.className = 'connection-status';
+                
+                switch (status) {
+                    case 'connected':
+                        statusElement.classList.add('status-connected');
+                        statusText.textContent = 'Connected';
+                        break;
+                    case 'disconnected':
+                        statusElement.classList.add('status-disconnected');
+                        statusText.textContent = 'Disconnected';
+                        break;
+                    case 'failed':
+                        statusElement.classList.add('status-disconnected');
+                        statusText.textContent = 'Connection Failed';
+                        break;
+                    default:
+                        statusText.textContent = 'Connecting...';
+                }
+            }
+
+            handleMessage(data) {
+                this.showRefreshIndicator();
+                
+                switch (data.type) {
+                    case 'initial_status':
+                        this.updateDashboard(data.data);
+                        break;
+                    case 'status_update':
+                        this.updateDashboard(data.data);
+                        break;
+                    default:
+                        console.log('Unknown message type:', data.type);
+                }
+                
+                this.lastUpdate = new Date(data.timestamp);
+                this.updateTimestamp();
+                
+                setTimeout(() => this.hideRefreshIndicator(), 500);
+            }
+
+            updateDashboard(data) {
+                if (data.coordination_dashboard) {
+                    this.updateSystemMetrics(data.coordination_dashboard.performance_summary);
+                    this.updateAgentsList(data.coordination_dashboard.active_agents);
+                    this.updateConflictsList(data.coordination_dashboard.active_conflicts);
+                    this.updateTasksList(data.coordination_dashboard.recent_tasks);
+                    this.updateAlertsList(data.coordination_dashboard.system_alerts);
+                    this.updateWorkspaceUtilization(data.coordination_dashboard.resource_utilization);
+                }
+                
+                if (data.connection_status) {
+                    // Update any connection-specific UI elements
+                }
+            }
+
+            updateSystemMetrics(metrics) {
+                if (!metrics) return;
+                
+                document.getElementById('activeAgents').textContent = metrics.active_agents || 0;
+                document.getElementById('activeTasks').textContent = metrics.total_tasks_active || 0;
+                document.getElementById('tasksCompletedToday').textContent = metrics.total_tasks_completed_today || 0;
+                document.getElementById('activeConflicts').textContent = metrics.conflicts_detected_today || 0;
+                document.getElementById('coordinationEfficiency').textContent = 
+                    ((metrics.coordination_efficiency_score || 0) * 100).toFixed(1) + '%';
+                document.getElementById('systemHealth').textContent = 
+                    ((metrics.system_health_score || 0) * 100).toFixed(1) + '%';
+            }
+
+            updateAgentsList(agents) {
+                const container = document.getElementById('agentsList');
+                
+                if (!agents || agents.length === 0) {
+                    container.innerHTML = '<div class="no-data">No active agents</div>';
+                    return;
+                }
+                
+                container.innerHTML = agents.map(agent => `
+                    <div class="agent-card">
+                        <div class="agent-header">
+                            <div class="agent-name">${agent.agent_id}</div>
+                            <div class="agent-status status-${agent.status.toLowerCase()}">${agent.status}</div>
+                        </div>
+                        <div class="agent-details">
+                            <div><strong>Workspace:</strong> ${agent.workspace || 'N/A'}</div>
+                            <div><strong>Component:</strong> ${agent.component || 'N/A'}</div>
+                            <div><strong>Task:</strong> ${agent.current_task || 'None'}</div>
+                            <div><strong>Progress:</strong> ${Math.round((agent.task_progress || 0) * 100)}%</div>
+                        </div>
+                        ${agent.task_progress ? `
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${(agent.task_progress * 100)}%"></div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            }
+
+            updateConflictsList(conflicts) {
+                const container = document.getElementById('conflictsList');
+                
+                if (!conflicts || conflicts.length === 0) {
+                    container.innerHTML = '<div class="no-data">No active conflicts</div>';
+                    return;
+                }
+                
+                container.innerHTML = conflicts.map(conflict => `
+                    <div class="conflict-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <strong>${conflict.conflict_type.replace(/_/g, ' ').toUpperCase()}</strong>
+                            <span class="conflict-severity severity-${conflict.severity}">${conflict.severity}</span>
+                        </div>
+                        <div style="color: var(--text-muted); margin-bottom: 0.5rem;">${conflict.description}</div>
+                        <div style="font-size: 0.875rem;">
+                            <strong>Affected:</strong> ${conflict.affected_agents.join(', ')}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            updateTasksList(tasks) {
+                const container = document.getElementById('tasksList');
+                
+                if (!tasks || tasks.length === 0) {
+                    container.innerHTML = '<div class="no-data">No recent tasks</div>';
+                    return;
+                }
+                
+                container.innerHTML = tasks.slice(0, 5).map(task => `
+                    <div class="task-item">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <strong style="font-size: 0.875rem;">${task.assigned_agent_id}</strong>
+                            <span class="task-priority priority-${task.priority || 'medium'}">${task.status}</span>
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 0.875rem;">
+                            Progress: ${Math.round((task.progress || 0) * 100)}%
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            updateAlertsList(alerts) {
+                const container = document.getElementById('alertsList');
+                
+                if (!alerts || alerts.length === 0) {
+                    container.innerHTML = '<div class="no-data">No active alerts</div>';
+                    return;
+                }
+                
+                container.innerHTML = alerts.map(alert => `
+                    <div style="padding: 0.75rem; margin-bottom: 0.5rem; background-color: rgba(217, 119, 6, 0.1); border-left: 4px solid var(--warning-color); border-radius: 0.25rem; font-size: 0.875rem;">
+                        ${alert}
+                    </div>
+                `).join('');
+            }
+
+            updateWorkspaceUtilization(utilization) {
+                const container = document.getElementById('workspaceUtilization');
+                
+                if (!utilization || Object.keys(utilization).length === 0) {
+                    container.innerHTML = '<div class="no-data">No workspace data</div>';
+                    return;
+                }
+                
+                container.innerHTML = Object.entries(utilization).map(([workspace, count]) => `
+                    <div class="workspace-item">
+                        <div class="workspace-name">${workspace}</div>
+                        <div class="workspace-count">${count}</div>
+                    </div>
+                `).join('');
+            }
+
+            showRefreshIndicator() {
+                document.getElementById('refreshIndicator').style.display = 'inline-block';
+            }
+
+            hideRefreshIndicator() {
+                document.getElementById('refreshIndicator').style.display = 'none';
+            }
+
+            updateTimestamp() {
+                // Add timestamp display if needed
+                const existingTimestamp = document.querySelector('.timestamp');
+                if (existingTimestamp) {
+                    existingTimestamp.textContent = `Last updated: ${this.lastUpdate.toLocaleTimeString()}`;
+                }
+            }
+
+            setupEventListeners() {
+                // Add any additional event listeners here
+                window.addEventListener('beforeunload', () => {
+                    if (this.websocket) {
+                        this.websocket.close();
+                    }
+                });
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new CoordinationDashboard();
+        });
+    </script>
+</body>
+</html>

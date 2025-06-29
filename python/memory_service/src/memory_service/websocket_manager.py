@@ -148,6 +148,22 @@ class WebSocketManager:
             
             connection = self.active_connections[agent_id]
             
+            # Log disconnection event to activity logger (ADDED: Missing integration point)
+            if self.coordination_engine and hasattr(self.coordination_engine, 'activity_logger'):
+                await self.coordination_engine.activity_logger.log_activity(
+                    activity_type="agent_disconnection",
+                    category="agent_lifecycle",
+                    agent_id=agent_id,
+                    details={
+                        "reason": reason,
+                        "agent_type": connection.agent_type,
+                        "workspace": connection.workspace,
+                        "connected_duration_seconds": (datetime.utcnow() - connection.connected_at).total_seconds(),
+                        "last_ping": connection.last_ping.isoformat()
+                    },
+                    importance="normal"
+                )
+            
             # Remove from indexes
             if connection.agent_type:
                 self.connections_by_type[connection.agent_type].discard(agent_id)

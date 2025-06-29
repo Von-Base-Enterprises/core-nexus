@@ -9,7 +9,8 @@ import asyncio
 import json
 import logging
 import numpy as np
-from typing import Any
+from datetime import datetime
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 try:
@@ -64,6 +65,16 @@ class PineconeProvider(VectorProvider):
             'reason': 'Pinecone integration pending'
         }
 
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID from Pinecone."""
+        if not self.enabled:
+            return None
+
+        # TODO: Implement Pinecone retrieve
+        # This will wrap existing functionality from the current codebase
+        logger.debug(f"Pinecone retrieve not implemented for {memory_id}")
+        return None
+
     async def get_stats(self) -> dict[str, Any]:
         """Get Pinecone statistics."""
         return {
@@ -86,20 +97,75 @@ class ChromaProvider(VectorProvider):
         self._initialize_chroma(config.config)
 
     def _initialize_chroma(self, config: dict[str, Any]):
-        """Initialize ChromaDB collection."""
+        """Initialize ChromaDB collection with fallback directory handling."""
         try:
             import chromadb
             from chromadb.config import Settings
 
-            # Initialize ChromaDB client
+            # Primary directory from config
             persist_dir = config.get('persist_directory', './chroma_db')
-            self.client = chromadb.PersistentClient(
-                path=persist_dir,
-                settings=Settings(
-                    anonymized_telemetry=False,
-                    allow_reset=True
-                )
-            )
+            
+            # Try multiple directories in order of preference for file permission issues
+            fallback_dirs = [
+                persist_dir,
+                "/tmp/chroma_db",
+                "/var/tmp/chroma_db", 
+                "./chroma_db",
+                "/home/app/chroma_db"
+            ]
+            
+            client_initialized = False
+            last_error = None
+            
+            for directory in fallback_dirs:
+                try:
+                    # Test directory creation and write permission
+                    import os
+                    os.makedirs(directory, exist_ok=True)
+                    
+                    # Test write permission
+                    test_file = os.path.join(directory, "write_test.tmp")
+                    with open(test_file, "w") as f:
+                        f.write("test")
+                    os.remove(test_file)
+                    
+                    # Initialize ChromaDB client
+                    self.client = chromadb.PersistentClient(
+                        path=directory,
+                        settings=Settings(
+                            anonymized_telemetry=False,
+                            allow_reset=True
+                        )
+                    )
+                    
+                    logger.info(f"✅ ChromaDB using directory: {directory}")
+                    client_initialized = True
+                    break
+                    
+                except PermissionError as e:
+                    logger.warning(f"❌ Permission denied for {directory}: {e}")
+                    last_error = e
+                    continue
+                except Exception as e:
+                    logger.warning(f"❌ Failed to use {directory}: {e}")
+                    last_error = e
+                    continue
+            
+            if not client_initialized:
+                # Last resort: try in-memory mode
+                try:
+                    logger.warning("🆘 All directories failed, trying in-memory ChromaDB")
+                    self.client = chromadb.EphemeralClient(
+                        settings=Settings(
+                            anonymized_telemetry=False,
+                            allow_reset=True
+                        )
+                    )
+                    logger.warning("⚠️ ChromaDB running in MEMORY-ONLY mode (data will not persist)")
+                    client_initialized = True
+                except Exception as memory_error:
+                    logger.error(f"💥 Even in-memory ChromaDB failed: {memory_error}")
+                    raise last_error or memory_error
 
             # Get or create collection
             collection_name = config.get('collection_name', 'core_nexus_memories')
@@ -223,6 +289,43 @@ class ChromaProvider(VectorProvider):
                 memories.append(memory)
 
         return memories
+
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID from ChromaDB."""
+        if not self.collection:
+            return None
+
+        loop = asyncio.get_event_loop()
+
+        def _get():
+            try:
+                # ChromaDB get by ID
+                results = self.collection.get(
+                    ids=[str(memory_id)],
+                    include=['metadatas', 'documents']
+                )
+                return results
+            except Exception as e:
+                logger.error(f"ChromaDB retrieve error: {e}")
+                return None
+
+        results = await loop.run_in_executor(None, _get)
+
+        if results and results['ids'] and len(results['ids']) > 0:
+            # Found the memory
+            metadata = results['metadatas'][0] if results['metadatas'] else {}
+            return MemoryResponse(
+                id=str(memory_id),
+                content=results['documents'][0],
+                metadata=metadata,
+                embedding=[],  # ChromaDB doesn't return embeddings by default
+                importance_score=metadata.get('importance_score', 0.5),
+                similarity_score=1.0,  # Perfect match for direct retrieval
+                created_at=metadata.get('created_at', ''),
+                updated_at=metadata.get('updated_at', '')
+            )
+        
+        return None
 
     async def health_check(self) -> dict[str, Any]:
         """Check ChromaDB health with detailed diagnostics."""
@@ -851,6 +954,60 @@ class PgVectorProvider(VectorProvider):
             logger.error(f"Failed to update importance for {memory_id}: {e}")
             return False
 
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID from PostgreSQL."""
+        try:
+            await self._ensure_pool_ready()
+        except Exception as e:
+            logger.error(f"Pool not ready for retrieve: {e}")
+            return None
+
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.transaction():
+                    # Query for specific memory by ID
+                    row = await conn.fetchrow(f"""
+                        SELECT
+                            id,
+                            content,
+                            embedding,
+                            metadata,
+                            importance_score,
+                            created_at,
+                            updated_at
+                        FROM {self.table_name}
+                        WHERE id = $1
+                    """, memory_id)
+                    
+                    if not row:
+                        return None
+                    
+                    # Parse metadata
+                    metadata = row['metadata']
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except:
+                            metadata = {}
+                    elif not isinstance(metadata, dict):
+                        metadata = {}
+                    
+                    # Create response
+                    return MemoryResponse(
+                        id=row['id'],
+                        content=row['content'],
+                        metadata=metadata,
+                        embedding=list(row['embedding']) if row['embedding'] else [],
+                        importance_score=float(row['importance_score']),
+                        similarity_score=1.0,  # Perfect match for direct retrieval
+                        created_at=row['created_at'].isoformat() if row['created_at'] else None,
+                        updated_at=row['updated_at'].isoformat() if row['updated_at'] else None
+                    )
+                    
+        except Exception as e:
+            logger.error(f"Failed to retrieve memory {memory_id}: {e}")
+            return None
+
     async def close(self):
         """Close the connection pool."""
         if self.connection_pool:
@@ -1253,6 +1410,12 @@ class GraphProvider(VectorProvider):
 
         return relationships
 
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID from graph provider (not implemented)."""
+        # Graph provider is for relationship queries, not direct memory retrieval
+        logger.debug(f"Graph provider retrieve not implemented for {memory_id}")
+        return None
+
     async def health_check(self) -> dict[str, Any]:
         """Check health of the graph provider."""
         # Ensure pool is initialized
@@ -1322,3 +1485,134 @@ class GraphProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to get graph stats: {e}")
             return {'error': str(e)}
+
+
+class InMemoryProvider(VectorProvider):
+    """
+    In-memory vector provider as absolute fallback when all other providers fail.
+    
+    Provides basic vector storage and similarity search in memory only.
+    Data is lost when service restarts, but ensures service availability.
+    """
+
+    def __init__(self, config: ProviderConfig):
+        super().__init__(config)
+        self.memories: Dict[UUID, Dict[str, Any]] = {}
+        self.enabled = True  # Always available as fallback
+        logger.info("InMemory provider initialized (fallback mode)")
+
+    async def store(self, content: str, embedding: list[float], metadata: dict[str, Any]) -> UUID:
+        """Store vector in memory."""
+        memory_id = uuid4()
+        
+        # Store with timestamp
+        now = datetime.utcnow()
+        self.memories[memory_id] = {
+            'id': memory_id,
+            'content': content,
+            'embedding': embedding,
+            'metadata': metadata or {},
+            'created_at': now,
+            'updated_at': now,
+            'importance_score': metadata.get('importance_score', 0.0) if metadata else 0.0
+        }
+        
+        logger.debug(f"Stored in memory: {memory_id}")
+        return memory_id
+
+    async def query(self, query_embedding: list[float], limit: int, filters: dict[str, Any]) -> list[MemoryResponse]:
+        """Query memories using cosine similarity."""
+        if not self.memories:
+            return []
+        
+        import numpy as np
+        
+        # Calculate similarities
+        results = []
+        for memory_id, memory in self.memories.items():
+            # Apply filters
+            if filters:
+                memory_metadata = memory.get('metadata', {})
+                match = True
+                for key, value in filters.items():
+                    if key not in memory_metadata or memory_metadata[key] != value:
+                        match = False
+                        break
+                if not match:
+                    continue
+            
+            # Calculate cosine similarity
+            if memory['embedding'] and query_embedding:
+                try:
+                    vec1 = np.array(query_embedding)
+                    vec2 = np.array(memory['embedding'])
+                    
+                    # Normalize vectors
+                    norm1 = np.linalg.norm(vec1)
+                    norm2 = np.linalg.norm(vec2)
+                    
+                    if norm1 > 0 and norm2 > 0:
+                        similarity = np.dot(vec1, vec2) / (norm1 * norm2)
+                    else:
+                        similarity = 0.0
+                except Exception as e:
+                    logger.warning(f"Failed to calculate similarity: {e}")
+                    similarity = 0.0
+            else:
+                similarity = 0.0
+            
+            # Create response
+            response = MemoryResponse(
+                id=str(memory_id),
+                content=memory['content'],
+                metadata=memory['metadata'],
+                embedding=memory['embedding'],
+                importance_score=memory['importance_score'],
+                similarity_score=max(0.0, similarity),
+                created_at=memory['created_at'].isoformat(),
+                updated_at=memory['updated_at'].isoformat()
+            )
+            results.append(response)
+        
+        # Sort by similarity and limit
+        results.sort(key=lambda x: x.similarity_score, reverse=True)
+        return results[:limit]
+
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID."""
+        if memory_id not in self.memories:
+            return None
+        
+        memory = self.memories[memory_id]
+        return MemoryResponse(
+            id=str(memory_id),
+            content=memory['content'],
+            metadata=memory['metadata'],
+            embedding=memory['embedding'],
+            importance_score=memory['importance_score'],
+            similarity_score=1.0,  # Perfect match for direct retrieval
+            created_at=memory['created_at'].isoformat(),
+            updated_at=memory['updated_at'].isoformat()
+        )
+
+    async def health_check(self) -> dict[str, Any]:
+        """Check in-memory provider health."""
+        return {
+            'status': 'healthy',
+            'memory_count': len(self.memories),
+            'provider': 'inmemory',
+            'fallback_mode': True
+        }
+
+    async def get_stats(self) -> dict[str, Any]:
+        """Get in-memory provider statistics."""
+        total_memories = len(self.memories)
+        total_size = sum(len(str(m)) for m in self.memories.values()) if self.memories else 0
+        
+        return {
+            'provider': 'inmemory',
+            'total_memories': total_memories,
+            'estimated_memory_bytes': total_size,
+            'fallback_mode': True,
+            'data_persistence': 'session_only'
+        }

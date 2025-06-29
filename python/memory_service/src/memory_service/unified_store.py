@@ -46,6 +46,11 @@ class VectorProvider(ABC):
         pass
 
     @abstractmethod
+    async def retrieve(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Retrieve a specific memory by ID."""
+        pass
+
+    @abstractmethod
     async def health_check(self) -> dict[str, Any]:
         """Check provider health."""
         pass

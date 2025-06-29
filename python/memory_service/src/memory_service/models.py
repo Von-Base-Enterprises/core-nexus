@@ -222,3 +222,211 @@ class EntityInsights(BaseModel):
     co_occurring_entities: list[GraphNode] = Field(default_factory=list, description="Frequently co-occurring entities")
     temporal_pattern: dict[str, Any] | None = Field(None, description="When entity appears over time")
     importance_trend: list[float] | None = Field(None, description="Importance score over time")
+
+
+# =====================================================
+# AGENT COORDINATION MODELS (Added by Intelligent Coordination Engine)
+# =====================================================
+
+class AgentStatus(str):
+    """Valid agent status values."""
+    IDLE = "idle"
+    WORKING = "working"
+    WAITING = "waiting"
+    BLOCKED = "blocked"
+    ERROR = "error"
+    OFFLINE = "offline"
+
+
+class AgentType(str):
+    """Valid agent type categories."""
+    MEMORY_AGENT = "memory_agent"
+    JARVIS_AGENT = "jarvis_agent"
+    PERFORMANCE_AGENT = "performance_agent"
+    OBSERVABILITY_AGENT = "observability_agent"
+    TESTING_AGENT = "testing_agent"
+    QA_AGENT = "qa_agent"
+    INTEGRATION_AGENT = "integration_agent"
+    HOTFIX_AGENT = "hotfix_agent"
+    AUTO_DEPLOY_AGENT = "auto_deploy_agent"
+
+
+class WorkspaceType(str):
+    """Valid workspace categories."""
+    PRODUCTION = "production"
+    STAGING = "staging"
+    DEVELOPMENT = "development"
+    COMPONENT = "component"
+    SUPPORT = "support"
+
+
+class AgentProfile(BaseModel):
+    """Agent profile and capabilities."""
+
+    agent_id: str = Field(..., description="Unique agent identifier")
+    agent_name: str = Field(..., description="Human-readable agent name")
+    agent_type: str = Field(..., description="Agent type category")
+    workspace: str = Field(..., description="Primary workspace/worktree")
+    workspace_type: str = Field(..., description="Workspace safety level")
+    capabilities: list[str] = Field(default_factory=list, description="Agent capabilities")
+    max_concurrent_tasks: int = Field(3, description="Maximum concurrent tasks")
+    preferred_components: list[str] = Field(default_factory=list, description="Preferred components to work on")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_seen: datetime = Field(default_factory=datetime.utcnow)
+    total_tasks_completed: int = Field(0, description="Lifetime task completion count")
+    success_rate: float = Field(1.0, description="Task success rate (0-1)")
+
+
+class AgentActivity(BaseModel):
+    """Real-time agent activity tracking."""
+
+    activity_id: UUID = Field(default_factory=uuid4)
+    agent_id: str = Field(..., description="Agent identifier")
+    workspace: str = Field(..., description="Current workspace")
+    status: str = Field(..., description="Current agent status")
+    current_task: str | None = Field(None, description="Current task description")
+    task_progress: float = Field(0.0, ge=0.0, le=1.0, description="Task completion percentage")
+    component: str | None = Field(None, description="Component being worked on")
+    branch: str | None = Field(None, description="Git branch")
+    start_time: datetime = Field(default_factory=datetime.utcnow)
+    last_update: datetime = Field(default_factory=datetime.utcnow)
+    estimated_completion: datetime | None = Field(None, description="Estimated completion time")
+    context: dict[str, Any] = Field(default_factory=dict, description="Additional context")
+    blocked_by: list[str] = Field(default_factory=list, description="Blocking dependencies")
+    blocking_others: list[str] = Field(default_factory=list, description="Agents this is blocking")
+
+
+class TaskDefinition(BaseModel):
+    """Automated task definition for workflow orchestration."""
+
+    task_id: UUID = Field(default_factory=uuid4)
+    name: str = Field(..., description="Task name")
+    description: str = Field(..., description="Detailed task description")
+    task_type: str = Field(..., description="Type of task")
+    required_agent_type: str | None = Field(None, description="Required agent type")
+    required_capabilities: list[str] = Field(default_factory=list, description="Required capabilities")
+    workspace: str | None = Field(None, description="Required workspace")
+    priority: str = Field("medium", description="Task priority")
+    estimated_duration_minutes: int = Field(30, description="Estimated duration")
+    dependencies: list[UUID] = Field(default_factory=list, description="Task dependencies")
+    automated_checks: list[str] = Field(default_factory=list, description="Automated validation checks")
+    success_criteria: dict[str, Any] = Field(default_factory=dict, description="Success criteria")
+    rollback_procedure: str | None = Field(None, description="Rollback instructions")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by: str | None = Field(None, description="Creator agent ID")
+
+
+class TaskAssignment(BaseModel):
+    """Task assignment and execution tracking."""
+
+    assignment_id: UUID = Field(default_factory=uuid4)
+    task_id: UUID = Field(..., description="Reference to task definition")
+    assigned_agent_id: str = Field(..., description="Assigned agent")
+    status: str = Field("pending", description="Assignment status")
+    assigned_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime | None = Field(None)
+    completed_at: datetime | None = Field(None)
+    progress: float = Field(0.0, ge=0.0, le=1.0, description="Completion progress")
+    execution_log: list[str] = Field(default_factory=list, description="Execution log entries")
+    results: dict[str, Any] = Field(default_factory=dict, description="Task execution results")
+    error_details: str | None = Field(None, description="Error details if failed")
+    auto_retry_count: int = Field(0, description="Number of automatic retries")
+    manual_interventions: list[str] = Field(default_factory=list, description="Manual intervention log")
+
+
+class ConflictDetection(BaseModel):
+    """Conflict detection and resolution tracking."""
+
+    conflict_id: UUID = Field(default_factory=uuid4)
+    conflict_type: str = Field(..., description="Type of conflict")
+    severity: str = Field(..., description="Conflict severity level")
+    affected_agents: list[str] = Field(..., description="Agents involved in conflict")
+    affected_resources: list[str] = Field(default_factory=list, description="Resources in conflict")
+    workspace: str | None = Field(None, description="Affected workspace")
+    description: str = Field(..., description="Conflict description")
+    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detection_method: str = Field(..., description="How conflict was detected")
+    resolution_strategy: str | None = Field(None, description="Chosen resolution strategy")
+    resolution_status: str = Field("detected", description="Resolution status")
+    resolved_at: datetime | None = Field(None)
+    resolved_by: str | None = Field(None, description="Agent that resolved conflict")
+    resolution_actions: list[str] = Field(default_factory=list, description="Actions taken to resolve")
+    prevention_suggestions: list[str] = Field(default_factory=list, description="Future prevention strategies")
+
+
+class HandoffRequest(BaseModel):
+    """Context-aware handoff between agents."""
+
+    handoff_id: UUID = Field(default_factory=uuid4)
+    from_agent_id: str = Field(..., description="Source agent")
+    to_agent_id: str = Field(..., description="Target agent")
+    component: str = Field(..., description="Component being handed off")
+    workspace: str = Field(..., description="Workspace location")
+    handoff_type: str = Field("standard", description="Type of handoff")
+    urgency: str = Field("normal", description="Handoff urgency level")
+    context_summary: str = Field(..., description="Work context summary")
+    completed_tasks: list[str] = Field(default_factory=list, description="Completed tasks")
+    next_steps: list[str] = Field(default_factory=list, description="Recommended next steps")
+    known_issues: list[str] = Field(default_factory=list, description="Known issues to address")
+    test_status: str = Field(..., description="Current test status")
+    dependencies: list[str] = Field(default_factory=list, description="External dependencies")
+    embedded_context: list[float] | None = Field(None, description="Context embedding vector")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    accepted_at: datetime | None = Field(None)
+    completed_at: datetime | None = Field(None)
+    handoff_quality_score: float | None = Field(None, description="Quality of handoff documentation")
+
+
+class CoordinationMessage(BaseModel):
+    """Real-time coordination messages between agents."""
+
+    message_id: UUID = Field(default_factory=uuid4)
+    from_agent_id: str = Field(..., description="Source agent")
+    to_agent_id: str | None = Field(None, description="Target agent (null for broadcast)")
+    message_type: str = Field(..., description="Message type")
+    priority: str = Field("normal", description="Message priority")
+    subject: str = Field(..., description="Message subject")
+    content: str = Field(..., description="Message content")
+    workspace: str | None = Field(None, description="Related workspace")
+    component: str | None = Field(None, description="Related component")
+    requires_response: bool = Field(False, description="Whether response is required")
+    response_deadline: datetime | None = Field(None, description="Response deadline")
+    thread_id: UUID | None = Field(None, description="Message thread ID")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    read_at: datetime | None = Field(None)
+    responded_at: datetime | None = Field(None)
+    archived_at: datetime | None = Field(None)
+
+
+class CoordinationMetrics(BaseModel):
+    """Coordination system performance metrics."""
+
+    metric_id: UUID = Field(default_factory=uuid4)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    active_agents: int = Field(0, description="Number of active agents")
+    total_tasks_active: int = Field(0, description="Active tasks")
+    total_tasks_completed_today: int = Field(0, description="Tasks completed today")
+    average_task_duration_minutes: float = Field(0.0, description="Average task duration")
+    conflicts_detected_today: int = Field(0, description="Conflicts detected today")
+    conflicts_resolved_today: int = Field(0, description="Conflicts resolved today")
+    handoffs_completed_today: int = Field(0, description="Handoffs completed today")
+    coordination_efficiency_score: float = Field(0.0, description="Overall coordination efficiency")
+    top_bottlenecks: list[str] = Field(default_factory=list, description="Current system bottlenecks")
+    agent_productivity_scores: dict[str, float] = Field(default_factory=dict, description="Agent productivity")
+    system_health_score: float = Field(1.0, description="Overall system health")
+
+
+class CoordinationDashboard(BaseModel):
+    """Real-time coordination dashboard data."""
+
+    dashboard_id: UUID = Field(default_factory=uuid4)
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    active_agents: list[AgentActivity] = Field(default_factory=list, description="Currently active agents")
+    recent_tasks: list[TaskAssignment] = Field(default_factory=list, description="Recent task assignments")
+    active_conflicts: list[ConflictDetection] = Field(default_factory=list, description="Unresolved conflicts")
+    pending_handoffs: list[HandoffRequest] = Field(default_factory=list, description="Pending handoffs")
+    system_alerts: list[str] = Field(default_factory=list, description="System-level alerts")
+    performance_summary: CoordinationMetrics = Field(..., description="Performance metrics")
+    next_scheduled_tasks: list[TaskDefinition] = Field(default_factory=list, description="Upcoming scheduled tasks")
+    resource_utilization: dict[str, float] = Field(default_factory=dict, description="Resource utilization by workspace")
+    prediction_insights: dict[str, Any] = Field(default_factory=dict, description="AI-powered insights and predictions")

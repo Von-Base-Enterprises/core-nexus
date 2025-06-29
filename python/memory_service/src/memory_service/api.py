@@ -34,16 +34,17 @@ import asyncpg
 
 from .config import config
 
-from .bulk_import_simple import (
-    BulkImportRequest,
-    BulkImportService,
-    ImportProgress,
-)
+# Temporarily disabled due to pandas dependency issue
+# from .bulk_import_simple import (
+#     BulkImportRequest,
+#     BulkImportService,
+#     ImportProgress,
+# )
 from .logging_config import get_logger, setup_logging
-from .memory_export import (
-    ExportRequest,
-    MemoryExportService,
-)
+# from .memory_export import (
+#     ExportRequest,
+#     MemoryExportService,
+# )
 from .models import (
     HealthCheckResponse,
     MemoryRequest,
@@ -97,402 +98,519 @@ coordination_engine: AgentCoordinationEngine | None = None
 websocket_manager: WebSocketManager | None = None
 usage_collector: Any = None  # Type: UsageCollector when implemented
 memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
-bulk_import_service: BulkImportService | None = None
-memory_export_service: MemoryExportService | None = None
+# Temporarily disabled due to pandas dependency issue
+# bulk_import_service: BulkImportService | None = None
+# memory_export_service: MemoryExportService | None = None
 emergency_retrieval: Any = None  # Emergency retrieval system
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management."""
-    global unified_store, coordination_engine, websocket_manager, usage_collector, memory_dashboard, bulk_import_service, memory_export_service, emergency_retrieval
+    """Modern FastAPI lifespan management with robust error handling and fallback providers."""
+    global unified_store, coordination_engine, websocket_manager, usage_collector, memory_dashboard, emergency_retrieval
 
-    # Startup
-    logger.info("Initializing Core Nexus Memory Service...")
+    # Startup with comprehensive error handling
+    logger.info("🚀 Initializing Core Nexus Memory Service with failsafe initialization...")
+    initialized_providers = []
     
-    # Initialize OpenTelemetry observability
     try:
-        observability_config = ObservabilityConfig()
-        initialize_observability(app, observability_config)
-        logger.info("OpenTelemetry observability initialized successfully")
-    except Exception as e:
-        logger.warning(f"Failed to initialize observability: {e}")
-        # Continue without observability rather than failing startup
-
-    # Initialize providers based on environment/config
-    providers = []
-
-    # Add pgvector if PostgreSQL is available
-    # Use Render PostgreSQL internal hostname for better performance
-    pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
-
-    # Try multiple methods to get database credentials
-    pgvector_password = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
-    database_url = os.getenv("DATABASE_URL")  # Render auto-provides this
-    
-    # If no password but DATABASE_URL exists, try to parse it
-    if not pgvector_password and database_url:
-        logger.info("No explicit password found, attempting to use DATABASE_URL")
+        # Initialize OpenTelemetry observability
         try:
-            import urllib.parse
-            parsed = urllib.parse.urlparse(database_url)
-            if parsed.password:
-                pgvector_password = parsed.password
-                # Also update other config from DATABASE_URL if available
-                if parsed.hostname:
-                    pgvector_host = parsed.hostname
-                if parsed.port:
-                    os.environ["PGVECTOR_PORT"] = str(parsed.port)
-                if parsed.path and len(parsed.path) > 1:
-                    os.environ["PGVECTOR_DATABASE"] = parsed.path[1:]  # Remove leading /
-                if parsed.username:
-                    os.environ["PGVECTOR_USER"] = parsed.username
-                logger.info("Successfully parsed DATABASE_URL for pgvector configuration")
+            observability_config = ObservabilityConfig()
+            initialize_observability(app, observability_config)
+            logger.info("OpenTelemetry observability initialized successfully")
         except Exception as e:
-            logger.warning(f"Failed to parse DATABASE_URL: {e}")
+            logger.warning(f"Failed to initialize observability: {e}")
+            # Continue without observability rather than failing startup
+
+        # Initialize providers based on environment/config
+        providers = []
+
+        # Add pgvector if PostgreSQL is available
+        # Use Render PostgreSQL internal hostname for better performance
+        pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
+
+        # Try multiple methods to get database credentials
+        pgvector_password = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
+        database_url = os.getenv("DATABASE_URL")  # Render auto-provides this
     
-    if not pgvector_password:
-        logger.warning("No pgvector password available - pgvector provider will be disabled")
-        logger.warning("Set PGVECTOR_PASSWORD or DATABASE_URL environment variable to enable production memories")
-        # Don't raise error - allow service to start without pgvector
-        pgvector_config = None
-    else:
-        pgvector_config = ProviderConfig(
-            name="pgvector",
-            enabled=True,
-        primary=False,  # Don't make primary unless it initializes successfully
-        config={
-            "host": pgvector_host,
-            "port": int(os.getenv("PGVECTOR_PORT", "5432")),
-            "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
-            "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
-            "password": pgvector_password,
-            "table_name": os.getenv("TABLE_NAME", "vector_memories"),
-            "embedding_dim": 1536,
-            "distance_metric": "cosine"
-        }
-        )
+        # If no password but DATABASE_URL exists, try to parse it
+        if not pgvector_password and database_url:
+            logger.info("No explicit password found, attempting to use DATABASE_URL")
+            try:
+                import urllib.parse
+                parsed = urllib.parse.urlparse(database_url)
+                if parsed.password:
+                    pgvector_password = parsed.password
+                    # Also update other config from DATABASE_URL if available
+                    if parsed.hostname:
+                        pgvector_host = parsed.hostname
+                    if parsed.port:
+                        os.environ["PGVECTOR_PORT"] = str(parsed.port)
+                    if parsed.path and len(parsed.path) > 1:
+                        os.environ["PGVECTOR_DATABASE"] = parsed.path[1:]  # Remove leading /
+                    if parsed.username:
+                        os.environ["PGVECTOR_USER"] = parsed.username
+                    logger.info("Successfully parsed DATABASE_URL for pgvector configuration")
+            except Exception as e:
+                logger.warning(f"Failed to parse DATABASE_URL: {e}")
         
-    # Only try to initialize pgvector if configuration is available
-    if pgvector_config:
+        if not pgvector_password:
+            logger.warning("No pgvector password available - pgvector provider will be disabled")
+            logger.warning("Set PGVECTOR_PASSWORD or DATABASE_URL environment variable to enable production memories")
+            # Don't raise error - allow service to start without pgvector
+            pgvector_config = None
+        else:
+            pgvector_config = ProviderConfig(
+                name="pgvector",
+                enabled=True,
+                primary=False,  # Don't make primary unless it initializes successfully
+                config={
+                    "host": pgvector_host,
+                    "port": int(os.getenv("PGVECTOR_PORT", "5432")),
+                    "database": os.getenv("PGVECTOR_DATABASE", "nexus_memory_db"),
+                    "user": os.getenv("PGVECTOR_USER", "nexus_memory_db_user"),
+                    "password": pgvector_password,
+                    "table_name": os.getenv("TABLE_NAME", "vector_memories"),
+                    "embedding_dim": 1536,
+                    "distance_metric": "cosine"
+                }
+            )
+            
+        # Only try to initialize pgvector if configuration is available
+        if pgvector_config:
+            try:
+                # Use instrumented provider if observability is enabled
+                if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
+                    from .providers_instrumented import InstrumentedPgVectorProvider
+                    pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
+                    logger.info("Using instrumented PgVector provider")
+                else:
+                    pgvector_provider = PgVectorProvider(pgvector_config)
+                
+                providers.append(pgvector_provider)
+                pgvector_config.primary = True  # Make primary if successful
+                logger.info("✅ PgVector provider initialized as primary")
+            except Exception as e:
+                logger.error(f"PgVector provider failed to initialize: {e}")
+                logger.warning("System will continue with ChromaDB only - some operations may be limited")
+                pgvector_config.enabled = False
+        else:
+            logger.warning("PgVector provider skipped - no database credentials available")
+
+        # Add Pinecone if configured
+        pinecone_config = ProviderConfig(
+            name="pinecone",
+            enabled=False,  # Disabled by default, enable with env var
+            primary=False,
+            config={
+                "api_key": os.getenv("PINECONE_API_KEY", ""),
+                "index_name": "core-nexus-memories",
+                "embedding_dim": 1536
+            }
+        )
         try:
+            pinecone_provider = PineconeProvider(pinecone_config)
+            if pinecone_config.enabled:
+                providers.append(pinecone_provider)
+                logger.info("Pinecone provider initialized")
+        except Exception as e:
+            logger.warning(f"Pinecone provider failed to initialize: {e}")
+
+        # Add ChromaDB (always available as local fallback)
+        # Use config-defined directory (defaults to /tmp for Render compatibility)
+        chroma_persist_dir = config.providers.CHROMADB_PERSIST_DIR
+        logger.info(f"ChromaDB persist directory: {chroma_persist_dir}")
+        
+        # Ensure the directory exists and is writable
+        try:
+            os.makedirs(chroma_persist_dir, exist_ok=True)
+            # Test write permission
+            test_file = os.path.join(chroma_persist_dir, "write_test.tmp")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            logger.info(f"✅ ChromaDB directory is writable: {chroma_persist_dir}")
+        except Exception as e:
+            logger.error(f"❌ ChromaDB directory not writable: {chroma_persist_dir} - {e}")
+        
+        chroma_config = ProviderConfig(
+            name="chromadb",
+            enabled=True,
+            primary=False,  # Default to secondary - will be changed to primary only if pgvector fails
+            config={
+                "collection_name": "core_nexus_memories",
+                "persist_directory": chroma_persist_dir
+            }
+        )
+        try:
+            logger.info("🔄 Initializing ChromaDB provider...")
             # Use instrumented provider if observability is enabled
             if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-                from .providers_instrumented import InstrumentedPgVectorProvider
-                pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
-                logger.info("Using instrumented PgVector provider")
+                from .providers_instrumented import InstrumentedChromaProvider
+                chroma_provider = InstrumentedChromaProvider(chroma_config)
+                logger.info("Using instrumented ChromaDB provider")
             else:
-                pgvector_provider = PgVectorProvider(pgvector_config)
+                chroma_provider = ChromaProvider(chroma_config)
             
-            providers.append(pgvector_provider)
-            pgvector_config.primary = True  # Make primary if successful
-            logger.info("✅ PgVector provider initialized as primary")
-        except Exception as e:
-            logger.error(f"PgVector provider failed to initialize: {e}")
-            logger.warning("System will continue with ChromaDB only - some operations may be limited")
-            pgvector_config.enabled = False
-    else:
-        logger.warning("PgVector provider skipped - no database credentials available")
-
-    # Add Pinecone if configured
-    pinecone_config = ProviderConfig(
-        name="pinecone",
-        enabled=False,  # Disabled by default, enable with env var
-        primary=False,
-        config={
-            "api_key": os.getenv("PINECONE_API_KEY", ""),
-            "index_name": "core-nexus-memories",
-            "embedding_dim": 1536
-        }
-    )
-    try:
-        pinecone_provider = PineconeProvider(pinecone_config)
-        if pinecone_config.enabled:
-            providers.append(pinecone_provider)
-            logger.info("Pinecone provider initialized")
-    except Exception as e:
-        logger.warning(f"Pinecone provider failed to initialize: {e}")
-
-    # Add ChromaDB (always available as local fallback)
-    # Use config-defined directory (defaults to /tmp for Render compatibility)
-    chroma_persist_dir = config.providers.CHROMADB_PERSIST_DIR
-    logger.info(f"ChromaDB persist directory: {chroma_persist_dir}")
-    
-    # Ensure the directory exists and is writable
-    try:
-        os.makedirs(chroma_persist_dir, exist_ok=True)
-        # Test write permission
-        test_file = os.path.join(chroma_persist_dir, "write_test.tmp")
-        with open(test_file, "w") as f:
-            f.write("test")
-        os.remove(test_file)
-        logger.info(f"✅ ChromaDB directory is writable: {chroma_persist_dir}")
-    except Exception as e:
-        logger.error(f"❌ ChromaDB directory not writable: {chroma_persist_dir} - {e}")
-    
-    chroma_config = ProviderConfig(
-        name="chromadb",
-        enabled=True,
-        primary=False,  # Default to secondary - will be changed to primary only if pgvector fails
-        config={
-            "collection_name": "core_nexus_memories",
-            "persist_directory": chroma_persist_dir
-        }
-    )
-    try:
-        logger.info("🔄 Initializing ChromaDB provider...")
-        # Use instrumented provider if observability is enabled
-        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-            from .providers_instrumented import InstrumentedChromaProvider
-            chroma_provider = InstrumentedChromaProvider(chroma_config)
-            logger.info("Using instrumented ChromaDB provider")
-        else:
-            chroma_provider = ChromaProvider(chroma_config)
-        
-        logger.info(f"✅ ChromaDB provider created - enabled: {chroma_provider.enabled}")
-        providers.append(chroma_provider)
-        
-        # Check if pgvector was successfully initialized - if not, make ChromaDB primary
-        pgvector_available = any(p.name == "pgvector" and p.enabled for p in providers)
-        if pgvector_available:
-            # pgvector is available, keep ChromaDB as secondary
-            logger.info("🔄 ChromaDB provider initialized as SECONDARY (pgvector is primary)")
-            logger.info(f"   🔍 Will receive replication from pgvector to ChromaDB")
-        else:
-            # No pgvector, make ChromaDB primary
-            chroma_config.primary = True
-            chroma_provider.config.primary = True  # Update both config and provider
-            logger.info("🔄 ChromaDB provider initialized as PRIMARY (no pgvector available)")
+            logger.info(f"✅ ChromaDB provider created - enabled: {chroma_provider.enabled}")
+            providers.append(chroma_provider)
             
-        # Test ChromaDB health immediately after initialization
-        try:
-            chroma_health = await chroma_provider.health_check()
-            logger.info(f"📊 ChromaDB health check: {chroma_health}")
-        except Exception as health_error:
-            logger.error(f"❌ ChromaDB health check failed: {health_error}")
-            
-    except Exception as e:
-        logger.error(f"❌ ChromaDB provider failed to initialize: {e}")
-        import traceback
-        logger.error(f"Full traceback: {traceback.format_exc()}")
-
-    # Add Graph Provider for knowledge graph functionality
-    # Feature flag controlled activation for safe rollout
-    if False:  # PARETO FIX: Temporarily disable broken graph provider
-        logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
-
-        # Check if pgvector is available to share the same database
-        pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
-        if pgvector_provider:
-            try:
-                # Build connection string from pgvector config
-                # This avoids timing issues with async pool initialization
-                pg_config = pgvector_config.config
-                connection_string = (
-                    f"postgresql://{pg_config['user']}:{pg_config['password']}@"
-                    f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
-                )
+            # Check if pgvector was successfully initialized - if not, make ChromaDB primary
+            pgvector_available = any(p.name == "pgvector" and p.enabled for p in providers)
+            if pgvector_available:
+                # pgvector is available, keep ChromaDB as secondary
+                logger.info("🔄 ChromaDB provider initialized as SECONDARY (pgvector is primary)")
+                logger.info(f"   🔍 Will receive replication from pgvector to ChromaDB")
+            else:
+                # No pgvector, make ChromaDB primary
+                chroma_config.primary = True
+                chroma_provider.config.primary = True  # Update both config and provider
+                logger.info("🔄 ChromaDB provider initialized as PRIMARY (no pgvector available)")
                 
-                graph_config = ProviderConfig(
-                    name="graph",
-                    enabled=True,
-                    primary=False,
-                    config={
-                        "connection_string": connection_string,  # Pass connection string instead of pool
-                        "table_prefix": "graph"
-                    }
-                )
-
-                # Import and initialize GraphProvider
-                from .providers import GraphProvider
-                graph_provider = GraphProvider(graph_config)
-                providers.append(graph_provider)
-                logger.info("✅ Graph provider initialized successfully - Knowledge graph is ACTIVE!")
-
-            except Exception as e:
-                logger.error(f"Graph provider initialization failed: {e}")
-                logger.info("Continuing without graph provider - system remains stable")
-        else:
-            logger.warning("Graph provider requires pgvector to be enabled")
-    else:
-        logger.info("Graph provider disabled (set GRAPH_ENABLED=true to activate)")
-
-    if not providers:
-        raise RuntimeError("No vector providers could be initialized")
-
-    # Ensure we have at least one enabled primary provider
-    enabled_providers = [p for p in providers if p.enabled]
-    if not enabled_providers:
-        raise RuntimeError("No enabled vector providers available")
-
-    # If no primary provider is enabled, make the first enabled one primary
-    has_enabled_primary = any(p.enabled and p.config.primary for p in providers)
-    if not has_enabled_primary:
-        enabled_providers[0].config.primary = True
-        logger.warning(f"No enabled primary provider found, setting {enabled_providers[0].name} as primary")
-
-    # Initialize OpenAI embedding model
-    embedding_model = None
-    try:
-        from .embedding_models import create_embedding_model
-
-        # Check if OpenAI API key is available
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if openai_api_key and openai_api_key.strip():
-            embedding_model = create_embedding_model(
-                provider="openai",
-                model="text-embedding-3-small",
-                api_key=openai_api_key,
-                max_retries=3,
-                timeout=30.0
-            )
-            logger.info("Initialized OpenAI embedding model: text-embedding-3-small")
-        else:
-            embedding_model = create_embedding_model(provider="mock", dimension=1536)
-            logger.warning("No OpenAI API key found, using mock embeddings")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize embedding model: {e}")
-        # Fallback to mock model
-        from .embedding_models import MockEmbeddingModel
-        embedding_model = MockEmbeddingModel(dimension=1536)
-        logger.warning("Using mock embedding model as fallback")
-
-    # Log detailed provider configuration before initialization
-    logger.info("📊 FINAL PROVIDER CONFIGURATION:")
-    primary_provider = None
-    secondary_providers = []
-    for provider in providers:
-        status = "✅ ENABLED" if provider.enabled else "❌ DISABLED"
-        role = "PRIMARY" if provider.config.primary else "SECONDARY"
-        logger.info(f"   {provider.name}: {status} - {role}")
-        if provider.enabled:
-            if provider.config.primary:
-                primary_provider = provider
-            else:
-                secondary_providers.append(provider)
-    
-    logger.info(f"🎯 REPLICATION SETUP:")
-    logger.info(f"   Primary: {primary_provider.name if primary_provider else 'None'}")
-    logger.info(f"   Secondaries: {[p.name for p in secondary_providers]}")
-    logger.info(f"   📝 New memories will be stored in {primary_provider.name if primary_provider else 'None'}")
-    logger.info(f"   🔄 Then replicated to: {[p.name for p in secondary_providers]}")
-
-    # Initialize unified store with optimization engine integration
-    optimization_enabled = os.getenv("OPTIMIZATION_ENABLED", "true").lower() == "true"
-    
-    # Ensure we have at least one working provider
-    working_providers = [p for p in providers if getattr(p, 'enabled', True)]
-    if not working_providers:
-        logger.error("❌ CRITICAL: No working providers available - service cannot start")
-        raise RuntimeError("No working vector providers available")
-    
-    logger.info(f"Available providers: {[p.name for p in working_providers]}")
-    
-    if optimization_enabled:
-        try:
-            from .optimized_unified_store import create_optimized_unified_store
-            logger.info("🚀 Creating optimized unified vector store...")
-            unified_store = await create_optimized_unified_store(
-                providers=working_providers,
-                embedding_model=embedding_model,
-                adm_enabled=True
-            )
-            logger.info(f"✅ Optimized memory service started: {len(working_providers)} providers with performance enhancements")
+            # Test ChromaDB health immediately after initialization
+            try:
+                chroma_health = await chroma_provider.health_check()
+                logger.info(f"📊 ChromaDB health check: {chroma_health}")
+            except Exception as health_error:
+                logger.error(f"❌ ChromaDB health check failed: {health_error}")
+                
         except Exception as e:
-            logger.warning(f"⚠️ Optimization engine failed, using standard store: {e}")
+            logger.error(f"❌ ChromaDB provider failed to initialize: {e}")
             import traceback
-            logger.debug(f"Optimization failure details: {traceback.format_exc()}")
-            
-            # Fallback to standard UnifiedVectorStore with robust error handling
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+
+        # Add Graph Provider for knowledge graph functionality
+        # Feature flag controlled activation for safe rollout
+        if False:  # PARETO FIX: Temporarily disable broken graph provider
+            logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
+
+            # Check if pgvector is available to share the same database
+            pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
+            if pgvector_provider:
+                try:
+                    # Build connection string from pgvector config
+                    # This avoids timing issues with async pool initialization
+                    pg_config = pgvector_config.config
+                    connection_string = (
+                        f"postgresql://{pg_config['user']}:{pg_config['password']}@"
+                        f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
+                    )
+                    
+                    graph_config = ProviderConfig(
+                        name="graph",
+                        enabled=True,
+                        primary=False,
+                        config={
+                            "connection_string": connection_string,  # Pass connection string instead of pool
+                            "table_prefix": "graph"
+                        }
+                    )
+
+                    # Import and initialize GraphProvider
+                    from .providers import GraphProvider
+                    graph_provider = GraphProvider(graph_config)
+                    providers.append(graph_provider)
+                    logger.info("✅ Graph provider initialized successfully - Knowledge graph is ACTIVE!")
+
+                except Exception as e:
+                    logger.error(f"Graph provider initialization failed: {e}")
+                    logger.info("Continuing without graph provider - system remains stable")
+            else:
+                logger.warning("Graph provider requires pgvector to be enabled")
+        else:
+            logger.info("Graph provider disabled (set GRAPH_ENABLED=true to activate)")
+
+        # CRITICAL FIX: Add in-memory fallback provider if all others fail
+        if not providers:
+            logger.warning("❌ No providers initialized successfully - adding in-memory fallback")
+            from .providers import InMemoryProvider
+            inmemory_config = ProviderConfig(
+                name="inmemory",
+                enabled=True,
+                primary=True,
+                config={"fallback_mode": True}
+            )
+            inmemory_provider = InMemoryProvider(inmemory_config)
+            providers.append(inmemory_provider)
+            logger.warning("🆘 FALLBACK MODE: Service will run with in-memory storage only")
+
+        # Ensure we have at least one enabled provider
+        enabled_providers = [p for p in providers if getattr(p, 'enabled', True)]
+        if not enabled_providers:
+            logger.error("❌ CRITICAL: Even fallback providers failed")
+            # Last resort: force create in-memory provider
+            from .providers import InMemoryProvider
+            inmemory_config = ProviderConfig(
+                name="inmemory_emergency",
+                enabled=True,
+                primary=True,
+                config={"emergency_mode": True}
+            )
+            emergency_provider = InMemoryProvider(inmemory_config)
+            providers = [emergency_provider]
+            enabled_providers = [emergency_provider]
+            logger.warning("🆘 EMERGENCY MODE: Service started with emergency in-memory provider")
+
+        # If no primary provider is enabled, make the first enabled one primary
+        has_enabled_primary = any(p.enabled and p.config.primary for p in providers)
+        if not has_enabled_primary:
+            enabled_providers[0].config.primary = True
+            logger.warning(f"No enabled primary provider found, setting {enabled_providers[0].name} as primary")
+
+        # Initialize OpenAI embedding model
+        embedding_model = None
+        try:
+            from .embedding_models import create_embedding_model
+
+            # Check if OpenAI API key is available
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key and openai_api_key.strip():
+                embedding_model = create_embedding_model(
+                    provider="openai",
+                    model="text-embedding-3-small",
+                    api_key=openai_api_key,
+                    max_retries=3,
+                    timeout=30.0
+                )
+                logger.info("Initialized OpenAI embedding model: text-embedding-3-small")
+            else:
+                embedding_model = create_embedding_model(provider="mock", dimension=1536)
+                logger.warning("No OpenAI API key found, using mock embeddings")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize embedding model: {e}")
+            # Fallback to mock model
+            from .embedding_models import MockEmbeddingModel
+            embedding_model = MockEmbeddingModel(dimension=1536)
+            logger.warning("Using mock embedding model as fallback")
+
+        # Log detailed provider configuration before initialization
+        logger.info("📊 FINAL PROVIDER CONFIGURATION:")
+        primary_provider = None
+        secondary_providers = []
+        for provider in providers:
+            status = "✅ ENABLED" if provider.enabled else "❌ DISABLED"
+            role = "PRIMARY" if provider.config.primary else "SECONDARY"
+            logger.info(f"   {provider.name}: {status} - {role}")
+            if provider.enabled:
+                if provider.config.primary:
+                    primary_provider = provider
+                else:
+                    secondary_providers.append(provider)
+    
+        logger.info(f"🎯 REPLICATION SETUP:")
+        logger.info(f"   Primary: {primary_provider.name if primary_provider else 'None'}")
+        logger.info(f"   Secondaries: {[p.name for p in secondary_providers]}")
+        logger.info(f"   📝 New memories will be stored in {primary_provider.name if primary_provider else 'None'}")
+        logger.info(f"   🔄 Then replicated to: {[p.name for p in secondary_providers]}")
+
+        # Initialize unified store with optimization engine integration
+        optimization_enabled = os.getenv("OPTIMIZATION_ENABLED", "true").lower() == "true"
+        
+        # Ensure we have at least one working provider
+        working_providers = [p for p in providers if getattr(p, 'enabled', True)]
+        if not working_providers:
+            logger.error("❌ CRITICAL: No working providers available - service cannot start")
+            raise RuntimeError("No working vector providers available")
+        
+        logger.info(f"Available providers: {[p.name for p in working_providers]}")
+        
+        if optimization_enabled:
+            try:
+                from .optimized_unified_store import create_optimized_unified_store
+                logger.info("🚀 Creating optimized unified vector store...")
+                unified_store = await create_optimized_unified_store(
+                    providers=working_providers,
+                    embedding_model=embedding_model,
+                    adm_enabled=True
+                )
+                logger.info(f"✅ Optimized memory service started: {len(working_providers)} providers with performance enhancements")
+            except Exception as e:
+                logger.warning(f"⚠️ Optimization engine failed, using standard store: {e}")
+                import traceback
+                logger.debug(f"Optimization failure details: {traceback.format_exc()}")
+                
+                # Fallback to standard UnifiedVectorStore with robust error handling
+                try:
+                    unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=True)
+                    logger.info(f"✅ Memory service started with standard vector store: {len(working_providers)} providers")
+                except Exception as fallback_error:
+                    logger.error(f"❌ CRITICAL: Even standard vector store failed: {fallback_error}")
+                    # Last resort: try with minimal configuration
+                    unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=False)
+                    logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
+        else:
+            # Standard UnifiedVectorStore with robust error handling
             try:
                 unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=True)
                 logger.info(f"✅ Memory service started with standard vector store: {len(working_providers)} providers")
-            except Exception as fallback_error:
-                logger.error(f"❌ CRITICAL: Even standard vector store failed: {fallback_error}")
+            except Exception as standard_error:
+                logger.error(f"❌ Standard vector store failed: {standard_error}")
                 # Last resort: try with minimal configuration
                 unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=False)
                 logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
-    else:
-        # Standard UnifiedVectorStore with robust error handling
+
+        # Initialize bulk import service (temporarily disabled due to pandas dependency issue)
+        global coordination_engine, websocket_manager
+        # bulk_import_service = BulkImportService(unified_store)
+        # memory_export_service = MemoryExportService(unified_store)
+        logger.info("Bulk import/export services temporarily disabled")
+
+        # Initialize Agent Coordination Engine (without WebSocket manager initially)
         try:
-            unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=True)
-            logger.info(f"✅ Memory service started with standard vector store: {len(working_providers)} providers")
-        except Exception as standard_error:
-            logger.error(f"❌ Standard vector store failed: {standard_error}")
-            # Last resort: try with minimal configuration
-            unified_store = UnifiedVectorStore(working_providers, embedding_model=embedding_model, adm_enabled=False)
-            logger.warning("⚠️ Started with minimal configuration (ADM disabled)")
+            coordination_engine = AgentCoordinationEngine(
+                unified_store=unified_store,
+                embedding_model=embedding_model
+            )
+            logger.info("🤖 Agent Coordination Engine initialized - Ready for multi-agent orchestration")
+        except Exception as e:
+            logger.error(f"Failed to initialize Agent Coordination Engine: {e}")
+            coordination_engine = None
 
-    # Initialize bulk import service (simplified version without Redis)
-    global bulk_import_service, memory_export_service, coordination_engine, websocket_manager
-    bulk_import_service = BulkImportService(unified_store)
-    memory_export_service = MemoryExportService(unified_store)
-    logger.info("Bulk import/export services initialized")
-
-    # Initialize Agent Coordination Engine (without WebSocket manager initially)
-    try:
-        coordination_engine = AgentCoordinationEngine(
-            unified_store=unified_store,
-            embedding_model=embedding_model
-        )
-        logger.info("🤖 Agent Coordination Engine initialized - Ready for multi-agent orchestration")
-    except Exception as e:
-        logger.error(f"Failed to initialize Agent Coordination Engine: {e}")
-        coordination_engine = None
-
-    # Initialize WebSocket Manager for real-time coordination
-    try:
-        websocket_manager = WebSocketManager(coordination_engine=coordination_engine)
-        
-        # Now update coordination engine with WebSocket manager reference
-        if coordination_engine:
-            coordination_engine.websocket_manager = websocket_manager
+        # Initialize WebSocket Manager for real-time coordination
+        try:
+            websocket_manager = WebSocketManager(coordination_engine=coordination_engine)
             
-        logger.info("🔌 WebSocket Manager initialized - Real-time agent communication enabled")
-    except Exception as e:
-        logger.error(f"Failed to initialize WebSocket Manager: {e}")
-        websocket_manager = None
+            # Now update coordination engine with WebSocket manager reference
+            if coordination_engine:
+                coordination_engine.websocket_manager = websocket_manager
+                
+            logger.info("🔌 WebSocket Manager initialized - Real-time agent communication enabled")
+            
+            # Log system startup (ADDED: Missing integration point)
+            if coordination_engine:
+                try:
+                    await coordination_engine.activity_logger.log_system_event(
+                        event_type="system_startup",
+                        details={
+                            "service_name": "Core Nexus Memory Service",
+                            "version": "0.1.3",
+                            "providers_initialized": len(working_providers),
+                            "coordination_enabled": True,
+                            "websocket_enabled": True,
+                            "components": [
+                                "memory_service",
+                                "coordination_engine", 
+                                "websocket_manager",
+                                # "bulk_import_service",  # Temporarily disabled
+                                # "memory_export_service"  # Temporarily disabled
+                            ]
+                        },
+                        importance="high"
+                    )
+                    logger.info("📊 System startup logged to coordination activity history")
+                except Exception as log_error:
+                    logger.warning(f"Failed to log system startup: {log_error}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize WebSocket Manager: {e}")
+            websocket_manager = None
 
-    # Initialize emergency retrieval system (CRITICAL FOUNDATION FIX)
-    try:
-        from .emergency_foundation_fix import EmergencyMemoryRetrieval
-        emergency_retrieval = EmergencyMemoryRetrieval()
-        await emergency_retrieval.connect()
-        logger.info("🚨 Emergency retrieval system initialized (bypasses broken query system)")
-    except Exception as e:
-        logger.error(f"Failed to initialize emergency retrieval: {e}")
-        emergency_retrieval = None
+        # Initialize emergency retrieval system (CRITICAL FOUNDATION FIX)
+        try:
+            from .emergency_foundation_fix import EmergencyMemoryRetrieval
+            emergency_retrieval = EmergencyMemoryRetrieval()
+            await emergency_retrieval.connect()
+            logger.info("🚨 Emergency retrieval system initialized (bypasses broken query system)")
+        except Exception as e:
+            logger.error(f"Failed to initialize emergency retrieval: {e}")
+            emergency_retrieval = None
 
-    # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
-    # from .tracking import UsageCollector
-    # usage_collector = UsageCollector(unified_store=unified_store)
-    # logger.info("Usage tracking initialized")
-    usage_collector = None
+        # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
+        # from .tracking import UsageCollector
+        # usage_collector = UsageCollector(unified_store=unified_store)
+        # logger.info("Usage tracking initialized")
+        usage_collector = None
 
-    # Initialize dashboard - DISABLED FOR STABLE DEPLOYMENT
-    # from .dashboard import MemoryDashboard
-    # memory_dashboard = MemoryDashboard(unified_store)
-    # logger.info("Memory dashboard initialized")
-    memory_dashboard = None
+        # Initialize dashboard - DISABLED FOR STABLE DEPLOYMENT
+        # from .dashboard import MemoryDashboard
+        # memory_dashboard = MemoryDashboard(unified_store)
+        # logger.info("Memory dashboard initialized")
+        memory_dashboard = None
 
-    # Set startup time for uptime tracking
-    import time
-    app.state.start_time = time.time()
+        # Set startup time for uptime tracking
+        import time
+        app.state.start_time = time.time()
 
-    # Initialize service info metrics - DISABLED FOR STABLE DEPLOYMENT
-    # set_service_info(
-    #     version="0.1.0",
-    #     config={
-    #         "providers": [p.name for p in providers],
-    #         "environment": os.getenv("ENVIRONMENT", "production")
-    #     }
-    # )
+        # Initialize service info metrics - DISABLED FOR STABLE DEPLOYMENT
+        # set_service_info(
+        #     version="0.1.0",
+        #     config={
+        #         "providers": [p.name for p in providers],
+        #         "environment": os.getenv("ENVIRONMENT", "production")
+        #     }
+        # )
+        
+        logger.info("✅ Core Nexus Memory Service initialization completed successfully")
+
+    except Exception as critical_error:
+        logger.error(f"🔥 CRITICAL INITIALIZATION FAILURE: {critical_error}")
+        import traceback
+        logger.error(f"Full error traceback: {traceback.format_exc()}")
+        
+        # EMERGENCY FALLBACK: Create minimal in-memory service
+        try:
+            logger.warning("🆘 Attempting emergency fallback initialization...")
+            from .providers import InMemoryProvider
+            from .embedding_models import MockEmbeddingModel
+            
+            # Create emergency in-memory provider
+            emergency_config = ProviderConfig(
+                name="emergency_inmemory",
+                enabled=True,
+                primary=True,
+                config={"emergency_fallback": True}
+            )
+            emergency_provider = InMemoryProvider(emergency_config)
+            emergency_embedding = MockEmbeddingModel(dimension=1536)
+            
+            # Create minimal unified store
+            unified_store = UnifiedVectorStore([emergency_provider], embedding_model=emergency_embedding, adm_enabled=False)
+            
+            # Initialize minimal services (bulk import/export disabled due to pandas dependency)
+            # bulk_import_service = BulkImportService(unified_store)
+            # memory_export_service = MemoryExportService(unified_store)
+            coordination_engine = None
+            websocket_manager = None
+            usage_collector = None
+            memory_dashboard = None
+            emergency_retrieval = None
+            
+            app.state.start_time = time.time()
+            
+            logger.warning("🆘 EMERGENCY MODE: Service running with minimal in-memory configuration")
+            logger.warning("⚠️ Data will not persist between restarts in emergency mode")
+            
+        except Exception as emergency_error:
+            logger.error(f"💥 TOTAL SYSTEM FAILURE: Even emergency fallback failed: {emergency_error}")
+            # Re-raise the original error since we can't recover
+            raise critical_error
 
     yield
 
     # Shutdown
     logger.info("Shutting down Memory Service...")
+    
+    # Log system shutdown (ADDED: Missing integration point)
+    if coordination_engine:
+        try:
+            await coordination_engine.activity_logger.log_system_event(
+                event_type="system_shutdown",
+                details={
+                    "service_name": "Core Nexus Memory Service",
+                    "shutdown_reason": "normal",
+                    "active_agents": len(coordination_engine.active_agents) if coordination_engine.active_agents else 0,
+                    "active_tasks": len(coordination_engine.active_tasks) if coordination_engine.active_tasks else 0,
+                    "uptime_seconds": time.time() - getattr(app.state, 'start_time', time.time())
+                },
+                importance="high"
+            )
+            # Force flush activity logs before shutdown
+            await coordination_engine.flush_activity_logs()
+            logger.info("📊 System shutdown logged and activity logs flushed")
+        except Exception as log_error:
+            logger.warning(f"Failed to log system shutdown: {log_error}")
 
     # Close provider connections
     for provider in providers:
@@ -2018,133 +2136,48 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Internal server error")
 
     # =====================================================
-    # BULK IMPORT API - Enterprise Features
+    # BULK IMPORT API - Enterprise Features (Temporarily Disabled)
     # =====================================================
 
-    @app.post("/api/v1/memories/import")
-    async def import_memories_bulk(
-        request: BulkImportRequest,
-        background_tasks: BackgroundTasks
-    ):
-        """
-        Import memories in bulk from CSV, JSON, or JSONL format.
-
-        This endpoint starts an asynchronous import job and returns immediately
-        with a job ID for tracking progress.
-
-        Supports:
-        - CSV with content column and optional metadata columns
-        - JSON array or object with memories array
-        - JSONL (newline-delimited JSON) for streaming large datasets
-
-        Features:
-        - Automatic deduplication
-        - Validation and error handling
-        - Progress tracking
-        - Batch processing for performance
-        """
-        if not bulk_import_service:
-            raise HTTPException(
-                status_code=503,
-                detail="Bulk import service not available"
-            )
-
-        try:
-            result = await bulk_import_service.import_memories(request, background_tasks)
-            return result
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error(f"Bulk import failed: {e}")
-            raise HTTPException(status_code=500, detail="Import initialization failed")
-
-    @app.get("/api/v1/memories/import/{import_id}/status", response_model=ImportProgress)
-    async def get_import_status(import_id: str):
-        """
-        Get the status of a bulk import job.
-
-        Returns detailed progress information including:
-        - Current status (pending, processing, completed, failed)
-        - Records processed/successful/failed
-        - Estimated completion time
-        - Any errors encountered
-        """
-        if not bulk_import_service:
-            raise HTTPException(
-                status_code=503,
-                detail="Bulk import service not available"
-            )
-
-        try:
-            progress = await bulk_import_service.get_import_status(import_id)
-            return progress
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid import ID format")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to get import status: {e}")
-            raise HTTPException(status_code=500, detail="Failed to retrieve import status")
+    # Temporarily disabled due to pandas dependency issue
+    # @app.post("/api/v1/memories/import")
+    # async def import_memories_bulk(
+    #     request: BulkImportRequest,
+    #     background_tasks: BackgroundTasks
+    # ):
+    #     """
+    #     Import memories in bulk from CSV, JSON, or JSONL format.
+    #     (Temporarily disabled due to pandas dependency issue)
+    #     """
+    #     pass
+    
+    # @app.get("/api/v1/memories/import/{import_id}/status", response_model=ImportProgress)
+    # async def get_import_status(import_id: str):
+    #     """
+    #     Get the status of a bulk import job.
+    #     (Temporarily disabled due to pandas dependency issue)
+    #     """
+    #     pass
 
     # =====================================================
-    # MEMORY EXPORT API - Data Portability
+    # MEMORY EXPORT API - Data Portability (Temporarily Disabled)
     # =====================================================
 
-    @app.post("/api/v1/memories/export")
-    async def export_memories(request: ExportRequest):
-        """
-        Export memories in various formats with filtering.
+    # @app.post("/api/v1/memories/export")
+    # async def export_memories(request: ExportRequest):
+    #     """
+    #     Export memories in various formats with filtering.
+    #     (Temporarily disabled due to pandas dependency issue)
+    #     """
+    #     pass
 
-        Supports:
-        - JSON: Complete data with metadata
-        - CSV: Spreadsheet-compatible format
-        - PDF: Formatted document (coming soon)
-
-        Features:
-        - Date range filtering
-        - Importance score filtering
-        - Tag-based filtering
-        - Optional embedding inclusion
-        - GDPR-compliant export option
-        """
-        if not memory_export_service:
-            raise HTTPException(
-                status_code=503,
-                detail="Export service not available"
-            )
-
-        try:
-            return await memory_export_service.export_memories(request)
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Export failed: {e}")
-            raise HTTPException(status_code=500, detail="Export failed")
-
-    @app.get("/api/v1/memories/export/gdpr/{user_id}")
-    async def export_gdpr_package(user_id: str):
-        """
-        Export GDPR-compliant data package for a specific user.
-
-        Creates a comprehensive data export including:
-        - All user memories
-        - Complete metadata
-        - Data sources and processing information
-        - Export metadata and timestamps
-
-        Compliant with GDPR Article 20 (Right to Data Portability)
-        """
-        if not memory_export_service:
-            raise HTTPException(
-                status_code=503,
-                detail="Export service not available"
-            )
-
-        try:
-            return await memory_export_service.create_gdpr_package(user_id)
-        except Exception as e:
-            logger.error(f"GDPR export failed: {e}")
-            raise HTTPException(status_code=500, detail="GDPR export failed")
+    # @app.get("/api/v1/memories/export/gdpr/{user_id}")
+    # async def export_gdpr_package(user_id: str):
+    #     """
+    #     Export GDPR-compliant data package for a specific user.
+    #     (Temporarily disabled due to pandas dependency issue)
+    #     """
+    #     pass
 
     @app.delete("/memories/cache")
     async def clear_query_cache(store: UnifiedVectorStore = Depends(get_store)):
@@ -5519,16 +5552,47 @@ def create_memory_app() -> FastAPI:
     async def get_coordination_dashboard_ui():
         """Serve the real-time coordination dashboard web interface."""
         try:
-            # Get the path to the dashboard HTML file
-            dashboard_path = Path(__file__).parent / "dashboard.html"
+            # Get the path to the dashboard HTML file with multiple fallback locations (FIXED: Deployment path handling)
+            possible_paths = [
+                Path(__file__).parent / "dashboard.html",  # Same directory as api.py
+                Path(__file__).parent.parent / "dashboard.html",  # One level up
+                Path.cwd() / "python/memory_service/src/memory_service/dashboard.html",  # From project root
+                Path("/app/memory_service/dashboard.html"),  # Docker deployment path
+                Path("/opt/app/dashboard.html")  # Alternative deployment path
+            ]
             
-            if not dashboard_path.exists():
-                raise HTTPException(status_code=404, detail="Dashboard HTML file not found")
+            dashboard_path = None
+            for path in possible_paths:
+                if path.exists():
+                    dashboard_path = path
+                    break
+            
+            if not dashboard_path:
+                logger.error(f"Dashboard HTML file not found in any of: {[str(p) for p in possible_paths]}")
+                # Return a minimal fallback dashboard
+                fallback_html = """
+                <!DOCTYPE html>
+                <html>
+                <head><title>Coordination Dashboard</title></head>
+                <body>
+                    <h1>Core Nexus Coordination Dashboard</h1>
+                    <p>Dashboard temporarily unavailable. Please check deployment configuration.</p>
+                    <p>API endpoints are available at:</p>
+                    <ul>
+                        <li><a href="/coordination/dashboard">Dashboard API</a></li>
+                        <li><a href="/coordination/activity-history">Activity History</a></li>
+                        <li><a href="/coordination/agents">Active Agents</a></li>
+                    </ul>
+                </body>
+                </html>
+                """
+                return HTMLResponse(content=fallback_html, status_code=200)
             
             # Read and return the HTML content
             with open(dashboard_path, 'r', encoding='utf-8') as f:
                 html_content = f.read()
                 
+            logger.debug(f"Served dashboard from: {dashboard_path}")
             return HTMLResponse(content=html_content, status_code=200)
             
         except Exception as e:
@@ -5665,6 +5729,86 @@ def create_memory_app() -> FastAPI:
             
         except Exception as e:
             logger.error(f"Failed to flush activity logs: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/coordination/tasks/{assignment_id}/complete")
+    async def complete_coordination_task(
+        assignment_id: str,
+        completion_status: str = "completed",
+        completion_notes: Optional[str] = None
+    ):
+        """Mark a task as completed and log the completion (ADDED: Missing integration point)."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            from uuid import UUID
+            try:
+                task_uuid = UUID(assignment_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid assignment ID format")
+            
+            success = await coordination_engine.complete_task(
+                assignment_id=task_uuid,
+                completion_status=completion_status,
+                completion_notes=completion_notes
+            )
+            
+            if not success:
+                raise HTTPException(status_code=404, detail="Task assignment not found")
+            
+            return {
+                "status": "success",
+                "message": f"Task {assignment_id} marked as {completion_status}",
+                "assignment_id": assignment_id,
+                "completion_status": completion_status,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to complete task {assignment_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/coordination/conflicts/{conflict_id}/resolve")
+    async def resolve_coordination_conflict(
+        conflict_id: str,
+        resolution_method: str,
+        resolution_notes: Optional[str] = None
+    ):
+        """Mark a conflict as resolved and log the resolution (ADDED: Missing integration point)."""
+        try:
+            if not coordination_engine:
+                raise HTTPException(status_code=503, detail="Coordination engine not available")
+            
+            from uuid import UUID
+            try:
+                conflict_uuid = UUID(conflict_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid conflict ID format")
+            
+            success = await coordination_engine.resolve_conflict(
+                conflict_id=conflict_uuid,
+                resolution_method=resolution_method,
+                resolution_notes=resolution_notes
+            )
+            
+            if not success:
+                raise HTTPException(status_code=404, detail="Conflict not found")
+            
+            return {
+                "status": "success",
+                "message": f"Conflict {conflict_id} resolved using {resolution_method}",
+                "conflict_id": conflict_id,
+                "resolution_method": resolution_method,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to resolve conflict {conflict_id}: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
     # ===== END AGENT COORDINATION API =====
