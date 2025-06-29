@@ -105,6 +105,92 @@ memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
 # memory_export_service: MemoryExportService | None = None
 emergency_retrieval: Any = None  # Emergency retrieval system
 
+# ULTRA-FAST HEALTH CHECK: In-memory status cache for sub-50ms responses
+_health_status_cache = {
+    "status": "starting",
+    "timestamp": time.time(),
+    "providers": {},
+    "uptime_seconds": 0,
+    "total_memories": 0,
+    "update_interval": 5.0  # Update every 5 seconds
+}
+_health_cache_lock = asyncio.Lock()
+
+async def _update_health_status_cache():
+    """
+    ULTRA-FAST HEALTH: Background task to update health status cache every 5 seconds.
+    This enables sub-50ms health check responses by caching expensive operations.
+    """
+    global _health_status_cache, unified_store
+    
+    while True:
+        try:
+            if unified_store is None:
+                await asyncio.sleep(1.0)
+                continue
+                
+            start_time = time.time()
+            
+            # Quick provider status check (no expensive operations)
+            providers_status = {}
+            primary_healthy = False
+            
+            for name, provider in unified_store.providers.items():
+                if hasattr(provider, 'circuit_breaker') and provider.circuit_breaker.state != 'open':
+                    providers_status[name] = {
+                        "status": "healthy" if provider.enabled else "disabled",
+                        "primary": provider == unified_store.primary_provider
+                    }
+                    if provider == unified_store.primary_provider and provider.enabled:
+                        primary_healthy = True
+                else:
+                    providers_status[name] = {
+                        "status": "degraded" if provider.enabled else "disabled", 
+                        "primary": provider == unified_store.primary_provider
+                    }
+            
+            # Determine overall status
+            if primary_healthy and len(providers_status) > 0:
+                overall_status = "healthy"
+            elif len(providers_status) > 0:
+                overall_status = "degraded" 
+            else:
+                overall_status = "unhealthy"
+            
+            # Update cache atomically
+            async with _health_cache_lock:
+                _health_status_cache.update({
+                    "status": overall_status,
+                    "timestamp": time.time(),
+                    "providers": providers_status,
+                    "uptime_seconds": time.time() - getattr(unified_store, '_start_time', time.time()),
+                    "total_memories": getattr(unified_store, 'stats', {}).get('total_stores', 0)
+                })
+            
+            # Log slow cache updates
+            update_time = (time.time() - start_time) * 1000
+            if update_time > 100:  # Log if cache update takes >100ms
+                logger.warning(f"Health cache update took {update_time:.1f}ms")
+                
+        except Exception as e:
+            logger.error(f"Health status cache update failed: {e}")
+            # Set degraded status on error
+            async with _health_cache_lock:
+                _health_status_cache.update({
+                    "status": "degraded",
+                    "timestamp": time.time(),
+                    "providers": {},
+                    "error": str(e)
+                })
+        
+        # Wait for next update cycle
+        await asyncio.sleep(_health_status_cache["update_interval"])
+
+async def _start_background_health_updater():
+    """Start the background health status updater task."""
+    asyncio.create_task(_update_health_status_cache())
+    logger.info("🔄 Ultra-fast health check: Background status updater started")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -544,6 +630,13 @@ async def lifespan(app: FastAPI):
         import time
         app.state.start_time = time.time()
 
+        # Start ultra-fast health check background updater
+        try:
+            await _start_background_health_updater()
+            logger.info("⚡ Ultra-fast health check system initialized (target <50ms responses)")
+        except Exception as e:
+            logger.warning(f"Failed to start health cache updater: {e}")
+
         # Initialize service info metrics - DISABLED FOR STABLE DEPLOYMENT
         # set_service_info(
         #     version="0.1.0",
@@ -828,24 +921,46 @@ def create_memory_app() -> FastAPI:
             "note": "Memory retrieval foundation is 100% functional"
         }
 
-    @app.get("/health", response_model=HealthCheckResponse)
-    async def health_check(store: UnifiedVectorStore = Depends(get_store)):
+    @app.get("/health")
+    async def ultra_fast_health_check():
         """
-        Fast health check optimized for production monitoring (<50ms target).
+        ULTRA-FAST health check optimized for sub-50ms responses.
+        
+        Returns cached health status updated every 5 seconds by background process.
+        No database calls, no provider checks, no expensive operations.
+        Perfect for load balancers and high-frequency monitoring.
+        """
+        start_time = time.time()
+        
+        # Return cached status (should be <10ms)
+        async with _health_cache_lock:
+            response_data = _health_status_cache.copy()
+        
+        # Add response time for monitoring
+        response_time_ms = (time.time() - start_time) * 1000
+        response_data["response_time_ms"] = round(response_time_ms, 2)
+        
+        # Log if even the ultra-fast check is slow
+        if response_time_ms > 25:
+            logger.warning(f"Ultra-fast health check took {response_time_ms:.1f}ms (target <10ms)")
+        
+        return JSONResponse(content=response_data)
 
-        Returns essential health status with minimal latency for load balancers and monitoring.
-        Use /health/detailed for comprehensive diagnostics.
+    @app.get("/health/legacy", response_model=HealthCheckResponse)  
+    async def legacy_health_check(store: UnifiedVectorStore = Depends(get_store)):
+        """
+        Legacy health check with Pydantic model (kept for compatibility).
+        
+        This is the previous implementation that may be slower but provides
+        structured response model validation. Use /health for fastest performance.
         """
         try:
-            # PERFORMANCE OPTIMIZATION: Fast path health check
-            start_time = time.time()
-            
             # Quick provider availability check (no deep health checks)
             available_providers = {}
             primary_healthy = False
             
             for name, provider in store.providers.items():
-                if provider.enabled and provider.circuit_breaker.state != 'open':
+                if provider.enabled and hasattr(provider, 'circuit_breaker') and provider.circuit_breaker.state != 'open':
                     available_providers[name] = {
                         "status": "healthy",
                         "primary": provider == store.primary_provider
@@ -869,24 +984,16 @@ def create_memory_app() -> FastAPI:
             # Get basic stats without expensive operations
             uptime_seconds = time.time() - getattr(app.state, 'start_time', time.time())
             
-            health_response = HealthCheckResponse(
+            return HealthCheckResponse(
                 status=status,
                 providers=available_providers,
-                total_memories=store.stats.get('total_stores', 0),  # From cache
-                avg_query_time_ms=store.stats.get('avg_query_time', 0.0),  # From cache
+                total_memories=getattr(store, 'stats', {}).get('total_stores', 0),
+                avg_query_time_ms=getattr(store, 'stats', {}).get('avg_query_time', 0.0),
                 uptime_seconds=uptime_seconds
             )
             
-            # Log if health check is too slow
-            check_time = (time.time() - start_time) * 1000
-            if check_time > 50:
-                logger.warning(f"Health check took {check_time:.1f}ms (target <50ms)")
-            
-            return health_response
-            
         except Exception as e:
-            logger.error(f"Fast health check failed: {e}")
-            # Return minimal response to prevent complete failure
+            logger.error(f"Legacy health check failed: {e}")
             return HealthCheckResponse(
                 status="degraded",
                 providers={},
