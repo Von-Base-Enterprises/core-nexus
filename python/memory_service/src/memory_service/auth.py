@@ -38,11 +38,41 @@ class APIKeyAuth:
     """
     
     def __init__(self):
-        self.enabled = config.auth.ENABLED
-        self.valid_keys = set(config.auth.API_KEYS) if config.auth.VALIDATE_KEYS else set()
-        self.admin_key = config.auth.ADMIN_KEY
-        self.bypass_endpoints = config.auth.BYPASS_ENDPOINTS
-        self.rate_limit = config.auth.RATE_LIMIT_PER_MINUTE
+        # Defensive configuration loading with fallbacks (SECURITY FIX: Prevent auth crashes)
+        try:
+            self.enabled = getattr(config, 'auth', None) and getattr(config.auth, 'ENABLED', True)
+            
+            # Safe API key loading with validation
+            if hasattr(config, 'auth') and hasattr(config.auth, 'API_KEYS'):
+                raw_keys = config.auth.API_KEYS if config.auth.API_KEYS else []
+                self.valid_keys = set(key.strip() for key in raw_keys if key and key.strip()) if getattr(config.auth, 'VALIDATE_KEYS', True) else set()
+            else:
+                logger.warning("No API_KEYS configuration found, using empty set")
+                self.valid_keys = set()
+            
+            # Safe admin key loading
+            self.admin_key = getattr(config.auth, 'ADMIN_KEY', '') if hasattr(config, 'auth') else ''
+            
+            # Safe bypass endpoints loading
+            if hasattr(config, 'auth') and hasattr(config.auth, 'BYPASS_ENDPOINTS'):
+                self.bypass_endpoints = config.auth.BYPASS_ENDPOINTS
+            else:
+                # Fallback bypass endpoints for safety
+                self.bypass_endpoints = {"/", "/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
+                logger.warning("Using fallback bypass endpoints")
+            
+            # Safe rate limit loading
+            self.rate_limit = getattr(config.auth, 'RATE_LIMIT_PER_MINUTE', 1000) if hasattr(config, 'auth') else 1000
+            
+        except Exception as e:
+            # CRITICAL: If config loading fails, use safe defaults to prevent crashes
+            logger.error(f"Authentication configuration loading failed: {e}")
+            logger.error("Using emergency fallback authentication settings")
+            self.enabled = True  # Default to enabled for security
+            self.valid_keys = set()  # Empty set means no keys are valid
+            self.admin_key = ''
+            self.bypass_endpoints = {"/", "/health", "/metrics", "/docs", "/redoc", "/openapi.json"}
+            self.rate_limit = 1000
         
         # Clean empty keys
         self.valid_keys = {key.strip() for key in self.valid_keys if key.strip()}
@@ -120,76 +150,101 @@ class APIKeyAuth:
         Raises:
             HTTPException for authentication failures
         """
-        # Skip authentication if disabled
-        if not self.enabled:
-            return None
-        
-        # Check if endpoint should bypass authentication
-        if self.is_endpoint_bypassed(request.url.path):
-            return None
-        
-        # Extract API key
-        api_key = self.get_api_key_from_request(request)
-        
-        if not api_key:
-            # Safely get client host without causing exceptions
-            client_host = 'unknown'
-            try:
-                if request.client and hasattr(request.client, 'host'):
-                    client_host = request.client.host
-            except Exception:
-                pass
+        try:
+            # Skip authentication if disabled
+            if not self.enabled:
+                return None
             
-            logger.warning(f"Authentication failed: No API key provided for {request.url.path} from {client_host}")
+            # Check if endpoint should bypass authentication
+            if self.is_endpoint_bypassed(request.url.path):
+                return None
+            
+            # Extract API key
+            api_key = self.get_api_key_from_request(request)
+            
+            if not api_key:
+                # Safely get client host without causing exceptions
+                client_host = 'unknown'
+                try:
+                    if request.client and hasattr(request.client, 'host'):
+                        client_host = request.client.host
+                except Exception:
+                    pass
+                
+                logger.warning(f"Authentication failed: No API key provided for {request.url.path} from {client_host}")
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "missing_api_key",
+                        "message": "API key required. Provide via X-API-Key header.",
+                        "code": "AUTH_001"
+                    }
+                )
+            
+            # Validate API key with enhanced error handling
+            if not self.validate_api_key(api_key):
+                # Safe key hashing for logging (security)
+                try:
+                    key_hash = hashlib.sha256(api_key.encode('utf-8')).hexdigest()[:8]
+                except Exception:
+                    key_hash = 'invalid_key'
+                
+                # Safely get client host without causing exceptions
+                client_host = 'unknown'
+                try:
+                    if request.client and hasattr(request.client, 'host'):
+                        client_host = request.client.host
+                except Exception:
+                    pass
+                
+                logger.warning(f"Authentication failed: Invalid API key {key_hash}... for {request.url.path} from {client_host}")
+                
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": "invalid_api_key",
+                        "message": "Invalid API key provided.",
+                        "code": "AUTH_002"
+                    }
+                )
+            
+            # Check rate limits with error handling
+            if not self.check_rate_limit(api_key):
+                # Safe key truncation for logging
+                safe_key = api_key[:8] + '...' if len(api_key) > 8 else api_key
+                logger.warning(f"Authentication failed: Rate limit exceeded for API key {safe_key} for {request.url.path}")
+                
+                raise HTTPException(
+                    status_code=429,
+                    detail={
+                        "error": "rate_limit_exceeded",
+                        "message": f"Rate limit exceeded. Maximum {self.rate_limit} requests per minute.",
+                        "code": "AUTH_003"
+                    }
+                )
+            
+            # Log successful authentication for debugging
+            safe_key = api_key[:8] + '...' if len(api_key) > 8 else api_key
+            logger.debug(f"Authentication successful: API key {safe_key} for {request.url.path}")
+            return api_key
+            
+        except HTTPException:
+            # Re-raise authentication errors (these are expected)
+            raise
+        except Exception as e:
+            # Log unexpected errors with full details for debugging
+            logger.error(f"Unexpected authentication error for {request.url.path}: {e}")
+            logger.exception("Full authentication error details:")
+            
+            # Return a generic authentication error instead of 500
             raise HTTPException(
                 status_code=401,
                 detail={
-                    "error": "missing_api_key",
-                    "message": "API key required. Provide via X-API-Key header.",
-                    "code": "AUTH_001"
+                    "error": "auth_system_error",
+                    "message": "Authentication system encountered an error. Please try again.",
+                    "code": "AUTH_004"
                 }
             )
-        
-        # Validate API key
-        if not self.validate_api_key(api_key):
-            # Hash the key for logging (security)
-            key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:8]
-            
-            # Safely get client host without causing exceptions
-            client_host = 'unknown'
-            try:
-                if request.client and hasattr(request.client, 'host'):
-                    client_host = request.client.host
-            except Exception:
-                pass
-            
-            logger.warning(f"Authentication failed: Invalid API key {key_hash}... for {request.url.path} from {client_host}")
-            
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": "invalid_api_key",
-                    "message": "Invalid API key provided.",
-                    "code": "AUTH_002"
-                }
-            )
-        
-        # Check rate limits
-        if not self.check_rate_limit(api_key):
-            logger.warning(f"Authentication failed: Rate limit exceeded for API key {api_key[:8]}... for {request.url.path}")
-            
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "error": "rate_limit_exceeded",
-                    "message": f"Rate limit exceeded. Maximum {self.rate_limit} requests per minute.",
-                    "code": "AUTH_003"
-                }
-            )
-        
-        # Log successful authentication for debugging
-        logger.debug(f"Authentication successful: API key {api_key[:8]}... for {request.url.path}")
-        return api_key
 
 # Global authentication instance
 auth_handler = APIKeyAuth()
@@ -236,16 +291,19 @@ def create_auth_middleware():
             return response
             
         except HTTPException:
-            # Re-raise authentication errors
+            # Re-raise authentication errors (these are expected)
             raise
         except Exception as e:
-            # Log unexpected errors but don't expose them
-            logger.error(f"Authentication middleware error: {e}")
+            # Log unexpected middleware errors with full details
+            logger.error(f"Authentication middleware critical error: {e}")
+            logger.exception("Full middleware error details:")
+            
+            # Return authentication error instead of 500 to maintain security
             raise HTTPException(
-                status_code=500,
+                status_code=401,
                 detail={
-                    "error": "auth_error",
-                    "message": "Authentication system error",
+                    "error": "auth_middleware_error",
+                    "message": "Authentication system unavailable. Please try again.",
                     "code": "AUTH_999"
                 }
             )

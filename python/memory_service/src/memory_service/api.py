@@ -248,23 +248,40 @@ async def lifespan(app: FastAPI):
         # If no password but DATABASE_URL exists, try to parse it
         if not pgvector_password and database_url:
             logger.info("No explicit password found, attempting to use DATABASE_URL")
+            logger.info(f"DATABASE_URL format: {database_url[:20]}...")  # Log first 20 chars for debugging
             try:
                 import urllib.parse
                 parsed = urllib.parse.urlparse(database_url)
+                logger.info(f"Parsed URL components - hostname: {parsed.hostname}, port: {parsed.port}, username: {parsed.username}, password: {'***SET***' if parsed.password else 'NOT_SET'}")
+                
                 if parsed.password:
                     pgvector_password = parsed.password
+                    logger.info("✅ Successfully extracted password from DATABASE_URL")
+                    
                     # Also update other config from DATABASE_URL if available
                     if parsed.hostname:
                         pgvector_host = parsed.hostname
+                        os.environ["PGVECTOR_HOST"] = parsed.hostname
+                        logger.info(f"Updated PGVECTOR_HOST to: {parsed.hostname}")
                     if parsed.port:
                         os.environ["PGVECTOR_PORT"] = str(parsed.port)
+                        logger.info(f"Updated PGVECTOR_PORT to: {parsed.port}")
                     if parsed.path and len(parsed.path) > 1:
-                        os.environ["PGVECTOR_DATABASE"] = parsed.path[1:]  # Remove leading /
+                        database_name = parsed.path[1:]  # Remove leading /
+                        os.environ["PGVECTOR_DATABASE"] = database_name
+                        logger.info(f"Updated PGVECTOR_DATABASE to: {database_name}")
                     if parsed.username:
                         os.environ["PGVECTOR_USER"] = parsed.username
-                    logger.info("Successfully parsed DATABASE_URL for pgvector configuration")
+                        logger.info(f"Updated PGVECTOR_USER to: {parsed.username}")
+                    
+                    # Set the password in environment for config access
+                    os.environ["PGVECTOR_PASSWORD"] = pgvector_password
+                    logger.info("✅ Successfully parsed DATABASE_URL for pgvector configuration")
+                else:
+                    logger.warning("DATABASE_URL found but contains no password")
             except Exception as e:
-                logger.warning(f"Failed to parse DATABASE_URL: {e}")
+                logger.error(f"Failed to parse DATABASE_URL: {e}")
+                logger.error(f"DATABASE_URL structure: {database_url[:50]}...")  # More debug info
         
         if not pgvector_password:
             logger.warning("No pgvector password available - pgvector provider will be disabled")
@@ -995,6 +1012,50 @@ def create_memory_app() -> FastAPI:
             "unified_store_exists": unified_store is not None,
             "debug_info": {
                 "function": "debug_health_cache",
+                "timestamp": time.time()
+            }
+        }
+
+    @app.get("/debug/database-config")
+    async def debug_database_config():
+        """DEBUG ENDPOINT: Check database configuration and environment variables."""
+        import os
+        
+        # Check environment variables (mask sensitive data)
+        env_vars = {
+            "PGVECTOR_HOST": os.getenv("PGVECTOR_HOST", "NOT_SET"),
+            "PGVECTOR_PORT": os.getenv("PGVECTOR_PORT", "NOT_SET"),
+            "PGVECTOR_DATABASE": os.getenv("PGVECTOR_DATABASE", "NOT_SET"), 
+            "PGVECTOR_USER": os.getenv("PGVECTOR_USER", "NOT_SET"),
+            "PGVECTOR_PASSWORD": "***SET***" if os.getenv("PGVECTOR_PASSWORD") else "NOT_SET",
+            "PGPASSWORD": "***SET***" if os.getenv("PGPASSWORD") else "NOT_SET",
+            "DATABASE_URL": "***SET***" if os.getenv("DATABASE_URL") else "NOT_SET"
+        }
+        
+        # Check database configuration from config
+        db_config = {
+            "HOST": config.database.HOST,
+            "PORT": config.database.PORT,
+            "DATABASE": config.database.DATABASE,
+            "USER": config.database.USER,
+            "PASSWORD": "***SET***" if config.database.PASSWORD else "NOT_SET"
+        }
+        
+        # Check if providers exist and their status
+        provider_status = {}
+        if unified_store:
+            for name, provider in unified_store.providers.items():
+                provider_status[name] = {
+                    "enabled": getattr(provider, 'enabled', False),
+                    "primary": provider == getattr(unified_store, 'primary_provider', None)
+                }
+        
+        return {
+            "environment_variables": env_vars,
+            "database_config": db_config,
+            "provider_status": provider_status,
+            "debug_info": {
+                "function": "debug_database_config",
                 "timestamp": time.time()
             }
         }
