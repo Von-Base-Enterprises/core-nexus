@@ -1005,11 +1005,28 @@ def create_memory_app() -> FastAPI:
         async with _health_cache_lock:
             cache_data = _health_status_cache.copy()
         
+        # Add database configuration debugging
+        import os
+        database_debug = {
+            "env_vars": {
+                "PGVECTOR_PASSWORD": "***SET***" if os.getenv("PGVECTOR_PASSWORD") else "NOT_SET",
+                "DATABASE_URL": "***SET***" if os.getenv("DATABASE_URL") else "NOT_SET",
+                "PGVECTOR_HOST": os.getenv("PGVECTOR_HOST", "NOT_SET"),
+            },
+            "config_values": {
+                "PASSWORD": "***SET***" if config.database.PASSWORD else "NOT_SET",
+                "HOST": config.database.HOST,
+                "USER": config.database.USER,
+                "DATABASE": config.database.DATABASE,
+            }
+        }
+        
         return {
             "cache_contents": cache_data,
             "cache_keys": list(cache_data.keys()),
             "cache_age_seconds": time.time() - cache_data.get("timestamp", 0),
             "unified_store_exists": unified_store is not None,
+            "database_debug": database_debug,
             "debug_info": {
                 "function": "debug_health_cache",
                 "timestamp": time.time()
