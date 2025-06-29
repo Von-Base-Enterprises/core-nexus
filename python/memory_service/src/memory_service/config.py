@@ -16,11 +16,12 @@ class DatabaseConfig:
     USER = os.getenv("PGVECTOR_USER", "nexus_memory_db_user")
     PASSWORD = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
     
-    # Connection pool settings optimized for 1GB RAM
-    POOL_MIN_SIZE = int(os.getenv("POOL_MIN_SIZE", "20"))  # Increased from 10
-    POOL_MAX_SIZE = int(os.getenv("POOL_MAX_SIZE", "50"))  # Increased from 20
-    POOL_TIMEOUT = int(os.getenv("POOL_TIMEOUT", "30"))    # Reduced for faster failover
-    COMMAND_TIMEOUT = int(os.getenv("COMMAND_TIMEOUT", "15"))  # Increased for complex vector ops
+    # Connection pool settings optimized for high-performance vector workloads
+    POOL_MIN_SIZE = int(os.getenv("POOL_MIN_SIZE", "15"))  # Optimized for connection availability
+    POOL_MAX_SIZE = int(os.getenv("POOL_MAX_SIZE", "50"))  # Increased for 500+ concurrent requests
+    POOL_TIMEOUT = int(os.getenv("POOL_TIMEOUT", "20"))    # Reduced for faster query timeouts
+    COMMAND_TIMEOUT = int(os.getenv("COMMAND_TIMEOUT", "20"))  # Optimized for sub-500ms query targets
+    MAX_INACTIVE_CONNECTION_LIFETIME = int(os.getenv("MAX_INACTIVE_CONNECTION_LIFETIME", "300"))  # 5 minutes
     
     # Vector settings
     VECTOR_DIMENSION = 1536
@@ -33,9 +34,10 @@ class DatabaseConfig:
     MAINTENANCE_WORK_MEM_MB = int(os.getenv("MAINTENANCE_WORK_MEM_MB", "64"))  # 64MB
     EFFECTIVE_CACHE_SIZE_MB = int(os.getenv("EFFECTIVE_CACHE_SIZE_MB", "768"))  # 768MB
     
-    # HNSW index optimization
-    HNSW_M = int(os.getenv("HNSW_M", "32"))                        # Increased from 16
-    HNSW_EF_CONSTRUCTION = int(os.getenv("HNSW_EF_CONSTRUCTION", "128"))  # Increased from 64
+    # HNSW index optimization (2025 enhanced parameters)
+    HNSW_M = int(os.getenv("HNSW_M", "48"))                        # Optimized from 32 to 48 for better recall
+    HNSW_EF_CONSTRUCTION = int(os.getenv("HNSW_EF_CONSTRUCTION", "200"))  # Optimized from 128 to 200 for better index quality
+    HNSW_EF_SEARCH = int(os.getenv("HNSW_EF_SEARCH", "150"))       # Dynamic search parameter (default 150, auto-adjusted per query)
     
     # Query optimization
     ENABLE_PREPARED_STATEMENTS = os.getenv("ENABLE_PREPARED_STATEMENTS", "true").lower() == "true"

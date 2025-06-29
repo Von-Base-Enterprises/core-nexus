@@ -20,6 +20,7 @@ except ImportError:
 
 from .models import MemoryResponse, ProviderConfig
 from .unified_store import VectorProvider
+from .config import config
 
 logger = logging.getLogger(__name__)
 
@@ -336,8 +337,8 @@ class ChromaProvider(VectorProvider):
                 embedding=[],  # ChromaDB doesn't return embeddings by default
                 importance_score=metadata.get('importance_score', 0.5),
                 similarity_score=1.0,  # Perfect match for direct retrieval
-                created_at=metadata.get('created_at', ''),
-                updated_at=metadata.get('updated_at', '')
+                created_at=metadata.get('created_at') or None,
+                updated_at=metadata.get('updated_at') or None
             )
         
         return None
@@ -452,12 +453,15 @@ class PgVectorProvider(VectorProvider):
                     await conn.execute("SET search_path TO public, pg_catalog")
                     await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
                     
-                    # PERFORMANCE OPTIMIZATION: Session-level settings for vector workloads
-                    await conn.execute("SET work_mem = '32MB'")  # Higher memory for vector operations
+                    # PERFORMANCE OPTIMIZATION: Enhanced session-level settings for vector workloads
+                    await conn.execute("SET work_mem = '64MB'")  # Increased from 32MB for better vector operations
                     await conn.execute("SET enable_seqscan = off")  # Force index usage for vectors
-                    await conn.execute("SET hnsw.ef_search = 64")  # Optimal HNSW search parameter
+                    await conn.execute(f"SET hnsw.ef_search = {config.database.HNSW_EF_SEARCH}")  # Configurable ef_search (default 150)
                     await conn.execute("SET enable_indexonlyscan = on")  # Enable index-only scans
                     await conn.execute("SET random_page_cost = 1.1")  # SSD optimization
+                    await conn.execute("SET effective_io_concurrency = 200")  # Optimize for SSD concurrent I/O
+                    await conn.execute("SET max_parallel_workers_per_gather = 4")  # Enable parallel query execution
+                    await conn.execute("SET enable_partitionwise_join = on")  # Enable partition-wise joins
                     
                     try:
                         from pgvector.asyncpg import register_vector
@@ -468,18 +472,23 @@ class PgVectorProvider(VectorProvider):
                     except Exception as e:
                         logger.warning(f"Vector type registration failed: {e}, using manual casting")
                 
-                # PERFORMANCE OPTIMIZATION: Optimized connection pool for vector workloads
+                # PERFORMANCE OPTIMIZATION: Enhanced connection pool for high-performance vector workloads
+                # Optimized for 500+ concurrent requests with sub-500ms query targets
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
-                    min_size=10,  # Increased from 5 for better connection reuse
-                    max_size=30,  # Increased from 20 but kept reasonable for 1GB RAM
-                    command_timeout=30,  # Reduced from 60 for faster timeouts
+                    min_size=config.database.POOL_MIN_SIZE,  # Configurable min connections
+                    max_size=config.database.POOL_MAX_SIZE,  # Configurable max connections
+                    command_timeout=config.database.COMMAND_TIMEOUT,  # Configurable command timeout
+                    max_inactive_connection_lifetime=config.database.MAX_INACTIVE_CONNECTION_LIFETIME,  # Configurable connection lifetime
                     init=init_connection,  # Register vector type and optimize each connection
                     server_settings={
-                        'synchronous_commit': 'on',  # Ensure synchronous commits
-                        'jit': 'on',  # Enable JIT for complex vector operations
-                        'statement_timeout': '30s',  # Prevent runaway queries
-                        'idle_in_transaction_session_timeout': '60s'  # Clean up idle transactions
+                        'synchronous_commit': 'on',  # Ensure synchronous commits for consistency
+                        'jit': 'on',  # Enable JIT compilation for complex vector operations
+                        'statement_timeout': '20s',  # Prevent runaway queries (reduced from 30s)
+                        'idle_in_transaction_session_timeout': '30s',  # Faster cleanup (reduced from 60s)
+                        'tcp_keepalives_idle': '300',  # Keep connections alive for 5 minutes
+                        'tcp_keepalives_interval': '30',  # Check every 30 seconds
+                        'tcp_keepalives_count': '3'  # Retry 3 times before closing
                     }
                 )
 
@@ -505,12 +514,15 @@ class PgVectorProvider(VectorProvider):
                         DROP INDEX IF EXISTS idx_{self.table_name}_embedding
                     """)
                     
-                    # Create high-performance HNSW index with optimized parameters
+                    # Create high-performance HNSW index with enhanced 2025 optimization parameters
+                    # m: Configurable connections per layer for better recall (default 48 vs pgvector default 16)
+                    # ef_construction: Configurable construction parameter for better index quality (default 200 vs pgvector default 64)
+                    # These parameters optimize for sub-500ms query performance with high accuracy
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding_hnsw
                         ON {self.table_name}
                         USING hnsw (embedding vector_cosine_ops)
-                        WITH (m = 32, ef_construction = 128)
+                        WITH (m = {config.database.HNSW_M}, ef_construction = {config.database.HNSW_EF_CONSTRUCTION})
                     """)
 
                     await conn.execute(f"""
@@ -667,10 +679,25 @@ class PgVectorProvider(VectorProvider):
                 params.append(limit)
 
                 try:
+                    # PERFORMANCE OPTIMIZATION: Dynamic ef_search parameter based on query characteristics
+                    # Higher ef_search for better recall, lower for speed (trade-off optimization)
+                    if limit <= 10:
+                        # Fast queries: Lower ef_search for speed
+                        ef_search = 100
+                    elif limit <= 50:
+                        # Balanced queries: Medium ef_search for speed/recall balance
+                        ef_search = 150
+                    else:
+                        # Large queries: Higher ef_search for better recall
+                        ef_search = 200
+                    
+                    # Apply dynamic ef_search setting for this query
+                    await conn.execute(f"SET hnsw.ef_search = {ef_search}")
+                    
                     # Execute query with array parameter
                     try:
                         # Minimal logging for performance
-                        logger.debug(f"Executing vector query on {self.table_name} with {len(query_embedding_list)}D embedding")
+                        logger.debug(f"Executing vector query on {self.table_name} with {len(query_embedding_list)}D embedding (ef_search={ef_search})")
                         
                         rows = await conn.fetch(query, *params)
                     except Exception as e:
