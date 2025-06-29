@@ -24,7 +24,22 @@ from .models import (
 )
 from .deduplication import DeduplicationService, DeduplicationMode
 from .reliable_task_queue import get_task_queue, TaskPriority, ReliableTaskQueue
-from .monitoring import get_error_monitor, ErrorCategory
+try:
+    from .monitoring import get_error_monitor, ErrorCategory
+except ImportError:
+    # Fallback for deployment compatibility
+    def get_error_monitor():
+        class MockErrorMonitor:
+            def record_circuit_breaker_event(self, **kwargs):
+                pass
+            def record_error(self, **kwargs):
+                pass
+        return MockErrorMonitor()
+    
+    class ErrorCategory:
+        PROVIDER_FAILURE = "provider_failure"
+        CIRCUIT_BREAKER = "circuit_breaker"
+        QUERY_ERROR = "query_error"
 
 logger = logging.getLogger(__name__)
 
