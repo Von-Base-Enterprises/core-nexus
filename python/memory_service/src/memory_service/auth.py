@@ -77,54 +77,88 @@ class APIKeyAuth:
         # Clean empty keys
         self.valid_keys = {key.strip() for key in self.valid_keys if key.strip()}
         
+        # Enhanced startup logging for debugging
         if self.enabled:
-            logger.info(f"API Key authentication enabled with {len(self.valid_keys)} keys")
-            if not self.valid_keys:
+            logger.info(f"API Key authentication enabled with {len(self.valid_keys)} valid keys")
+            logger.info(f"Admin key configured: {bool(self.admin_key)}")
+            logger.info(f"Rate limit: {self.rate_limit} requests/minute")
+            logger.info(f"Bypass endpoints: {sorted(self.bypass_endpoints)}")
+            
+            if not self.valid_keys and not self.admin_key:
                 logger.warning("No API keys configured - all requests will be rejected!")
+            elif not self.valid_keys:
+                logger.info("Only admin key configured for authentication")
         else:
-            logger.info("API Key authentication disabled")
+            logger.info("API Key authentication disabled - all requests allowed")
+            
+        # Log any configuration issues
+        if not hasattr(config, 'auth'):
+            logger.warning("No 'auth' section found in configuration")
+        
+        logger.debug(f"Authentication system initialized: enabled={self.enabled}, keys={len(self.valid_keys)}, admin={bool(self.admin_key)}")
     
     def is_endpoint_bypassed(self, path: str) -> bool:
         """Check if endpoint should bypass authentication"""
         return path in self.bypass_endpoints
     
     def validate_api_key(self, api_key: str) -> bool:
-        """Validate API key against configured keys"""
-        if not self.enabled:
-            return True
+        """Validate API key against configured keys with enhanced safety"""
+        try:
+            if not self.enabled:
+                return True
+                
+            if not api_key or not isinstance(api_key, str):
+                return False
+                
+            # Safe admin key check
+            if self.admin_key and isinstance(self.admin_key, str) and api_key == self.admin_key:
+                return True
+                
+            # Safe regular API key check
+            if hasattr(self, 'valid_keys') and self.valid_keys and isinstance(self.valid_keys, set):
+                return api_key in self.valid_keys
             
-        if not api_key:
+            # If no valid keys configured, reject all
             return False
             
-        # Check admin key
-        if self.admin_key and api_key == self.admin_key:
-            return True
-            
-        # Check regular API keys
-        return api_key in self.valid_keys
+        except Exception as e:
+            logger.error(f"API key validation error: {e}")
+            return False  # Fail securely
     
     def check_rate_limit(self, api_key: str) -> bool:
-        """Check if API key is within rate limits"""
-        if not self.enabled or self.rate_limit <= 0:
+        """Check if API key is within rate limits with enhanced safety"""
+        try:
+            if not self.enabled or not hasattr(self, 'rate_limit') or self.rate_limit <= 0:
+                return True
+                
+            if not api_key or not isinstance(api_key, str):
+                return False
+                
+            current_time = time.time()
+            window_start = current_time - 60  # 1 minute window
+            
+            # Safe rate limit storage access
+            if api_key not in _rate_limit_storage:
+                _rate_limit_storage[api_key] = []
+            
+            # Clean old entries safely
+            _rate_limit_storage[api_key] = [
+                timestamp for timestamp in _rate_limit_storage[api_key]
+                if isinstance(timestamp, (int, float)) and timestamp > window_start
+            ]
+            
+            # Check current count
+            current_count = len(_rate_limit_storage[api_key])
+            if current_count >= self.rate_limit:
+                return False
+            
+            # Add current request
+            _rate_limit_storage[api_key].append(current_time)
             return True
             
-        current_time = time.time()
-        window_start = current_time - 60  # 1 minute window
-        
-        # Clean old entries
-        _rate_limit_storage[api_key] = [
-            timestamp for timestamp in _rate_limit_storage[api_key]
-            if timestamp > window_start
-        ]
-        
-        # Check current count
-        current_count = len(_rate_limit_storage[api_key])
-        if current_count >= self.rate_limit:
-            return False
-        
-        # Add current request
-        _rate_limit_storage[api_key].append(current_time)
-        return True
+        except Exception as e:
+            logger.error(f"Rate limit check error: {e}")
+            return True  # Allow request on error to avoid blocking legitimate users
     
     def get_api_key_from_request(self, request: Request) -> Optional[str]:
         """Extract API key from request headers"""
