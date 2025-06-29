@@ -791,6 +791,9 @@ class AgentCoordinationEngine:
             
             logger.info("Coordination engine fully initialized with state restoration")
             
+            # Start periodic dashboard updates (EMERGENCY FIX: Real-time dashboard updates)
+            asyncio.create_task(self._periodic_dashboard_update_task())
+            
         except Exception as e:
             logger.error(f"Failed to initialize coordination engine: {e}")
             # Continue with empty state rather than crashing
@@ -910,6 +913,119 @@ class AgentCoordinationEngine:
         except Exception as e:
             logger.error(f"Failed to cleanup stale state: {e}")
 
+    async def _broadcast_dashboard_update(self):
+        """Broadcast dashboard update to connected clients (EMERGENCY FIX: Real-time dashboard)."""
+        try:
+            # Generate dashboard data in format expected by frontend
+            dashboard_data = await self._generate_dashboard_data()
+            
+            # Send to dashboard monitors using special message type
+            await self._broadcast_message(
+                from_agent_id="coordination_engine",
+                message_type="coordination_dashboard_update",
+                subject="Dashboard Update",
+                content="Real-time coordination status",
+                dashboard_data=dashboard_data
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to broadcast dashboard update: {e}")
+
+    async def _generate_dashboard_data(self) -> Dict[str, Any]:
+        """Generate dashboard data in format expected by frontend (EMERGENCY FIX: Dashboard compatibility)."""
+        try:
+            # Update metrics first
+            await self._update_coordination_metrics()
+            
+            # Convert agents to dashboard-compatible format
+            active_agents = []
+            for agent_id, activity in self.active_agents.items():
+                profile = self.agent_profiles.get(agent_id)
+                if profile and activity.status != AgentStatus.OFFLINE:
+                    active_agents.append({
+                        "agent_id": agent_id,
+                        "agent_name": profile.agent_name,
+                        "agent_type": profile.agent_type,
+                        "workspace": activity.workspace,
+                        "status": activity.status.value if hasattr(activity.status, 'value') else str(activity.status),
+                        "current_task": activity.current_task,
+                        "task_progress": getattr(activity, 'task_progress', 0.0),
+                        "last_update": activity.last_update.isoformat(),
+                        "component": getattr(activity, 'component', None)
+                    })
+            
+            # Convert recent tasks to dashboard format
+            recent_tasks = []
+            for assignment_id, task in list(self.active_tasks.items())[-10:]:  # Last 10 tasks
+                recent_tasks.append({
+                    "assignment_id": str(assignment_id),
+                    "task_id": str(task.task_id),
+                    "assigned_agent_id": task.assigned_agent_id,
+                    "status": task.status,
+                    "priority": getattr(task, 'priority', 'medium'),
+                    "progress": getattr(task, 'progress', 0.0),
+                    "assigned_at": task.assigned_at.isoformat() if task.assigned_at else None
+                })
+            
+            # Convert active conflicts to dashboard format
+            active_conflicts = []
+            for conflict in self.conflict_history:
+                if conflict.resolution_status in ["detected", "in_progress"]:
+                    active_conflicts.append({
+                        "conflict_id": str(conflict.conflict_id),
+                        "conflict_type": conflict.conflict_type.replace("_", " ").title(),
+                        "severity": conflict.severity,
+                        "description": conflict.description,
+                        "affected_agents": conflict.affected_agents,
+                        "workspace": conflict.workspace,
+                        "detected_at": conflict.detected_at.isoformat()
+                    })
+            
+            # Calculate workspace utilization
+            workspace_utilization = {}
+            for agent_id, activity in self.active_agents.items():
+                if activity.workspace and activity.status != AgentStatus.OFFLINE:
+                    workspace_utilization[activity.workspace] = workspace_utilization.get(activity.workspace, 0) + 1
+            
+            # Generate system alerts
+            system_alerts = []
+            if len(active_conflicts) > 0:
+                system_alerts.append(f"{len(active_conflicts)} active conflicts require attention")
+            if len(active_agents) == 0:
+                system_alerts.append("No active agents detected")
+            
+            # Performance summary from metrics
+            performance_summary = {
+                "active_agents": self.coordination_metrics.active_agents,
+                "total_tasks_active": self.coordination_metrics.total_tasks_active,
+                "total_tasks_completed_today": self.coordination_metrics.total_tasks_completed_today,
+                "conflicts_detected_today": self.coordination_metrics.conflicts_detected_today,
+                "coordination_efficiency_score": self.coordination_metrics.coordination_efficiency_score,
+                "system_health_score": self.coordination_metrics.system_health_score
+            }
+            
+            return {
+                "active_agents": active_agents,
+                "recent_tasks": recent_tasks,
+                "active_conflicts": active_conflicts,
+                "system_alerts": system_alerts,
+                "performance_summary": performance_summary,
+                "resource_utilization": workspace_utilization,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to generate dashboard data: {e}")
+            return {
+                "active_agents": [],
+                "recent_tasks": [],
+                "active_conflicts": [],
+                "system_alerts": [f"Dashboard data generation error: {str(e)}"],
+                "performance_summary": {},
+                "resource_utilization": {},
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
     async def _periodic_cleanup_task(self):
         """Periodic background task for state cleanup (EMERGENCY FIX: Prevent memory leaks)."""
         while True:
@@ -919,6 +1035,16 @@ class AgentCoordinationEngine:
             except Exception as e:
                 logger.error(f"Error in periodic cleanup task: {e}")
                 await asyncio.sleep(300)  # Wait 5 minutes before retrying
+
+    async def _periodic_dashboard_update_task(self):
+        """Periodic background task for dashboard updates (EMERGENCY FIX: Real-time dashboard)."""
+        while True:
+            try:
+                await asyncio.sleep(10)  # Update every 10 seconds
+                await self._broadcast_dashboard_update()
+            except Exception as e:
+                logger.error(f"Error in periodic dashboard update task: {e}")
+                await asyncio.sleep(30)  # Wait 30 seconds before retrying
 
     async def register_agent(self, agent_profile: AgentProfile) -> bool:
         """Register a new agent with the coordination system."""
@@ -943,13 +1069,21 @@ class AgentCoordinationEngine:
             # Log registration with enhanced activity logger (outside lock to avoid blocking)
             await self.activity_logger.log_agent_registration(agent_profile)
             
-            # Broadcast registration to other agents
+            # Broadcast registration to other agents with proper format (EMERGENCY FIX: Agent info structure)
             await self._broadcast_message(
                 from_agent_id="coordination_engine",
                 message_type="agent_registration",
                 subject=f"New agent registered: {agent_profile.agent_name}",
                 content=f"Agent {agent_profile.agent_name} is now available in {agent_profile.workspace}",
-                workspace=agent_profile.workspace
+                workspace=agent_profile.workspace,
+                agent_info={
+                    "agent_id": agent_profile.agent_id,
+                    "agent_name": agent_profile.agent_name,
+                    "agent_type": agent_profile.agent_type,
+                    "workspace": agent_profile.workspace,
+                    "status": "online",
+                    "connected_at": datetime.utcnow().isoformat()
+                }
             )
             
             logger.info(f"Agent registered: {agent_profile.agent_id} ({agent_profile.agent_name})")
@@ -1415,14 +1549,74 @@ class AgentCoordinationEngine:
             return None
 
 
-    async def _broadcast_message(self, from_agent_id: str, message_type: str, subject: str, content: str, **kwargs):
-        """Broadcast a message to all connected agents."""
-        message_data = {
+    def _format_message_for_websocket(self, message_type: str, subject: str, content: str, **kwargs) -> Dict[str, Any]:
+        """Format message data for WebSocket compatibility (EMERGENCY FIX: Standardize message format)."""
+        
+        # Base message structure compatible with dashboard expectations
+        formatted_data = {
             "subject": subject,
             "content": content,
-            "from_agent_id": from_agent_id,
+            "message_type": message_type,
+            "timestamp": datetime.utcnow().isoformat(),
             **kwargs
         }
+        
+        # Handle special formatting for dashboard compatibility
+        if message_type == "coordination_dashboard_update":
+            # Dashboard expects data.coordination_dashboard structure
+            formatted_data = {
+                "coordination_dashboard": kwargs.get("dashboard_data", {}),
+                "connection_status": {
+                    "status": "connected",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            }
+        elif message_type in ["agent_registration", "agent_disconnected", "agent_activity_changed"]:
+            # Agent lifecycle events need special handling
+            formatted_data.update({
+                "event_type": message_type,
+                "agent_info": kwargs.get("agent_info", {})
+            })
+        
+        return formatted_data
+
+    def _validate_message_data(self, message_type: str, data: Dict[str, Any]) -> bool:
+        """Validate message data format (EMERGENCY FIX: Message validation)."""
+        try:
+            # Basic validation
+            if not isinstance(data, dict):
+                logger.error(f"Message data must be dict, got {type(data)}")
+                return False
+            
+            # Message type-specific validation
+            if message_type == "coordination_dashboard_update":
+                required_fields = ["coordination_dashboard"]
+                if "coordination_dashboard" in data:
+                    dashboard_data = data["coordination_dashboard"]
+                    dashboard_required = ["active_agents", "recent_tasks", "performance_summary"]
+                    for field in dashboard_required:
+                        if field not in dashboard_data:
+                            logger.warning(f"Dashboard missing required field: {field}")
+                
+            elif message_type in ["agent_registration", "agent_disconnected"]:
+                if "agent_info" not in data:
+                    logger.warning(f"Agent lifecycle message missing agent_info")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Message validation failed: {e}")
+            return False
+
+    async def _broadcast_message(self, from_agent_id: str, message_type: str, subject: str, content: str, **kwargs):
+        """Broadcast a message to all connected agents."""
+        # Format message data for WebSocket compatibility (EMERGENCY FIX: Standardize message format)
+        message_data = self._format_message_for_websocket(message_type, subject, content, **kwargs)
+        
+        # Validate message format (EMERGENCY FIX: Message validation)
+        if not self._validate_message_data(message_type, message_data):
+            logger.error(f"Invalid message format for {message_type}, skipping broadcast")
+            return
         
         if self.websocket_manager:
             sent_count = await self.websocket_manager.broadcast_message(
@@ -1436,12 +1630,13 @@ class AgentCoordinationEngine:
 
     async def _send_message(self, from_agent_id: str, to_agent_id: str, message_type: str, subject: str, content: str, **kwargs):
         """Send a direct message to a specific agent."""
-        message_data = {
-            "subject": subject,
-            "content": content,
-            "from_agent_id": from_agent_id,
-            **kwargs
-        }
+        # Format message data for WebSocket compatibility (EMERGENCY FIX: Standardize message format)
+        message_data = self._format_message_for_websocket(message_type, subject, content, **kwargs)
+        
+        # Validate message format (EMERGENCY FIX: Message validation)
+        if not self._validate_message_data(message_type, message_data):
+            logger.error(f"Invalid message format for {message_type}, skipping send to {to_agent_id}")
+            return
         
         if self.websocket_manager:
             success = await self.websocket_manager.send_message(

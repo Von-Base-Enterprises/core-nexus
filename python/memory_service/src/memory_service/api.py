@@ -932,9 +932,16 @@ def create_memory_app() -> FastAPI:
         """
         start_time = time.time()
         
+        # DEBUG: Log that this function is being called
+        logger.info("🔍 DEBUG: ultra_fast_health_check() called")
+        
         # Return cached status (should be <10ms)
         async with _health_cache_lock:
             response_data = _health_status_cache.copy()
+        
+        # DEBUG: Log cache contents structure
+        logger.info(f"🔍 DEBUG: Cache keys: {list(response_data.keys())}")
+        logger.info(f"🔍 DEBUG: Cache status: {response_data.get('status', 'MISSING')}")
         
         # Add response time for monitoring
         response_time_ms = (time.time() - start_time) * 1000
@@ -944,7 +951,30 @@ def create_memory_app() -> FastAPI:
         if response_time_ms > 25:
             logger.warning(f"Ultra-fast health check took {response_time_ms:.1f}ms (target <10ms)")
         
+        # DEBUG: Add debug marker to confirm this endpoint is being used
+        response_data["debug_endpoint"] = "ultra_fast_health_check"
+        response_data["debug_timestamp"] = time.time()
+        
+        logger.info(f"🔍 DEBUG: Returning response with {len(response_data)} keys")
+        
         return JSONResponse(content=response_data)
+
+    @app.get("/debug/health-cache")
+    async def debug_health_cache():
+        """DEBUG ENDPOINT: Return raw health cache contents for debugging."""
+        async with _health_cache_lock:
+            cache_data = _health_status_cache.copy()
+        
+        return {
+            "cache_contents": cache_data,
+            "cache_keys": list(cache_data.keys()),
+            "cache_age_seconds": time.time() - cache_data.get("timestamp", 0),
+            "unified_store_exists": unified_store is not None,
+            "debug_info": {
+                "function": "debug_health_cache",
+                "timestamp": time.time()
+            }
+        }
 
     @app.get("/health/legacy", response_model=HealthCheckResponse)  
     async def legacy_health_check(store: UnifiedVectorStore = Depends(get_store)):

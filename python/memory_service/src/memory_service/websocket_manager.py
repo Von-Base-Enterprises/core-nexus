@@ -74,13 +74,17 @@ class WebSocketManager:
         self.ping_interval = 30  # seconds
         self.connection_timeout = 60  # seconds
         
+        # Dashboard monitoring connections (EMERGENCY FIX: Dashboard subscription tracking)
+        self.dashboard_connections: Set[str] = set()
+        
         # Message statistics
         self.message_stats = {
             'total_sent': 0,
             'total_received': 0,
             'broadcasts_sent': 0,
             'direct_messages_sent': 0,
-            'connection_events': 0
+            'connection_events': 0,
+            'dashboard_updates_sent': 0
         }
         
         logger.info("WebSocket Manager initialized")
@@ -170,6 +174,9 @@ class WebSocketManager:
             if connection.workspace:
                 self.connections_by_workspace[connection.workspace].discard(agent_id)
             
+            # Remove from dashboard connections if subscribed (EMERGENCY FIX: Dashboard cleanup)
+            self.dashboard_connections.discard(agent_id)
+            
             # Remove connection
             del self.active_connections[agent_id]
             
@@ -239,10 +246,15 @@ class WebSocketManager:
                 message_id=str(uuid4())
             )
             
-            # Determine target agents
+            # Determine target agents based on message type (EMERGENCY FIX: Dashboard message routing)
             target_agents = set()
             
-            if target_workspace:
+            if message_type == "coordination_dashboard_update":
+                # Dashboard updates only go to dashboard connections
+                target_agents.update(self.dashboard_connections)
+                # Update dashboard stats
+                self.message_stats['dashboard_updates_sent'] += 1
+            elif target_workspace:
                 target_agents.update(self.connections_by_workspace.get(target_workspace, set()))
             elif target_agent_type:
                 target_agents.update(self.connections_by_type.get(target_agent_type, set()))
@@ -261,7 +273,28 @@ class WebSocketManager:
                 try:
                     if agent_id in self.active_connections:
                         connection = self.active_connections[agent_id]
-                        await connection.websocket.send_text(message.json())
+                        
+                        # Format message for WebSocket transmission (EMERGENCY FIX: Message format)
+                        if message_type == "coordination_dashboard_update":
+                            # Dashboard gets special message format
+                            dashboard_message = {
+                                "type": "status_update",
+                                "data": data,
+                                "timestamp": message.timestamp.isoformat()
+                            }
+                            message_text = json.dumps(dashboard_message)
+                        else:
+                            # Regular agents get standard format
+                            message_text = message.json()
+                        
+                        # Send with error recovery (EMERGENCY FIX: Message transmission reliability)
+                        try:
+                            await connection.websocket.send_text(message_text)
+                        except Exception as send_error:
+                            logger.warning(f"Failed to send to {agent_id}, marking connection as stale: {send_error}")
+                            failed_agents.append(agent_id)
+                            continue
+                        
                         sent_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to send broadcast to {agent_id}: {e}")
@@ -297,6 +330,8 @@ class WebSocketManager:
                 await self._handle_activity_update(agent_id, data)
             elif message_type == 'direct_message':
                 await self._handle_direct_message(agent_id, data)
+            elif message_type == 'dashboard_subscribe':
+                await self._handle_dashboard_subscribe(agent_id, data)
             elif message_type == 'task_update':
                 await self._handle_task_update(agent_id, data)
             elif message_type == 'conflict_report':
@@ -503,3 +538,29 @@ class WebSocketManager:
             # Mark handoff as accepted (would need to implement)
             # await self.coordination_engine.complete_handoff(handoff_id)
             pass
+
+    async def _handle_dashboard_subscribe(self, agent_id: str, data: Dict[str, Any]):
+        """Handle dashboard subscription request (EMERGENCY FIX: Dashboard subscription)."""
+        try:
+            # Add agent to dashboard connections
+            self.dashboard_connections.add(agent_id)
+            
+            # Send initial dashboard status
+            await self.send_message(
+                target_agent_id=agent_id,
+                message_type="dashboard_subscribed",
+                data={
+                    "status": "subscribed",
+                    "message": "You are now subscribed to dashboard updates",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            
+            # Request initial dashboard data from coordination engine
+            if self.coordination_engine:
+                await self.coordination_engine._broadcast_dashboard_update()
+            
+            logger.info(f"Agent {agent_id} subscribed to dashboard updates")
+            
+        except Exception as e:
+            logger.error(f"Failed to handle dashboard subscription for {agent_id}: {e}")
