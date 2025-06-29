@@ -96,6 +96,55 @@ class APIKeyAuth:
             logger.warning("No 'auth' section found in configuration")
         
         logger.debug(f"Authentication system initialized: enabled={self.enabled}, keys={len(self.valid_keys)}, admin={bool(self.admin_key)}")
+        
+        # Run startup validation
+        self._validate_configuration()
+    
+    def _validate_configuration(self):
+        """Validate authentication configuration and log any issues."""
+        try:
+            validation_issues = []
+            
+            # Check if auth is enabled but no keys configured
+            if self.enabled and not self.valid_keys and not self.admin_key:
+                validation_issues.append("Authentication enabled but no API keys configured")
+            
+            # Check for empty or whitespace-only keys
+            if self.valid_keys:
+                empty_keys = [key for key in self.valid_keys if not key or not key.strip()]
+                if empty_keys:
+                    validation_issues.append(f"Found {len(empty_keys)} empty API keys")
+                    
+            # Check admin key quality if provided
+            if self.admin_key and len(self.admin_key.strip()) < 8:
+                validation_issues.append("Admin key is too short (minimum 8 characters recommended)")
+            
+            # Check rate limit configuration
+            if not isinstance(self.rate_limit, int) or self.rate_limit <= 0:
+                validation_issues.append(f"Invalid rate limit configuration: {self.rate_limit}")
+            
+            # Check bypass endpoints
+            if not isinstance(self.bypass_endpoints, set) or not self.bypass_endpoints:
+                validation_issues.append("No bypass endpoints configured - health checks may fail")
+            
+            # Log validation results
+            if validation_issues:
+                logger.warning("Authentication configuration issues detected:")
+                for issue in validation_issues:
+                    logger.warning(f"  - {issue}")
+            else:
+                logger.info("✅ Authentication configuration validation passed")
+                
+            # Log successful configuration summary
+            logger.info(f"🔐 Authentication system ready:")
+            logger.info(f"   Enabled: {self.enabled}")
+            logger.info(f"   Valid API keys: {len(self.valid_keys)}")
+            logger.info(f"   Admin key configured: {bool(self.admin_key)}")
+            logger.info(f"   Rate limit: {self.rate_limit}/minute")
+            logger.info(f"   Bypass endpoints: {len(self.bypass_endpoints)}")
+            
+        except Exception as e:
+            logger.error(f"Authentication configuration validation failed: {e}")
     
     def is_endpoint_bypassed(self, path: str) -> bool:
         """Check if endpoint should bypass authentication"""
@@ -309,7 +358,16 @@ def create_auth_middleware():
             # Add API key to request state for use in endpoints
             if api_key:
                 request.state.api_key = api_key
-                request.state.is_admin = api_key == config.auth.ADMIN_KEY
+                # SECURITY FIX: Use auth_handler's safely loaded admin_key instead of direct config access
+                try:
+                    request.state.is_admin = (
+                        auth_handler.admin_key and 
+                        isinstance(auth_handler.admin_key, str) and 
+                        api_key == auth_handler.admin_key
+                    )
+                except (AttributeError, TypeError) as e:
+                    logger.warning(f"Admin key comparison failed safely: {e}")
+                    request.state.is_admin = False
             else:
                 request.state.api_key = None
                 request.state.is_admin = False
@@ -327,9 +385,22 @@ def create_auth_middleware():
         except HTTPException:
             # Re-raise authentication errors (these are expected)
             raise
+        except (AttributeError, TypeError, KeyError, ValueError) as e:
+            # Handle configuration and data-related errors specifically
+            logger.error(f"Authentication configuration error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "error": "auth_config_error",
+                    "message": "Authentication configuration issue. Please try again.",
+                    "code": "AUTH_998"
+                }
+            )
         except Exception as e:
             # Log unexpected middleware errors with full details
             logger.error(f"Authentication middleware critical error: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
             logger.exception("Full middleware error details:")
             
             # Return authentication error instead of 500 to maintain security

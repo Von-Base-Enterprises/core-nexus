@@ -78,6 +78,14 @@ from .observability import (
     record_metric
 )
 from .auth import create_auth_middleware, get_api_usage_stats
+from .jwt_auth import jwt_auth
+from .jwt_endpoints import jwt_router, get_current_user, require_admin_user, require_user_role, require_read_access
+from .security_headers import SecurityHeadersMiddleware, PRODUCTION_SECURITY_CONFIG, DEVELOPMENT_SECURITY_CONFIG
+from .audit_trail import (
+    get_audit_trail, init_audit_trail, shutdown_audit_trail,
+    AuditEventType, AuditSeverity,
+    audit_login_success, audit_login_failure, audit_data_access, audit_security_violation
+)
 from .jarvis_client import get_jarvis_client
 from .enhanced_query_processor import process_enhanced_query, get_enhanced_query_system_health
 from .self_evolution_engine import record_strategic_analysis_for_learning, run_evolution_cycle_if_needed, get_evolution_status
@@ -781,10 +789,46 @@ async def lifespan(app: FastAPI):
             # Re-raise the original error since we can't recover
             raise critical_error
 
+    # Initialize comprehensive audit trail system
+    try:
+        await init_audit_trail()
+        logger.info("🔒 Comprehensive audit trail system initialized")
+        
+        # Log system startup event
+        await get_audit_trail().log_event(
+            AuditEventType.ADMIN_SYSTEM_STARTUP,
+            "Core Nexus Memory Service started successfully",
+            severity=AuditSeverity.INFO,
+            metadata={
+                "providers_initialized": len(initialized_providers),
+                "environment": os.getenv("ENVIRONMENT", "development"),
+                "version": "1.0.0"
+            }
+        )
+    except Exception as e:
+        logger.warning(f"Failed to initialize audit trail: {e}")
+        # Continue without audit trail rather than failing startup
+
     yield
 
     # Shutdown
     logger.info("Shutting down Memory Service...")
+    
+    # Log system shutdown event and shutdown audit trail
+    try:
+        await get_audit_trail().log_event(
+            AuditEventType.ADMIN_SYSTEM_SHUTDOWN,
+            "Core Nexus Memory Service shutting down",
+            severity=AuditSeverity.INFO,
+            metadata={
+                "shutdown_reason": "normal",
+                "environment": os.getenv("ENVIRONMENT", "development")
+            }
+        )
+        await shutdown_audit_trail()
+        logger.info("🔒 Audit trail system shutdown completed")
+    except Exception as e:
+        logger.warning(f"Error during audit trail shutdown: {e}")
     
     # Shutdown monitoring system
     try:
@@ -846,13 +890,33 @@ def create_memory_app() -> FastAPI:
         
         ## Authentication
         
-        API requests require authentication via the `X-API-Key` header:
+        The API supports two authentication methods:
         
+        ### 1. API Key Authentication (Legacy)
+        Use the `X-API-Key` header:
         ```
         X-API-Key: your-api-key-here
         ```
         
-        Default development API keys:
+        ### 2. JWT Authentication (Recommended)
+        Use the `Authorization` header with Bearer token:
+        ```
+        Authorization: Bearer your-jwt-token-here
+        ```
+        
+        **Login to get JWT token:**
+        ```bash
+        curl -X POST /auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"username": "core_nexus_admin", "password": "any_password"}'
+        ```
+        
+        **Default JWT Users:**
+        - `core_nexus_admin` (Admin role) - Full access
+        - `core_nexus_user` (User role) - Read/write access  
+        - `core_nexus_readonly` (ReadOnly role) - Read-only access
+        
+        **Legacy API Keys:**
         - `dev-key-12345` - Development/testing
         - `core-nexus-agent-key` - Default agent key
         
@@ -876,6 +940,10 @@ def create_memory_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    
+    # Add comprehensive security headers middleware (highest priority)
+    security_config = PRODUCTION_SECURITY_CONFIG if os.getenv("ENVIRONMENT", "development").lower() == "production" else DEVELOPMENT_SECURITY_CONFIG
+    app.add_middleware(SecurityHeadersMiddleware, config=security_config)
     
     # Add authentication middleware (before tracing for security)
     app.middleware("http")(create_auth_middleware())
@@ -6562,6 +6630,44 @@ def create_memory_app() -> FastAPI:
     # ===== END WEBSOCKET ENDPOINTS =====
 
     # ===== END SELF-EVOLUTION API =====
+
+    # ===== JWT AUTHENTICATION ENDPOINTS =====
+    # Include JWT authentication router for enterprise-grade security
+    app.include_router(jwt_router)
+    
+    # Add JWT security statistics to existing metrics
+    @app.get("/metrics/jwt")
+    async def get_jwt_metrics():
+        """Get JWT authentication metrics and statistics"""
+        return jwt_auth.get_security_stats()
+    
+    # Add security headers statistics
+    @app.get("/metrics/security")
+    async def get_security_metrics(request: Request):
+        """Get comprehensive security metrics including headers and protection stats"""
+        security_middleware = None
+        
+        # Find the security headers middleware instance
+        for middleware in app.user_middleware:
+            if isinstance(middleware.cls, type) and issubclass(middleware.cls, SecurityHeadersMiddleware):
+                # Create a temporary instance to get stats (middleware instances aren't directly accessible)
+                security_middleware = SecurityHeadersMiddleware(app, security_config)
+                break
+        
+        if security_middleware:
+            return security_middleware.get_security_stats()
+        else:
+            return {"error": "Security headers middleware not found"}
+    
+    # Add audit trail statistics
+    @app.get("/metrics/audit")
+    async def get_audit_metrics():
+        """Get comprehensive audit trail metrics and statistics"""
+        try:
+            return get_audit_trail().get_audit_stats()
+        except Exception as e:
+            logger.error(f"Failed to get audit metrics: {e}")
+            return {"error": "Failed to retrieve audit trail statistics"}
 
     return app
 
