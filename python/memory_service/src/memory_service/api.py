@@ -307,20 +307,58 @@ async def lifespan(app: FastAPI):
             
         # Only try to initialize pgvector if configuration is available
         if pgvector_config:
+            pgvector_provider = None
+            
+            # Try instrumented provider first, fallback to regular provider
             try:
-                # Use instrumented provider if observability is enabled
                 if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-                    from .providers_instrumented import InstrumentedPgVectorProvider
-                    pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
-                    logger.info("Using instrumented PgVector provider")
+                    try:
+                        from .providers_instrumented import InstrumentedPgVectorProvider
+                        pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
+                        logger.info("✅ Using instrumented PgVector provider")
+                    except ImportError as e:
+                        logger.warning(f"InstrumentedPgVectorProvider not available: {e}")
+                        logger.info("Falling back to regular PgVectorProvider")
+                        pgvector_provider = PgVectorProvider(pgvector_config)
+                    except Exception as e:
+                        logger.error(f"InstrumentedPgVectorProvider failed to initialize: {e}")
+                        logger.info("Falling back to regular PgVectorProvider") 
+                        pgvector_provider = PgVectorProvider(pgvector_config)
                 else:
                     pgvector_provider = PgVectorProvider(pgvector_config)
+                    logger.info("✅ Using regular PgVector provider")
                 
-                providers.append(pgvector_provider)
-                pgvector_config.primary = True  # Make primary if successful
-                logger.info("✅ PgVector provider initialized as primary")
+                if pgvector_provider:
+                    # CRITICAL FIX: Wait for async pool initialization to complete
+                    logger.info("⏳ Waiting for PgVector async pool initialization...")
+                    try:
+                        # Ensure the async pool initialization completes
+                        await pgvector_provider._ensure_pool_ready()
+                        
+                        # Double-check that provider is actually enabled after async init
+                        if getattr(pgvector_provider, 'enabled', False) and pgvector_provider.connection_pool:
+                            providers.append(pgvector_provider)
+                            pgvector_config.primary = True  # Make primary if successful
+                            logger.info("✅ PgVector provider initialized as primary")
+                            logger.info(f"✅ PgVector provider enabled status: {pgvector_provider.enabled}")
+                            logger.info(f"✅ PgVector connection pool ready: {pgvector_provider.connection_pool is not None}")
+                        else:
+                            logger.error("❌ PgVector provider failed async initialization - disabled or no pool")
+                            logger.error(f"   Enabled: {getattr(pgvector_provider, 'enabled', 'unknown')}")
+                            logger.error(f"   Pool: {getattr(pgvector_provider, 'connection_pool', 'missing')}")
+                            raise RuntimeError("PgVector async initialization failed")
+                            
+                    except Exception as async_e:
+                        logger.error(f"❌ PgVector async pool initialization failed: {async_e}")
+                        logger.error(f"   This explains why pgvector provider is disabled")
+                        raise async_e
+                else:
+                    raise RuntimeError("Failed to create pgvector provider")
+                    
             except Exception as e:
                 logger.error(f"PgVector provider failed to initialize: {e}")
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Database config: host={pgvector_config.config.get('host')}, user={pgvector_config.config.get('user')}, db={pgvector_config.config.get('database')}")
                 logger.warning("System will continue with ChromaDB only - some operations may be limited")
                 pgvector_config.enabled = False
         else:
