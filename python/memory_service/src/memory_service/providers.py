@@ -456,7 +456,7 @@ class PgVectorProvider(VectorProvider):
                     # PERFORMANCE OPTIMIZATION: Enhanced session-level settings for vector workloads
                     await conn.execute("SET work_mem = '64MB'")  # Increased from 32MB for better vector operations
                     await conn.execute("SET enable_seqscan = off")  # Force index usage for vectors
-                    await conn.execute(f"SET hnsw.ef_search = {config.database.HNSW_EF_SEARCH}")  # Configurable ef_search (default 150)
+                    await conn.execute(f"SET hnsw.ef_search = {config.get('hnsw_ef_search', 150)}")  # Configurable ef_search (default 150)
                     await conn.execute("SET enable_indexonlyscan = on")  # Enable index-only scans
                     await conn.execute("SET random_page_cost = 1.1")  # SSD optimization
                     await conn.execute("SET effective_io_concurrency = 200")  # Optimize for SSD concurrent I/O
@@ -476,10 +476,10 @@ class PgVectorProvider(VectorProvider):
                 # Optimized for 500+ concurrent requests with sub-500ms query targets
                 self.connection_pool = await asyncpg.create_pool(
                     conn_str,
-                    min_size=config.database.POOL_MIN_SIZE,  # Configurable min connections
-                    max_size=config.database.POOL_MAX_SIZE,  # Configurable max connections
-                    command_timeout=config.database.COMMAND_TIMEOUT,  # Configurable command timeout
-                    max_inactive_connection_lifetime=config.database.MAX_INACTIVE_CONNECTION_LIFETIME,  # Configurable connection lifetime
+                    min_size=config.get('pool_min_size', 10),  # Configurable min connections
+                    max_size=config.get('pool_max_size', 50),  # Configurable max connections
+                    command_timeout=config.get('command_timeout', 60),  # Configurable command timeout
+                    max_inactive_connection_lifetime=config.get('max_inactive_connection_lifetime', 300),  # Configurable connection lifetime
                     init=init_connection,  # Register vector type and optimize each connection
                     server_settings={
                         'synchronous_commit': 'on',  # Ensure synchronous commits for consistency
