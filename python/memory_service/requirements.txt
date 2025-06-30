@@ -73,3 +73,24 @@ spacy>=3.5.0              # Entity extraction with NLP
 
 # Data processing
 pandas==2.0.3
+
+# JWT Authentication & Security (CRITICAL: Required for auth system)
+python-jose[cryptography]==3.3.0   # JWT token handling and validation
+passlib[bcrypt]==1.7.4              # Secure password hashing with bcrypt
+python-multipart==0.0.9             # FastAPI form data and file uploads
+bcrypt==4.1.2                       # Cryptographic hashing backend
+
+# Additional HTTP clients for integrations
+aiohttp==3.9.1                      # Async HTTP client for external APIs
+
+# Google AI/Gemini integration dependencies
+google-generativeai==0.8.5          # Gemini AI SDK
+
+# Resilience and retry logic
+tenacity==8.2.3                     # Retry patterns and resilience
+
+# Graph database support
+neo4j==5.15.0                       # Neo4j graph database driver
+
+# Machine learning models for embeddings
+sentence-transformers==2.2.2        # Pre-trained transformer models for embeddings
