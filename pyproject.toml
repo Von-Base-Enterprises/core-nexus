@@ -18,7 +18,7 @@ aiofiles = "23.2.1"
 # JWT Authentication & Security
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
-python-multipart = "^0.0.9"
+python-multipart = "^0.0.20"
 
 [tool.poetry.group.dev.dependencies]
 # Linting and formatting
