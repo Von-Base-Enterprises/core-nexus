@@ -1,0 +1,3 @@
+Deployment trigger to ensure authentication fixes are deployed
+Timestamp: 2025-06-30T14:16:47Z
+Force redeploy to fix authentication HTTP 500 issue
