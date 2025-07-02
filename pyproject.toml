@@ -41,7 +41,7 @@ pytest-timeout = "^2.4.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.0"
-mkdocs-material = "^9.5.0"
+mkdocs-material = "^9.6.15"
 mkdocstrings = "^0.29.1"
 mkdocstrings-python = "^1.16.12"
 
