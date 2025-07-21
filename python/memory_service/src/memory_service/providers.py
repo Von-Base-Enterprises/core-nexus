@@ -34,14 +34,15 @@ class PineconeProvider(VectorProvider):
         # TODO: Initialize Pinecone client with config
         self.enabled = False  # Disabled until Pinecone integration is complete
         
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """Store vector in Pinecone."""
         if not self.enabled:
             raise RuntimeError("Pinecone provider not enabled")
             
         # TODO: Implement Pinecone storage
         # This will wrap existing functionality from the current codebase
-        memory_id = uuid4()
+        if memory_id is None:
+            memory_id = uuid4()
         
         logger.info(f"Stored in Pinecone: {memory_id}")
         return memory_id
@@ -121,12 +122,14 @@ class ChromaProvider(VectorProvider):
             self.enabled = False
             raise
             
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """Store vector in ChromaDB."""
         if not self.collection:
             raise RuntimeError("ChromaDB not initialized")
             
-        memory_id = uuid4()
+        # Use provided memory_id or generate new one
+        if memory_id is None:
+            memory_id = uuid4()
         
         # ChromaDB is synchronous, so we run in executor
         import asyncio
@@ -333,12 +336,14 @@ class PgVectorProvider(VectorProvider):
             # No event loop, create one
             asyncio.run(init_pool())
             
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """Store vector in PostgreSQL."""
         if not self.connection_pool:
             raise RuntimeError("PgVector not initialized")
             
-        memory_id = uuid4()
+        # Use provided memory_id or generate new one
+        if memory_id is None:
+            memory_id = uuid4()
         
         async with self.connection_pool.acquire() as conn:
             # Convert embedding to PostgreSQL vector format
@@ -719,15 +724,17 @@ class GraphProvider(VectorProvider):
         else:
             return 'relates_to'  # Default relationship
     
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """
         Store memory and extract knowledge graph components.
         
         This method:
-        1. Stores the memory normally (delegated to pgvector)
+        1. Uses the provided memory_id from primary provider
         2. Extracts entities from the content
         3. Creates graph nodes for entities
         4. Infers and creates relationships
+        
+        Note: GraphProvider is a secondary provider and requires memory_id from primary storage.
         """
         # Ensure pool is initialized
         await self._ensure_pool()
@@ -735,7 +742,9 @@ class GraphProvider(VectorProvider):
         if not self.connection_pool:
             raise RuntimeError("Graph provider not initialized")
         
-        memory_id = uuid4()
+        # GraphProvider MUST use the memory_id from primary provider
+        if memory_id is None:
+            raise ValueError("GraphProvider requires memory_id from primary provider")
         
         async with self.connection_pool.acquire() as conn:
             try:

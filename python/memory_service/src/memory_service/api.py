@@ -1778,18 +1778,102 @@ def create_memory_app() -> FastAPI:
             import time
             start_time = time.time()
             
-            limit = query.get('limit', 10)
-            memories = await graph_provider.query([], limit, filters)
+            # Get connection pool from graph provider
+            await graph_provider._ensure_pool()
+            pool = graph_provider.connection_pool
+            
+            if not pool:
+                raise HTTPException(status_code=503, detail="Graph database not available")
+            
+            nodes = []
+            relationships = []
+            
+            async with pool.acquire() as conn:
+                # Query nodes based on filters
+                node_query = "SELECT * FROM graph_nodes WHERE 1=1"
+                params = []
+                param_count = 0
+                
+                if filters.get('entity_name'):
+                    param_count += 1
+                    node_query += f" AND entity_name = ${param_count}"
+                    params.append(filters['entity_name'])
+                
+                if filters.get('entity_type'):
+                    param_count += 1
+                    # Case-insensitive comparison for entity types
+                    node_query += f" AND LOWER(entity_type) = LOWER(${param_count})"
+                    params.append(filters['entity_type'])
+                
+                # Limit results
+                limit = query.get('limit', 10)
+                param_count += 1
+                node_query += f" ORDER BY importance_score DESC LIMIT ${param_count}"
+                params.append(limit)
+                
+                # Execute node query
+                node_rows = await conn.fetch(node_query, *params)
+                
+                # Get node IDs for relationship query
+                node_ids = [row['id'] for row in node_rows]
+                
+                # Convert nodes to response format
+                for row in node_rows:
+                    nodes.append({
+                        "id": str(row['id']),
+                        "entity_name": row['entity_name'],
+                        "entity_type": row['entity_type'],
+                        "importance_score": float(row['importance_score']),
+                        "mention_count": row['mention_count'],
+                        "created_at": row['created_at'].isoformat() if row['created_at'] else None
+                    })
+                
+                # Query relationships if we have nodes
+                if node_ids:
+                    rel_query = """
+                        SELECT r.*, 
+                               fn.entity_name as from_name, fn.entity_type as from_type,
+                               tn.entity_name as to_name, tn.entity_type as to_type
+                        FROM graph_relationships r
+                        JOIN graph_nodes fn ON r.from_node_id = fn.id
+                        JOIN graph_nodes tn ON r.to_node_id = tn.id
+                        WHERE r.from_node_id = ANY($1) OR r.to_node_id = ANY($1)
+                    """
+                    
+                    if filters.get('relationship_type'):
+                        rel_query += " AND LOWER(r.relationship_type) = LOWER($2)"
+                        rel_rows = await conn.fetch(rel_query, node_ids, filters['relationship_type'])
+                    else:
+                        rel_rows = await conn.fetch(rel_query, node_ids)
+                    
+                    # Convert relationships to response format
+                    for row in rel_rows:
+                        relationships.append({
+                            "id": str(row['id']),
+                            "from_node": {
+                                "id": str(row['from_node_id']),
+                                "name": row['from_name'],
+                                "type": row['from_type']
+                            },
+                            "to_node": {
+                                "id": str(row['to_node_id']),
+                                "name": row['to_name'],
+                                "type": row['to_type']
+                            },
+                            "type": row['relationship_type'],
+                            "strength": float(row['strength']),
+                            "confidence": float(row['confidence']),
+                            "occurrence_count": row['occurrence_count']
+                        })
             
             query_time = (time.time() - start_time) * 1000
             
-            # TODO: Convert memories to graph nodes and relationships
             return {
-                "nodes": [],
-                "relationships": [],
+                "nodes": nodes,
+                "relationships": relationships,
                 "query_time_ms": query_time,
-                "total_nodes": 0,
-                "total_relationships": 0
+                "total_nodes": len(nodes),
+                "total_relationships": len(relationships)
             }
             
         except Exception as e:

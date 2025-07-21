@@ -33,7 +33,7 @@ class VectorProvider(ABC):
         self.enabled = config.enabled
         
     @abstractmethod
-    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+    async def store(self, content: str, embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """Store a memory with embedding."""
         pass
         
@@ -355,11 +355,11 @@ class UnifiedVectorStore:
         return max(scoring.min_score, min(scoring.max_score, total_score))
     
     async def _store_with_retry(self, provider: VectorProvider, content: str, 
-                               embedding: List[float], metadata: Dict[str, Any]) -> UUID:
+                               embedding: List[float], metadata: Dict[str, Any], memory_id: Optional[UUID] = None) -> UUID:
         """Store with retry logic."""
         for attempt in range(provider.config.retry_count):
             try:
-                return await provider.store(content, embedding, metadata)
+                return await provider.store(content, embedding, metadata, memory_id)
             except Exception as e:
                 if attempt == provider.config.retry_count - 1:
                     raise
@@ -374,7 +374,7 @@ class UnifiedVectorStore:
         
         for provider in secondary_providers:
             try:
-                await self._store_with_retry(provider, content, embedding, metadata)
+                await self._store_with_retry(provider, content, embedding, metadata, memory_id)
                 logger.debug(f"Replicated memory {memory_id} to {provider.name}")
             except Exception as e:
                 logger.warning(f"Failed to replicate to {provider.name}: {e}")
