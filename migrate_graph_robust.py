@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 """
-Migration script to fix memory-entity mappings for existing memories.
-
-This script:
-1. Scans all memories in the vector_memories table
-2. Extracts entities from each memory's content
-3. Creates proper memory-entity mappings
-4. Ensures the 155 existing entities are properly linked to their source memories
+Robust GraphRAG migration script that handles various metadata formats.
 """
 
 import asyncio
 import asyncpg
 import os
 import logging
+import json
 from datetime import datetime
 from uuid import UUID
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class GraphMigration:
+class RobustGraphMigration:
     def __init__(self, connection_string: str):
         self.connection_string = connection_string
         self.pool = None
@@ -33,7 +28,8 @@ class GraphMigration:
             'memories_processed': 0,
             'entities_found': 0,
             'mappings_created': 0,
-            'errors': 0
+            'errors': 0,
+            'skipped': 0
         }
     
     async def initialize(self):
@@ -93,39 +89,72 @@ class GraphMigration:
         else:
             return 'other'
     
-    async def migrate_memory(self, memory_id: UUID, content: str, metadata: Dict[str, Any]):
+    def parse_metadata(self, metadata: Any) -> Dict[str, Any]:
+        """Safely parse metadata from various formats."""
+        if metadata is None:
+            return {}
+        
+        if isinstance(metadata, dict):
+            return metadata
+        
+        if isinstance(metadata, str):
+            try:
+                # Try to parse as JSON
+                return json.loads(metadata)
+            except:
+                # If not JSON, return empty dict
+                logger.debug(f"Could not parse metadata as JSON: {metadata[:50]}...")
+                return {}
+        
+        # For any other type, return empty dict
+        return {}
+    
+    async def migrate_memory(self, memory_id: UUID, content: str, metadata: Any, importance_score: Optional[float] = None):
         """Process a single memory and create entity mappings."""
         try:
+            # Parse metadata safely
+            parsed_metadata = self.parse_metadata(metadata)
+            
             # Extract entities from content
             entities = await self.extract_entities_simple(content)
             
             if not entities:
+                self.stats['skipped'] += 1
                 return
+            
+            # Use importance score from memory or metadata
+            if importance_score is None:
+                importance_score = parsed_metadata.get('importance_score', 0.5)
             
             async with self.pool.acquire() as conn:
                 for entity in entities:
-                    # Check if entity already exists
-                    existing = await conn.fetchrow("""
-                        SELECT id FROM graph_nodes 
-                        WHERE entity_name = $1 AND entity_type = $2
-                    """, entity['name'], entity['type'])
-                    
-                    if existing:
-                        entity_id = existing['id']
-                    else:
-                        # Create new entity
-                        entity_id = await conn.fetchval("""
-                            INSERT INTO graph_nodes 
-                            (entity_name, entity_type, importance_score, mention_count)
-                            VALUES ($1, $2, $3, 1)
-                            RETURNING id
-                        """, entity['name'], entity['type'], 
-                            metadata.get('importance_score', 0.5))
-                        
-                        self.stats['entities_found'] += 1
-                    
-                    # Create memory-entity mapping
                     try:
+                        # Check if entity already exists (by name only due to unique constraint)
+                        existing = await conn.fetchrow("""
+                            SELECT id, mention_count FROM graph_nodes 
+                            WHERE entity_name = $1
+                        """, entity['name'])
+                        
+                        if existing:
+                            entity_id = existing['id']
+                            # Update mention count
+                            await conn.execute("""
+                                UPDATE graph_nodes 
+                                SET mention_count = mention_count + 1
+                                WHERE id = $1
+                            """, entity_id)
+                        else:
+                            # Create new entity
+                            entity_id = await conn.fetchval("""
+                                INSERT INTO graph_nodes 
+                                (entity_name, entity_type, importance_score, mention_count)
+                                VALUES ($1, $2, $3, 1)
+                                RETURNING id
+                            """, entity['name'], entity['type'], importance_score)
+                            
+                            self.stats['entities_found'] += 1
+                        
+                        # Create memory-entity mapping
                         await conn.execute("""
                             INSERT INTO memory_entity_map (memory_id, entity_id)
                             VALUES ($1, $2)
@@ -133,13 +162,14 @@ class GraphMigration:
                         """, memory_id, entity_id)
                         
                         self.stats['mappings_created'] += 1
+                        
                     except Exception as e:
-                        logger.debug(f"Mapping already exists for {memory_id} -> {entity_id}")
+                        logger.debug(f"Error processing entity {entity['name']}: {e}")
             
             self.stats['memories_processed'] += 1
             
-            if self.stats['memories_processed'] % 10 == 0:
-                logger.info(f"Progress: {self.stats['memories_processed']} memories processed")
+            if self.stats['memories_processed'] % 100 == 0:
+                logger.info(f"Progress: {self.stats}")
                 
         except Exception as e:
             logger.error(f"Error processing memory {memory_id}: {e}")
@@ -147,7 +177,7 @@ class GraphMigration:
     
     async def run_migration(self, batch_size: int = 100):
         """Run the migration in batches."""
-        logger.info("Starting GraphRAG migration...")
+        logger.info("Starting robust GraphRAG migration...")
         
         async with self.pool.acquire() as conn:
             # Get total count
@@ -167,12 +197,11 @@ class GraphMigration:
                 
                 # Process each memory
                 for memory in memories:
-                    # Handle metadata properly - it's already a dict from asyncpg
-                    metadata = memory['metadata'] if memory['metadata'] else {}
                     await self.migrate_memory(
                         memory['id'],
                         memory['content'],
-                        metadata
+                        memory['metadata'],
+                        memory['importance_score']
                     )
                 
                 offset += batch_size
@@ -180,11 +209,18 @@ class GraphMigration:
         
         # Print final statistics
         logger.info("Migration completed!")
-        logger.info(f"Statistics:")
+        logger.info(f"Final Statistics:")
         logger.info(f"  - Memories processed: {self.stats['memories_processed']}")
+        logger.info(f"  - Memories skipped (no entities): {self.stats['skipped']}")
         logger.info(f"  - New entities found: {self.stats['entities_found']}")
         logger.info(f"  - Mappings created: {self.stats['mappings_created']}")
         logger.info(f"  - Errors: {self.stats['errors']}")
+        
+        # Calculate success rate
+        total_attempted = self.stats['memories_processed'] + self.stats['errors']
+        if total_attempted > 0:
+            success_rate = (self.stats['memories_processed'] / total_attempted) * 100
+            logger.info(f"  - Success rate: {success_rate:.1f}%")
     
     async def verify_migration(self):
         """Verify the migration results."""
@@ -193,25 +229,38 @@ class GraphMigration:
             entity_count = await conn.fetchval("SELECT COUNT(*) FROM graph_nodes")
             mapping_count = await conn.fetchval("SELECT COUNT(*) FROM memory_entity_map")
             
+            # Get top entities by mention count
+            top_entities = await conn.fetch("""
+                SELECT entity_name, entity_type, mention_count
+                FROM graph_nodes
+                ORDER BY mention_count DESC
+                LIMIT 10
+            """)
+            
             # Get some sample mappings
             samples = await conn.fetch("""
                 SELECT 
-                    vm.content,
                     gn.entity_name,
-                    gn.entity_type
-                FROM memory_entity_map mem
-                JOIN vector_memories vm ON mem.memory_id = vm.id
-                JOIN graph_nodes gn ON mem.entity_id = gn.id
-                LIMIT 5
+                    gn.entity_type,
+                    COUNT(mem.memory_id) as connected_memories
+                FROM graph_nodes gn
+                LEFT JOIN memory_entity_map mem ON gn.id = mem.entity_id
+                GROUP BY gn.id, gn.entity_name, gn.entity_type
+                ORDER BY connected_memories DESC
+                LIMIT 10
             """)
             
             logger.info("\nVerification Results:")
             logger.info(f"Total entities: {entity_count}")
             logger.info(f"Total mappings: {mapping_count}")
-            logger.info("\nSample mappings:")
+            
+            logger.info("\nTop entities by mentions:")
+            for entity in top_entities:
+                logger.info(f"  - {entity['entity_name']} ({entity['entity_type']}): {entity['mention_count']} mentions")
+            
+            logger.info("\nEntities with most connected memories:")
             for sample in samples:
-                logger.info(f"  - Entity: {sample['entity_name']} ({sample['entity_type']})")
-                logger.info(f"    Memory: {sample['content'][:100]}...")
+                logger.info(f"  - {sample['entity_name']} ({sample['entity_type']}): {sample['connected_memories']} memories")
     
     async def close(self):
         """Close database connections."""
@@ -222,15 +271,11 @@ class GraphMigration:
 async def main():
     """Main migration function."""
     # Get database connection from environment
-    db_host = os.getenv("PGVECTOR_HOST", os.getenv("POSTGRES_HOST", "localhost"))
-    db_port = os.getenv("PGVECTOR_PORT", os.getenv("POSTGRES_PORT", "5432"))
-    db_name = os.getenv("PGVECTOR_DATABASE", os.getenv("POSTGRES_DB", "nexus_memory_db"))
-    db_user = os.getenv("PGVECTOR_USER", os.getenv("POSTGRES_USER", "nexus_memory_db_user"))
-    db_password = os.getenv("PGVECTOR_PASSWORD", os.getenv("POSTGRES_PASSWORD", ""))
-    
-    if not db_password:
-        logger.error("Database password not set in environment variables")
-        return
+    db_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a.oregon-postgres.render.com")
+    db_port = os.getenv("PGVECTOR_PORT", "5432")
+    db_name = os.getenv("PGVECTOR_DATABASE", "nexus_memory_db")
+    db_user = os.getenv("PGVECTOR_USER", "nexus_memory_db_user")
+    db_password = os.getenv("PGVECTOR_PASSWORD", "2DeDeiIowX5mxkYhQzatzQXGY9Ajl34V")
     
     connection_string = (
         f"postgresql://{db_user}:{db_password}@"
@@ -238,7 +283,7 @@ async def main():
     )
     
     # Run migration
-    migration = GraphMigration(connection_string)
+    migration = RobustGraphMigration(connection_string)
     
     try:
         await migration.initialize()

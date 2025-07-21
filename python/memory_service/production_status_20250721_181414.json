@@ -1,0 +1,112 @@
+{
+  "timestamp": "2025-07-21T18:14:14.795283",
+  "service_url": "https://core-nexus-memory-service.onrender.com",
+  "total_duration_ms": 1381.3996315002441,
+  "overall_success": false,
+  "successful_tests": 1,
+  "total_tests": 4,
+  "success_rate": 0.25,
+  "test_results": {
+    "health_check": {
+      "success": true,
+      "status_code": 200,
+      "data": {
+        "status": "healthy",
+        "providers": {
+          "pgvector": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 1702,
+                "pgvector_enabled": true,
+                "table_name": "vector_memories",
+                "pool_size": 5
+              }
+            },
+            "primary": true
+          },
+          "chromadb": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "total_vectors": 0,
+                "collection_name": "core_nexus_memories"
+              }
+            },
+            "primary": false
+          },
+          "graph": {
+            "status": "healthy",
+            "details": {
+              "status": "healthy",
+              "details": {
+                "connection": "active",
+                "graph_nodes": 161,
+                "graph_relationships": 40,
+                "entity_extractor": "regex"
+              }
+            },
+            "primary": false
+          }
+        },
+        "total_memories": 4,
+        "avg_query_time_ms": 324.2729902267456,
+        "uptime_seconds": 111.7960877418518
+      },
+      "duration_ms": 402.5275707244873,
+      "error": null,
+      "health_details": {
+        "status": "healthy",
+        "total_memories": 4,
+        "providers": [
+          "pgvector",
+          "chromadb",
+          "graph"
+        ],
+        "uptime_seconds": 111.7960877418518
+      }
+    },
+    "api_endpoints": {
+      "success": false,
+      "endpoint_results": {
+        "/providers": {
+          "description": "Provider Information",
+          "success": false,
+          "status_code": 401,
+          "duration_ms": 210.8173370361328
+        },
+        "/memories/stats": {
+          "description": "Memory Statistics",
+          "success": false,
+          "status_code": 401,
+          "duration_ms": 189.44644927978516
+        },
+        "/docs": {
+          "description": "API Documentation",
+          "success": false,
+          "status_code": null,
+          "duration_ms": 185.64367294311523
+        }
+      },
+      "successful_tests": 0,
+      "total_tests": 3,
+      "success_rate": 0.0
+    },
+    "memory_storage": {
+      "success": false,
+      "status_code": 401,
+      "data": {},
+      "duration_ms": 185.36019325256348,
+      "error": "HTTP 401: Unauthorized"
+    },
+    "memory_query": {
+      "success": false,
+      "status_code": 401,
+      "data": {},
+      "duration_ms": 206.36606216430664,
+      "error": "HTTP 401: Unauthorized"
+    }
+  }
+}

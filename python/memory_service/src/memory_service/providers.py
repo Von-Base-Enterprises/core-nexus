@@ -927,12 +927,14 @@ class GraphProvider(VectorProvider):
                     """, entity_name, limit)
                     
                     for row in rows:
+                        # Handle metadata properly - it's already a dict from asyncpg
+                        metadata = row['metadata'] if row['metadata'] else {}
                         memories.append(MemoryResponse(
                             id=row['id'],
                             content=row['content'],
-                            metadata=dict(row['metadata']) if row['metadata'] else {},
+                            metadata=metadata,
                             importance_score=float(row['importance_score']),
-                            similarity_score=float(row['relationship_strength']),
+                            similarity_score=float(row['relationship_strength']) if row['relationship_strength'] else 0.0,
                             created_at=row['created_at']
                         ))
                 
