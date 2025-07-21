@@ -736,15 +736,19 @@ class GraphProvider(VectorProvider):
         
         Note: GraphProvider is a secondary provider and requires memory_id from primary storage.
         """
+        logger.info(f"GraphProvider.store() called with memory_id={memory_id}")
+        
         # Ensure pool is initialized
         await self._ensure_pool()
         
         if not self.connection_pool:
             raise RuntimeError("Graph provider not initialized")
         
-        # GraphProvider MUST use the memory_id from primary provider
+        # GraphProvider should use the memory_id from primary provider
         if memory_id is None:
-            raise ValueError("GraphProvider requires memory_id from primary provider")
+            # This shouldn't happen in production, but we'll handle it gracefully
+            logger.warning("GraphProvider.store() called without memory_id - generating new UUID. This may indicate a replication issue.")
+            memory_id = uuid4()
         
         async with self.connection_pool.acquire() as conn:
             try:

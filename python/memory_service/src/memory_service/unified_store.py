@@ -198,10 +198,20 @@ class UnifiedVectorStore:
                 metadata
             )
             
+            logger.info(f"Primary storage complete for memory {memory_id}")
+            
             # Async replication to secondary providers for resilience
-            asyncio.create_task(self._replicate_to_secondaries(
-                memory_id, request.content, embedding, metadata
-            ))
+            # Get enabled secondary providers
+            secondary_providers = [p.name for p in self.providers.values() 
+                                 if p != self.primary_provider and p.enabled]
+            
+            if secondary_providers:
+                logger.info(f"Starting replication to secondary providers: {secondary_providers}")
+                asyncio.create_task(self._replicate_to_secondaries(
+                    memory_id, request.content, embedding, metadata
+                ))
+            else:
+                logger.info("No secondary providers enabled for replication")
             
             # Update stats
             self.stats['total_stores'] += 1
@@ -375,9 +385,12 @@ class UnifiedVectorStore:
         for provider in secondary_providers:
             try:
                 await self._store_with_retry(provider, content, embedding, metadata, memory_id)
-                logger.debug(f"Replicated memory {memory_id} to {provider.name}")
+                logger.info(f"Successfully replicated memory {memory_id} to {provider.name}")
             except Exception as e:
-                logger.warning(f"Failed to replicate to {provider.name}: {e}")
+                # Log with full stack trace for debugging
+                logger.error(f"Failed to replicate memory {memory_id} to {provider.name}: {e}", exc_info=True)
+                # Continue with other providers even if one fails
+                continue
     
     async def _generate_embedding(self, text: str) -> List[float]:
         """Generate embedding using configured model."""
