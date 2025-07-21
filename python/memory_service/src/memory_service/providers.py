@@ -927,8 +927,20 @@ class GraphProvider(VectorProvider):
                     """, entity_name, limit)
                     
                     for row in rows:
-                        # Handle metadata properly - it's already a dict from asyncpg
-                        metadata = row['metadata'] if row['metadata'] else {}
+                        # Handle metadata - could be dict or JSON string
+                        metadata = row['metadata']
+                        if metadata:
+                            if isinstance(metadata, str):
+                                try:
+                                    import json
+                                    metadata = json.loads(metadata)
+                                except:
+                                    metadata = {}
+                            elif not isinstance(metadata, dict):
+                                metadata = {}
+                        else:
+                            metadata = {}
+                            
                         memories.append(MemoryResponse(
                             id=row['id'],
                             content=row['content'],
