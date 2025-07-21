@@ -13,7 +13,7 @@ from typing import Dict, Optional, Tuple
 import os
 
 from fastapi import HTTPException, Request, Response
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
