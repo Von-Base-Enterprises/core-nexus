@@ -766,15 +766,19 @@ class GraphProvider(VectorProvider):
                     if embedding_model:
                         entity_embedding = embedding_model.encode(entity['name']).tolist()
                     
-                    # Check if entity already exists
+                    # Check if entity already exists (by name only due to unique constraint)
                     existing = await conn.fetchrow("""
-                        SELECT id, mention_count FROM graph_nodes 
-                        WHERE entity_name = $1 AND entity_type = $2
-                    """, entity['name'], entity['type'])
+                        SELECT id, mention_count, entity_type FROM graph_nodes 
+                        WHERE entity_name = $1
+                    """, entity['name'])
                     
                     if existing:
                         # Update existing entity
                         entity_id = existing['id']
+                        # Log if entity type changed
+                        if existing['entity_type'] != entity['type']:
+                            logger.info(f"Entity type mismatch for '{entity['name']}': stored as '{existing['entity_type']}', detected as '{entity['type']}'")
+                        
                         await conn.execute("""
                             UPDATE graph_nodes 
                             SET mention_count = mention_count + 1,
@@ -787,12 +791,20 @@ class GraphProvider(VectorProvider):
                         entity_id = uuid4()
                         embedding_str = '[' + ','.join(map(str, entity_embedding)) + ']' if entity_embedding else None
                         
-                        await conn.execute("""
-                            INSERT INTO graph_nodes 
-                            (id, entity_type, entity_name, embedding, importance_score)
-                            VALUES ($1, $2, $3, $4::vector, $5)
-                        """, entity_id, entity['type'], entity['name'], 
-                            embedding_str, metadata.get('importance_score', 0.5))
+                        try:
+                            await conn.execute("""
+                                INSERT INTO graph_nodes 
+                                (id, entity_type, entity_name, embedding, importance_score)
+                                VALUES ($1, $2, $3, $4::vector, $5)
+                            """, entity_id, entity['type'], entity['name'], 
+                                embedding_str, metadata.get('importance_score', 0.5))
+                        except asyncpg.exceptions.UniqueViolationError:
+                            # Handle race condition where entity was created by another process
+                            logger.warning(f"Entity '{entity['name']}' was created by another process, fetching existing")
+                            existing = await conn.fetchrow("""
+                                SELECT id FROM graph_nodes WHERE entity_name = $1
+                            """, entity['name'])
+                            entity_id = existing['id'] if existing else entity_id
                     
                     entity_ids[entity['name']] = entity_id
                     
@@ -826,8 +838,9 @@ class GraphProvider(VectorProvider):
                 logger.info(f"Stored memory {memory_id} with {len(entities)} entities and {len(relationships)} relationships")
                 
             except Exception as e:
-                logger.error(f"Failed to process graph data: {e}")
-                # Don't fail the whole operation if graph processing fails
+                logger.error(f"Failed to process graph data for memory {memory_id}: {e}", exc_info=True)
+                # Re-raise the exception so replication knows it failed
+                raise
         
         return memory_id
     
