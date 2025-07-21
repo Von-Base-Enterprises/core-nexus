@@ -178,6 +178,34 @@ Response:
 }
 ```
 
+## Authentication
+
+All API endpoints require authentication using API keys. Core Nexus implements a comprehensive authentication and rate limiting system to ensure secure access and fair usage.
+
+### Quick Start with Authentication
+
+```bash
+# Using X-API-Key header (recommended)
+curl -H "X-API-Key: your-api-key" \
+     https://your-instance.core-nexus.ai/memories
+
+# Using Bearer token
+curl -H "Authorization: Bearer your-api-key" \
+     https://your-instance.core-nexus.ai/memories
+```
+
+### Rate Limiting
+
+All authenticated requests are subject to rate limiting (default: 60 requests/minute per API key). Rate limit information is included in response headers:
+
+```http
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 45
+X-RateLimit-Reset: 1753113600
+```
+
+For comprehensive authentication documentation, see [API Authentication Guide](docs/API_AUTHENTICATION.md).
+
 ## Getting Started
 
 ### Quick Installation
@@ -305,7 +333,7 @@ async function handleUserQuery(query) {
 
 ### Security Features
 
-- **Authentication**: JWT-based with refresh tokens
+- **Authentication**: API key-based with rate limiting and optional JWT support
 - **Authorization**: Role-based access control (RBAC)
 - **Encryption**: TLS 1.3 in transit, AES-256 at rest
 - **Audit Logging**: Complete activity tracking

@@ -36,6 +36,7 @@ from .memory_export import (
     MemoryExportService, ExportRequest, ExportFormat,
     ExportFilters
 )
+from .auth import create_auth_middleware
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
 #     metrics_collector, get_metrics, record_request, time_request,
@@ -277,6 +278,13 @@ def create_memory_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan
     )
+    
+    # Authentication middleware - must be added before other middleware
+    # to ensure all requests are authenticated
+    auth_middleware = create_auth_middleware(
+        bypass_endpoints={"/health", "/metrics", "/metrics/fastapi", "/docs", "/openapi.json", "/redoc"}
+    )
+    app.middleware("http")(auth_middleware)
     
     # CORS middleware
     app.add_middleware(
