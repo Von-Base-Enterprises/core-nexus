@@ -545,23 +545,41 @@ def create_memory_app() -> FastAPI:
         """
         try:
             stats = store.stats
-            health_data = await store.health_check()
             
-            # Calculate provider-specific stats
+            # Get detailed stats from each provider
             memories_by_provider = {}
-            for provider_name, provider_health in health_data['providers'].items():
-                if 'details' in provider_health and 'total_vectors' in provider_health['details']:
-                    memories_by_provider[provider_name] = provider_health['details']['total_vectors']
+            total_memories = 0
+            total_importance = 0
+            count_with_importance = 0
+            
+            for provider_name, provider in store.providers.items():
+                if provider.enabled:
+                    try:
+                        provider_stats = await provider.get_stats()
+                        if 'total_memories' in provider_stats:
+                            provider_count = provider_stats['total_memories']
+                            memories_by_provider[provider_name] = provider_count
+                            total_memories += provider_count
+                            
+                            # Aggregate importance scores if available
+                            if 'avg_importance_score' in provider_stats and provider_stats['avg_importance_score'] > 0:
+                                total_importance += provider_stats['avg_importance_score'] * provider_count
+                                count_with_importance += provider_count
+                        else:
+                            memories_by_provider[provider_name] = 0
+                    except Exception as e:
+                        logger.error(f"Failed to get stats from provider {provider_name}: {e}")
+                        memories_by_provider[provider_name] = 0
                 else:
                     memories_by_provider[provider_name] = 0
             
-            # Get actual total from provider stats
-            actual_total = sum(memories_by_provider.values())
+            # Calculate average importance score
+            avg_importance = total_importance / count_with_importance if count_with_importance > 0 else 0.5
             
             return MemoryStats(
-                total_memories=actual_total if actual_total > 0 else stats['total_stores'],
+                total_memories=total_memories,
                 memories_by_provider=memories_by_provider,
-                avg_importance_score=0.5,  # TODO: Calculate from actual data
+                avg_importance_score=avg_importance,
                 queries_last_hour=stats['total_queries'],  # TODO: Implement time-based tracking
                 avg_query_time_ms=stats['avg_query_time']
             )

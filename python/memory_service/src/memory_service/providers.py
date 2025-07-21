@@ -376,37 +376,74 @@ class PgVectorProvider(VectorProvider):
             # Build query with filters
             where_clauses = []
             params = []
-            param_count = 2  # $1 is embedding, $2 is limit
             
-            # Add metadata filters
-            if filters:
-                for key, value in filters.items():
-                    if key not in ['limit', 'offset']:
-                        where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
-                        params.append(str(value))
-                        param_count += 1
-                        
-            where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+            # Check if this is an empty query (zero vector)
+            is_empty_query = all(v == 0.0 for v in query_embedding)
             
-            # Convert embedding to PostgreSQL vector format
-            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
-            
-            # Query with cosine similarity
-            query = f"""
-                SELECT 
-                    id,
-                    content,
-                    metadata,
-                    importance_score,
-                    1 - (embedding <=> $1::vector) as similarity_score,
-                    created_at
-                FROM {self.table_name}
-                {where_clause}
-                ORDER BY embedding <=> $1::vector
-                LIMIT $2
-            """
-            
-            rows = await conn.fetch(query, embedding_str, limit, *params)
+            if is_empty_query:
+                # For empty queries, return all memories ordered by created_at
+                logger.info("Empty query detected - returning all memories ordered by recency")
+                param_count = 1  # $1 is limit
+                
+                # Add metadata filters
+                if filters:
+                    for key, value in filters.items():
+                        if key not in ['limit', 'offset']:
+                            where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                            params.append(str(value))
+                            param_count += 1
+                            
+                where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                
+                # Query without vector similarity for empty queries
+                query = f"""
+                    SELECT 
+                        id,
+                        content,
+                        metadata,
+                        importance_score,
+                        1.0 as similarity_score,
+                        created_at
+                    FROM {self.table_name}
+                    {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                """
+                
+                rows = await conn.fetch(query, limit, *params)
+            else:
+                # Regular vector similarity search
+                param_count = 2  # $1 is embedding, $2 is limit
+                
+                # Add metadata filters
+                if filters:
+                    for key, value in filters.items():
+                        if key not in ['limit', 'offset']:
+                            where_clauses.append(f"metadata->>'{key}' = ${param_count + 1}")
+                            params.append(str(value))
+                            param_count += 1
+                            
+                where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+                
+                # Convert embedding to PostgreSQL vector format
+                embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+                
+                # Query with cosine similarity
+                query = f"""
+                    SELECT 
+                        id,
+                        content,
+                        metadata,
+                        importance_score,
+                        1 - (embedding <=> $1::vector) as similarity_score,
+                        created_at
+                    FROM {self.table_name}
+                    {where_clause}
+                    ORDER BY embedding <=> $1::vector
+                    LIMIT $2
+                """
+                
+                rows = await conn.fetch(query, embedding_str, limit, *params)
             
             # Convert to MemoryResponse objects
             memories = []
