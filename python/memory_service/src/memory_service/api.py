@@ -149,14 +149,25 @@ async def lifespan(app: FastAPI):
         
         # Reuse pgvector's connection pool for security and efficiency
         pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
-        if pgvector_provider and hasattr(pgvector_provider, 'connection_pool'):
+        if pgvector_provider:
             try:
+                # Get connection pool and string from pgvector provider
+                pgvector_pool = getattr(pgvector_provider, 'connection_pool', None)
+                connection_string = getattr(pgvector_provider, 'connection_string', None)
+                
+                # If no connection string from provider, get from environment
+                if not connection_string:
+                    connection_string = os.getenv('POSTGRES_CONNECTION_STRING') or os.getenv('DATABASE_URL')
+                
+                logger.info(f"Graph provider init - pool exists: {pgvector_pool is not None}, conn_string exists: {connection_string is not None}")
+                
                 graph_config = ProviderConfig(
                     name="graph",
                     enabled=True,
                     primary=False,
                     config={
-                        "connection_pool": pgvector_provider.connection_pool,  # Share pool
+                        "connection_pool": pgvector_pool,  # Share pool if available
+                        "connection_string": connection_string,  # Fallback option
                         "table_prefix": "graph"
                     }
                 )

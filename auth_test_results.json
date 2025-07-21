@@ -1,0 +1,88 @@
+{
+  "timestamp": "2025-07-21T12:41:28.670799",
+  "url": "https://core-nexus-memory-service.onrender.com",
+  "summary": {
+    "total": 11,
+    "passed": 9,
+    "failed": 2
+  },
+  "results": [
+    {
+      "name": "Missing API key returns 401",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:26.217414"
+    },
+    {
+      "name": "Invalid API key returns 401",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:26.390768"
+    },
+    {
+      "name": "Valid API key allows access",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:26.867718"
+    },
+    {
+      "name": "Bearer token authentication works",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:27.032351"
+    },
+    {
+      "name": "Rate limit headers present",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "Headers: {'x-ratelimit-limit': '60', 'x-ratelimit-remaining': '58', 'x-ratelimit-reset': '1753116147'}",
+      "timestamp": "2025-07-21T12:41:27.356140"
+    },
+    {
+      "name": "Bypass endpoint /health",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:27.639977"
+    },
+    {
+      "name": "Bypass endpoint /docs",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:27.828537"
+    },
+    {
+      "name": "Bypass endpoint /openapi.json",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "",
+      "timestamp": "2025-07-21T12:41:28.089312"
+    },
+    {
+      "name": "Bypass endpoint /metrics",
+      "passed": false,
+      "status": "\u274c FAIL",
+      "details": "Got 404",
+      "timestamp": "2025-07-21T12:41:28.211919"
+    },
+    {
+      "name": "Error response format",
+      "passed": true,
+      "status": "\u2705 PASS",
+      "details": "Contains detail: API key required. Provide via X-API-Key header.",
+      "timestamp": "2025-07-21T12:41:28.518836"
+    },
+    {
+      "name": "Admin key special access",
+      "passed": false,
+      "status": "\u274c FAIL",
+      "details": "Status: 401, Is-Admin: false",
+      "timestamp": "2025-07-21T12:41:28.650113"
+    }
+  ]
+}

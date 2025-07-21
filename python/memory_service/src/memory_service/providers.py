@@ -559,6 +559,8 @@ class GraphProvider(VectorProvider):
     async def _ensure_pool(self):
         """Ensure connection pool is initialized (lazy initialization)."""
         if not self._pool_initialized:
+            logger.info(f"Graph provider pool init - pool: {self.connection_pool is not None}, string: {bool(self.connection_string)}")
+            
             if self.connection_pool:
                 # Pool was provided, mark as initialized
                 self._pool_initialized = True
@@ -568,6 +570,7 @@ class GraphProvider(VectorProvider):
                 try:
                     import asyncpg
                     
+                    logger.info(f"Creating new pool for graph provider with connection string")
                     self.connection_pool = await asyncpg.create_pool(
                         self.connection_string,
                         min_size=2,
@@ -575,13 +578,14 @@ class GraphProvider(VectorProvider):
                         command_timeout=60
                     )
                     self._pool_initialized = True
-                    logger.info("Graph provider created new connection pool")
+                    logger.info("Graph provider created new connection pool successfully")
                     
                 except Exception as e:
                     logger.error(f"Failed to initialize graph provider pool: {e}")
                     self.enabled = False
                     raise
             else:
+                logger.error("GraphProvider has neither connection_pool nor connection_string")
                 raise RuntimeError("GraphProvider requires either connection_pool or connection_string")
     
     async def _get_or_create_embedding_model(self):
