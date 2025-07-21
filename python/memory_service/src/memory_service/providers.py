@@ -832,8 +832,8 @@ class GraphProvider(VectorProvider):
                                 strength = GREATEST(graph_relationships.strength, EXCLUDED.strength),
                                 last_seen = NOW()
                         """, entity_ids[rel['from_entity']], entity_ids[rel['to_entity']],
-                            rel['type'], rel['strength'], rel['confidence'],
-                            {'context': content[entities[0]['start']:entities[-1]['end']][:200]})
+                            rel['type'], rel['strength'], rel['confidence'], adm_score,
+                            json.dumps({'context': content[entities[0]['start']:entities[-1]['end']][:200]}))
                 
                 logger.info(f"Stored memory {memory_id} with {len(entities)} entities and {len(relationships)} relationships")
                 
