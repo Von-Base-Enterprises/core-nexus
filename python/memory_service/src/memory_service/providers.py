@@ -8,6 +8,7 @@ from the Core Nexus codebase while preparing for pgvector integration.
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -724,11 +725,66 @@ class GraphProvider(VectorProvider):
         return self._embedding_model
     
     async def _extract_entities(self, content: str) -> List[Dict[str, Any]]:
-        """Extract entities from memory content using NLP."""
+        """Extract entities from memory content using Gemini AI, with fallbacks."""
         entities = []
         
         try:
-            # Try to use spaCy for entity extraction
+            # Try Gemini AI extraction first (most accurate)
+            if not hasattr(self, 'gemini_model'):
+                gemini_api_key = os.getenv("GEMINI_API_KEY")
+                if gemini_api_key:
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=gemini_api_key)
+                        self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                        logger.info("Initialized Gemini model for entity extraction")
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize Gemini: {e}")
+                        self.gemini_model = None
+                else:
+                    self.gemini_model = None
+                    
+            if self.gemini_model:
+                try:
+                    # Lightweight prompt for query/content extraction
+                    prompt = f"""Extract entities from this text. Return ONLY a JSON array of entities.
+Include: people, organizations, technologies, products, locations, concepts.
+
+Text: {content}
+
+Example output:
+[
+  {{"name": "Core Nexus", "type": "PRODUCT", "confidence": 0.9}},
+  {{"name": "Von Base Enterprises", "type": "ORGANIZATION", "confidence": 0.95}},
+  {{"name": "AI", "type": "TECHNOLOGY", "confidence": 0.8}}
+]"""
+                    
+                    response = self.gemini_model.generate_content(
+                        prompt,
+                        generation_config={
+                            "temperature": 0.1,
+                            "max_output_tokens": 512,
+                            "response_mime_type": "application/json"
+                        }
+                    )
+                    
+                    if response.text:
+                        gemini_entities = json.loads(response.text)
+                        # Normalize to our format
+                        for entity in gemini_entities:
+                            entities.append({
+                                'name': entity['name'],
+                                'type': entity.get('type', 'other').lower(),
+                                'confidence': entity.get('confidence', 0.8),
+                                'start': content.find(entity['name']),
+                                'end': content.find(entity['name']) + len(entity['name'])
+                            })
+                        logger.debug(f"Gemini extracted {len(entities)} entities")
+                        return entities
+                except Exception as e:
+                    logger.warning(f"Gemini extraction failed, trying fallback: {e}")
+            
+            # Fallback to spaCy if Gemini fails
             if self.entity_extractor is None:
                 try:
                     import spacy
@@ -750,21 +806,13 @@ class GraphProvider(VectorProvider):
                         'confidence': 0.8  # spaCy doesn't provide confidence scores
                     })
             else:
-                # Simple pattern matching fallback
-                # Extract capitalized words as potential entities
-                import re
-                pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
-                for match in re.finditer(pattern, content):
-                    entities.append({
-                        'name': match.group(),
-                        'type': 'other',
-                        'start': match.start(),
-                        'end': match.end(),
-                        'confidence': 0.5
-                    })
+                # Ultimate fallback: regex pattern matching
+                entities = self._extract_entities_regex(content)
             
         except Exception as e:
             logger.error(f"Entity extraction failed: {e}")
+            # Last resort fallback
+            entities = self._extract_entities_regex(content)
         
         return entities
     
@@ -789,6 +837,65 @@ class GraphProvider(VectorProvider):
             'PERCENT': 'concept'
         }
         return mapping.get(spacy_label, 'other')
+    
+    def _extract_entities_regex(self, content: str) -> List[Dict[str, Any]]:
+        """Enhanced regex fallback for entity extraction."""
+        entities = []
+        seen_entities = set()  # Deduplication
+        
+        try:
+            import re
+            
+            # Multiple patterns to catch different entity types
+            patterns = [
+                # Title Case names (people, organizations)
+                (r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', 'other', 0.5),
+                # All caps acronyms (AI, ML, API, etc.)
+                (r'\b[A-Z]{2,}\b', 'technology', 0.6),
+                # CamelCase (ChromaDB, OpenAI, etc.)
+                (r'\b[A-Z][a-zA-Z]*[A-Z][a-zA-Z]*\b', 'technology', 0.6),
+                # Known entities with variations
+                (r'\b(?:Core\s+Nexus(?:\s+AI)?|Von\s+Base(?:\s+Enterprises)?|ChromaDB|Pinecone|pgvector)\b', 'product', 0.8),
+                # Common tech terms
+                (r'\b(?:GPT-\d+|Claude|Gemini|API|SDK|ADK)\b', 'technology', 0.7),
+                # Email-like patterns (often usernames/orgs)
+                (r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b', 'other', 0.4)
+            ]
+            
+            for pattern, default_type, confidence in patterns:
+                for match in re.finditer(pattern, content, re.IGNORECASE if default_type == 'product' else 0):
+                    entity_name = match.group()
+                    
+                    # Skip if already seen (case-insensitive)
+                    if entity_name.lower() in seen_entities:
+                        continue
+                    seen_entities.add(entity_name.lower())
+                    
+                    # Try to infer better type based on context
+                    entity_type = default_type
+                    if default_type == 'other':
+                        # Check context for better classification
+                        context = content[max(0, match.start()-20):min(len(content), match.end()+20)]
+                        if any(word in context.lower() for word in ['ceo', 'founder', 'engineer', 'developer']):
+                            entity_type = 'person'
+                        elif any(word in context.lower() for word in ['company', 'enterprises', 'inc', 'corp', 'llc']):
+                            entity_type = 'organization'
+                    
+                    entities.append({
+                        'name': entity_name,
+                        'type': entity_type,
+                        'start': match.start(),
+                        'end': match.end(),
+                        'confidence': confidence
+                    })
+            
+            # Sort by position in text
+            entities.sort(key=lambda e: e['start'])
+            
+        except Exception as e:
+            logger.error(f"Regex entity extraction failed: {e}")
+        
+        return entities
     
     async def _infer_relationships(self, entities: List[Dict[str, Any]], content: str) -> List[Dict[str, Any]]:
         """Infer relationships between entities based on context."""

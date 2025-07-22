@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-07-22T17:26:58.034909",
+  "timestamp": "2025-07-22T18:08:47.926058",
   "url": "https://core-nexus-memory-service.onrender.com",
   "results": [
     {
@@ -69,7 +69,7 @@
             "status": "healthy",
             "model": "text-embedding-3-small",
             "dimension": 1536,
-            "response_time_ms": 1338.73,
+            "response_time_ms": 889.95,
             "api_key_configured": true,
             "max_batch_size": 100
           }
