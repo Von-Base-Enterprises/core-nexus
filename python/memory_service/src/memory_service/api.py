@@ -23,7 +23,9 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from .models import (
     MemoryRequest, MemoryResponse, QueryRequest, QueryResponse,
-    HealthCheckResponse, MemoryStats, ProviderConfig
+    HealthCheckResponse, MemoryStats, ProviderConfig,
+    GraphAwareQueryRequest, GraphAwareQueryResponse, EnhancedMemoryResponse,
+    PathFindingRequest, PathFindingResponse, MemoryInsightsResponse
 )
 from .unified_store import UnifiedVectorStore
 from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
@@ -370,7 +372,9 @@ def create_memory_app() -> FastAPI:
                 providers=health_data['providers'],
                 total_memories=health_data['stats']['total_stores'],
                 avg_query_time_ms=health_data['stats']['avg_query_time'],
-                uptime_seconds=(time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0
+                uptime_seconds=(time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0,
+                cache_type=health_data.get('cache_type', 'unknown'),
+                cache_size=health_data.get('cache_size', -1)
             )
             
         except Exception as e:
@@ -489,6 +493,91 @@ def create_memory_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Query failed: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+    
+    @app.post("/memories/query-graph", response_model=GraphAwareQueryResponse)
+    async def query_memories_with_graph(
+        request: GraphAwareQueryRequest,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Enhanced query that combines vector similarity with knowledge graph relationships.
+        
+        This hybrid approach:
+        - Extracts entities from the query
+        - Performs parallel vector and graph searches
+        - Generates evidence chains showing reasoning paths
+        - Provides weighted scoring (vector + graph)
+        
+        Requires GRAPH_ENABLED=true to be fully functional.
+        """
+        try:
+            start_time = time.time()
+            
+            logger.info(f"Graph-aware query request: '{request.query[:50]}...' "
+                       f"(graph_weight={request.graph_weight}, entities_enabled={request.enable_graph_retrieval})")
+            
+            # Check if graph provider is available
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                logger.info("Graph provider not available - using fallback to regular vector search")
+                # Convert to regular QueryRequest for fallback
+                regular_request = QueryRequest(**request.dict(exclude={'enable_graph_retrieval', 'max_evidence_chains', 'max_traversal_depth', 'graph_weight', 'require_entity_match', 'boost_connected_results'}))
+                regular_response = await store.query_memories(regular_request)
+                
+                # Convert to GraphAwareQueryResponse with graph features disabled
+                return GraphAwareQueryResponse(
+                    **regular_response.dict(exclude={'memories'}),
+                    memories=[EnhancedMemoryResponse(**mem.dict()) for mem in regular_response.memories],
+                    extracted_entities=[],
+                    graph_enabled=False,
+                    entity_coverage=0.0,
+                    average_evidence_chains=0.0,
+                    graph_query_time_ms=0.0,
+                    entity_connections={}
+                )
+            
+            # Fix for empty query (same as regular query endpoint)
+            if not request.query or request.query.strip() == "":
+                logger.info(f"Empty graph query detected - returning all memories with limit {request.limit}")
+                request.min_similarity = 0.0
+            
+            # Use the hybrid retrieval method
+            response = await store.query_memories_with_graph(request)
+            
+            # Add timing and metadata
+            total_time = (time.time() - start_time) * 1000
+            logger.info(f"Graph-aware query completed in {total_time:.1f}ms, "
+                       f"found {response.total_found} memories, "
+                       f"entities: {len(response.extracted_entities)}, "
+                       f"coverage: {response.entity_coverage:.1%}")
+            
+            # Update response with additional metadata
+            response.query_metadata = {
+                "original_query": request.query,
+                "limit_requested": request.limit,
+                "actual_returned": len(response.memories),
+                "api_version": "2.0.0-graphrag",
+                "graph_enabled": response.graph_enabled,
+                "entity_extraction_count": len(response.extracted_entities),
+                "hybrid_scoring_weight": request.graph_weight
+            }
+            
+            response.trust_metrics = {
+                "confidence_score": 0.9 if response.graph_enabled else 0.7,
+                "data_completeness": len(response.memories) / max(response.total_found, 1),
+                "query_type": "graphrag_hybrid" if response.graph_enabled else "vector_fallback",
+                "entity_coverage": response.entity_coverage,
+                "evidence_quality": response.average_evidence_chains / 3.0 if response.average_evidence_chains > 0 else 0.0
+            }
+            
+            return response
+            
+        except ValueError as e:
+            logger.error(f"Graph query validation error: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Graph query failed: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
     
     @app.get("/memories", response_model=QueryResponse)

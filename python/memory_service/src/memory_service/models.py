@@ -70,6 +70,8 @@ class HealthCheckResponse(BaseModel):
     total_memories: int = Field(0, description="Total memories stored")
     avg_query_time_ms: float = Field(0.0, description="Average query time")
     uptime_seconds: float = Field(0.0, description="Service uptime")
+    cache_type: str = Field("unknown", description="Cache type (redis/memory)")
+    cache_size: int = Field(-1, description="Number of cached queries")
 
 
 class ProviderConfig(BaseModel):
@@ -219,3 +221,104 @@ class EntityInsights(BaseModel):
     co_occurring_entities: List[GraphNode] = Field(default_factory=list, description="Frequently co-occurring entities")
     temporal_pattern: Optional[Dict[str, Any]] = Field(None, description="When entity appears over time")
     importance_trend: Optional[List[float]] = Field(None, description="Importance score over time")
+
+
+# =====================================================
+# GRAPH-AWARE RETRIEVAL MODELS (Phase 1.1)
+# =====================================================
+
+class EvidenceChain(BaseModel):
+    """Evidence chain showing how a result connects to the query through the knowledge graph."""
+    
+    path: List[str] = Field(..., description="Entity names in connection path")
+    relationship_types: List[str] = Field(..., description="Relationship types in path")
+    strength: float = Field(..., description="Combined relationship strength (0-1)")
+    confidence: float = Field(..., description="Combined confidence score (0-1)")
+    reasoning: str = Field(..., description="Human-readable explanation of connection")
+    hop_count: int = Field(..., description="Number of hops in the path")
+
+
+class GraphConnection(BaseModel):
+    """Information about graph connections for a result."""
+    
+    connected_entities: List[str] = Field(default_factory=list, description="Entities found in this result")
+    relationship_count: int = Field(0, description="Total relationships involving these entities")
+    centrality_score: float = Field(0.0, description="Graph centrality score for main entities")
+    cluster_id: Optional[str] = Field(None, description="Graph cluster/community ID")
+
+
+class EnhancedMemoryResponse(MemoryResponse):
+    """Enhanced memory response with graph awareness."""
+    
+    # Inherit all fields from MemoryResponse
+    evidence_chains: List[EvidenceChain] = Field(default_factory=list, description="Paths connecting query to this result")
+    graph_connections: GraphConnection = Field(default_factory=GraphConnection, description="Graph connectivity info")
+    graph_boost_factor: float = Field(1.0, description="Factor by which graph enhanced the score")
+    connection_strength: Optional[float] = Field(None, description="Strength of connection to query entities")
+    
+    class Config:
+        # Allow this model to inherit from MemoryResponse while adding fields
+        arbitrary_types_allowed = True
+
+
+class GraphAwareQueryRequest(QueryRequest):
+    """Enhanced query request with graph-aware options."""
+    
+    # Inherit all fields from QueryRequest
+    enable_graph_retrieval: bool = Field(True, description="Enable graph-enhanced retrieval")
+    max_evidence_chains: int = Field(3, ge=0, le=10, description="Maximum evidence chains per result")
+    max_traversal_depth: int = Field(3, ge=1, le=5, description="Maximum graph traversal depth")
+    graph_weight: float = Field(0.3, ge=0.0, le=1.0, description="Weight of graph score vs vector score")
+    require_entity_match: bool = Field(False, description="Only return results with entity matches")
+    boost_connected_results: bool = Field(True, description="Boost results with strong graph connections")
+
+
+class GraphAwareQueryResponse(QueryResponse):
+    """Enhanced query response with graph awareness and evidence chains."""
+    
+    # Inherit all QueryResponse fields, but override memories type
+    memories: List[EnhancedMemoryResponse] = Field(default_factory=list, description="Retrieved memories with graph enhancements")
+    
+    # Additional graph-aware fields
+    extracted_entities: List[str] = Field(default_factory=list, description="Entities extracted from query")
+    graph_enabled: bool = Field(False, description="Whether graph enhancement was used")
+    related_entities: List[GraphNode] = Field(default_factory=list, description="Related entities found during search")
+    entity_coverage: float = Field(0.0, description="% of results with entity connections")
+    average_evidence_chains: float = Field(0.0, description="Average evidence chains per result")
+    graph_query_time_ms: float = Field(0.0, description="Time spent on graph operations")
+    
+    # Connection map showing relationships between query entities and result entities
+    entity_connections: Dict[str, List[str]] = Field(default_factory=dict, description="Map of entity connections")
+
+
+class PathFindingRequest(BaseModel):
+    """Request model for finding paths between entities."""
+    
+    from_entity: str = Field(..., description="Starting entity name")
+    to_entity: str = Field(..., description="Target entity name")
+    max_depth: int = Field(3, ge=1, le=5, description="Maximum path depth")
+    include_indirect: bool = Field(True, description="Include indirect paths")
+    min_strength: float = Field(0.3, ge=0.0, le=1.0, description="Minimum relationship strength")
+
+
+class PathFindingResponse(BaseModel):
+    """Response model for path finding between entities."""
+    
+    from_entity: str = Field(..., description="Starting entity")
+    to_entity: str = Field(..., description="Target entity")
+    path_found: bool = Field(..., description="Whether a path was found")
+    paths: List[EvidenceChain] = Field(default_factory=list, description="Found paths (shortest first)")
+    total_paths: int = Field(0, description="Total number of paths found")
+    query_time_ms: float = Field(0.0, description="Path finding execution time")
+    max_depth_reached: int = Field(0, description="Maximum depth explored")
+
+
+class MemoryInsightsResponse(BaseModel):
+    """Response model for memory-specific graph insights."""
+    
+    memory_id: UUID = Field(..., description="Memory identifier")
+    extracted_entities: List[EntityExtraction] = Field(default_factory=list, description="Entities found in memory")
+    entity_relationships: List[GraphRelationship] = Field(default_factory=list, description="Relationships between entities")
+    connected_memories: List[UUID] = Field(default_factory=list, description="Related memories through shared entities")
+    graph_summary: Dict[str, Any] = Field(default_factory=dict, description="Summary statistics")
+    evidence_chains_to_key_entities: List[EvidenceChain] = Field(default_factory=list, description="Chains to important entities")
