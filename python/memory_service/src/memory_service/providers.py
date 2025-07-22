@@ -254,6 +254,19 @@ class PgVectorProvider(VectorProvider):
         self.table_name = config.config.get('table_name', 'vector_memories')
         self.embedding_dim = config.config.get('embedding_dim', 1536)
         self._initialize_pool(config.config)
+    
+    async def _setup_connection(self, conn):
+        """Setup function called for each new connection in the pool."""
+        try:
+            # Set optimal probes for all connections
+            await conn.execute("SET ivfflat.probes = 3")
+            logger.debug("Set ivfflat.probes = 3 for new connection")
+        except Exception as e:
+            # Log but don't fail - connection will still work with default probes
+            if "unrecognized configuration parameter" in str(e):
+                logger.debug("ivfflat.probes not supported in this PostgreSQL version")
+            else:
+                logger.warning(f"Could not set ivfflat.probes: {e}")
         
     def _initialize_pool(self, config: Dict[str, Any]):
         """Initialize async connection pool."""
@@ -273,7 +286,8 @@ class PgVectorProvider(VectorProvider):
                     conn_str,
                     min_size=5,
                     max_size=20,
-                    command_timeout=60
+                    command_timeout=60,
+                    setup=self._setup_connection
                 )
                 
                 # Ensure pgvector extension is enabled
@@ -293,12 +307,12 @@ class PgVectorProvider(VectorProvider):
                         )
                     """)
                     
-                    # Create indexes
+                    # Create indexes - using lists=8 (optimal for ~1700 rows)
                     await conn.execute(f"""
                         CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding 
                         ON {self.table_name} 
                         USING ivfflat (embedding vector_cosine_ops)
-                        WITH (lists = 100)
+                        WITH (lists = 8)
                     """)
                     
                     await conn.execute(f"""
@@ -373,16 +387,6 @@ class PgVectorProvider(VectorProvider):
             return []
             
         async with self.connection_pool.acquire() as conn:
-            # Set optimal probes for IVFFlat index (based on lists=8 for ~1700 rows)
-            try:
-                await conn.execute("SET ivfflat.probes = 3")
-            except Exception as e:
-                # Log warning but continue - for older PostgreSQL versions or when extension doesn't support probes
-                if "unrecognized configuration parameter" in str(e):
-                    logger.warning("ivfflat.probes not supported in this PostgreSQL version - using default")
-                else:
-                    logger.warning(f"Could not set ivfflat.probes: {e}")
-            
             # Build query with filters
             where_clauses = []
             params = []
