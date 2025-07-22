@@ -1,0 +1,63 @@
+{
+  "timestamp": "2025-07-21T23:23:59.012745",
+  "api_metrics": {
+    "timestamp": "2025-07-21T23:23:59.007110",
+    "total_queries": 21,
+    "successful_queries": 21,
+    "latency": {
+      "mean": 341.5026437668573,
+      "median": 239.51482772827148,
+      "p90": 528.4554958343506,
+      "p95": 758.8067054748535,
+      "min": 179.29887771606445,
+      "max": 930.1831722259521
+    },
+    "results": {
+      "avg_results_per_query": 9.571428571428571,
+      "min_results": 7,
+      "max_results": 10
+    }
+  },
+  "probes_results": {
+    "1": {
+      "avg_latency_ms": 252.6270866394043,
+      "min_latency_ms": 94.57659721374512,
+      "max_latency_ms": 874.1340637207031,
+      "samples": 5
+    },
+    "2": {
+      "avg_latency_ms": 95.47901153564453,
+      "min_latency_ms": 92.47684478759766,
+      "max_latency_ms": 100.6462574005127,
+      "samples": 5
+    },
+    "3": {
+      "avg_latency_ms": 96.16670608520508,
+      "min_latency_ms": 92.04959869384766,
+      "max_latency_ms": 98.45685958862305,
+      "samples": 5
+    },
+    "4": {
+      "avg_latency_ms": 127.96120643615723,
+      "min_latency_ms": 93.25218200683594,
+      "max_latency_ms": 208.27984809875488,
+      "samples": 5
+    },
+    "5": {
+      "avg_latency_ms": 98.42863082885742,
+      "min_latency_ms": 92.38958358764648,
+      "max_latency_ms": 108.65497589111328,
+      "samples": 5
+    }
+  },
+  "db_stats": {
+    "total_memories": 1728,
+    "indexes": [
+      {
+        "name": "idx_vector_memories_embedding",
+        "size": "14 MB"
+      }
+    ],
+    "current_probes": 1
+  }
+}
