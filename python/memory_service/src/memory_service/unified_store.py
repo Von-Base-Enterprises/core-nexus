@@ -25,6 +25,8 @@ from .models import (
     EvidenceChain,
     GraphConnection
 )
+from .graph_scoring import GraphScoringEngine, GraphScoreWeights, GraphPerformanceConfig
+from .graph_traversal import GraphTraversalEngine, GraphTraversalSafetyConfig
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,11 @@ class VectorProvider(ABC):
     @abstractmethod
     async def get_stats(self) -> Dict[str, Any]:
         """Get provider statistics."""
+        pass
+        
+    @abstractmethod
+    async def get_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Get a specific memory by its ID."""
         pass
 
 
@@ -99,6 +106,47 @@ class UnifiedVectorStore:
         logger.info(f"Initialized UnifiedVectorStore with providers: {list(self.providers.keys())}")
         logger.info(f"Primary provider: {self.primary_provider.name}")
         logger.info(f"ADM scoring: {'enabled' if adm_enabled else 'disabled'}")
+        
+        # Initialize graph engines if graph provider is available
+        self.graph_scoring_engine = None
+        self.graph_traversal_engine = None
+        
+        graph_provider = self.providers.get('graph')
+        if graph_provider and graph_provider.enabled:
+            try:
+                # Get connection pool from graph provider
+                connection_pool = getattr(graph_provider, 'connection_pool', None)
+                if connection_pool:
+                    # Initialize with performance and safety configurations
+                    performance_config = GraphPerformanceConfig(
+                        max_entities_per_memory=8,  # Reduced for production
+                        max_scoring_time_ms=800,    # Reduced from user's 583ms concern
+                        enable_fast_mode=False,     # Can be enabled for high load
+                        enable_scoring_timeout=True
+                    )
+                    
+                    safety_config = GraphTraversalSafetyConfig(
+                        max_search_depth=3,         # Reduced from 5 to prevent explosion
+                        max_nodes_per_level=20,     # Reduced from 50
+                        traversal_timeout_seconds=3.0,  # Aggressive timeout
+                        cache_size_limit=200        # Reasonable cache size
+                    )
+                    
+                    self.graph_scoring_engine = GraphScoringEngine(
+                        connection_pool, 
+                        performance_config=performance_config
+                    )
+                    self.graph_traversal_engine = GraphTraversalEngine(
+                        connection_pool, 
+                        safety_config=safety_config
+                    )
+                    logger.info("✅ Graph engines initialized with performance and safety limits")
+                else:
+                    logger.warning("Graph provider lacks connection pool - advanced features disabled")
+            except Exception as e:
+                logger.error(f"Failed to initialize graph engines: {e}")
+        else:
+            logger.info("Graph provider not available - graph engines not initialized")
     
     def _initialize_adm_engine(self):
         """Initialize the ADM scoring engine."""
@@ -268,6 +316,16 @@ class UnifiedVectorStore:
         except Exception as e:
             logger.error(f"Failed to store memory: {e}")
             raise
+    
+    async def get_memory_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """
+        Get a specific memory by its ID from the primary provider.
+        """
+        try:
+            return await self.primary_provider.get_by_id(memory_id)
+        except Exception as e:
+            logger.error(f"Failed to get memory by ID {memory_id}: {e}")
+            return None
     
     async def query_memories(self, request: QueryRequest) -> QueryResponse:
         """
@@ -726,14 +784,31 @@ class UnifiedVectorStore:
                 request.graph_weight * graph_score
             )
             
-            # Calculate graph boost factor
+            # Calculate graph boost factor using advanced scoring if available
             graph_boost_factor = 1.0
-            if graph_mem and vector_mem:
-                # Memory found in both - significant boost
-                graph_boost_factor = 1.5
-            elif graph_mem and not vector_mem:
-                # Memory found only through graph relationships
-                graph_boost_factor = 1.2
+            if self.graph_scoring_engine and extracted_entities:
+                try:
+                    graph_boost_factor = await self.graph_scoring_engine.calculate_graph_boost_factor(
+                        base_memory.id, 
+                        self._extract_memory_entities(base_memory),
+                        extracted_entities,
+                        vector_score
+                    )
+                except Exception as e:
+                    logger.warning(f"Advanced graph boost calculation failed: {e}")
+                    # Fallback to simple logic
+                    if graph_mem and vector_mem:
+                        graph_boost_factor = 1.5
+                    elif graph_mem and not vector_mem:
+                        graph_boost_factor = 1.2
+            else:
+                # Simple fallback logic
+                if graph_mem and vector_mem:
+                    # Memory found in both - significant boost
+                    graph_boost_factor = 1.5
+                elif graph_mem and not vector_mem:
+                    # Memory found only through graph relationships
+                    graph_boost_factor = 1.2
             
             # Generate evidence chains for graph-connected memories
             evidence_chains = []
@@ -791,7 +866,17 @@ class UnifiedVectorStore:
         try:
             memory_entities = self._extract_memory_entities(memory)
             
-            # For each query entity, try to find connections to memory entities
+            # Use advanced BFS traversal engine if available
+            if self.graph_traversal_engine:
+                evidence_chains = await self.graph_traversal_engine.generate_evidence_chains_bfs(
+                    memory_entities, query_entities, max_chains, max_depth=2
+                )
+                
+                if evidence_chains:
+                    logger.debug(f"Generated {len(evidence_chains)} evidence chains using BFS traversal")
+                    return evidence_chains
+            
+            # Fallback to simple matching if graph traversal is not available
             for query_entity in query_entities[:max_chains]:
                 for memory_entity in memory_entities:
                     if query_entity.lower() == memory_entity.lower():
@@ -805,8 +890,7 @@ class UnifiedVectorStore:
                             hop_count=0
                         ))
                     else:
-                        # TODO: Implement BFS graph traversal for multi-hop connections
-                        # For now, create a simple semantic connection
+                        # Simple semantic connection as fallback
                         if self._are_entities_related(query_entity, memory_entity):
                             evidence_chains.append(EvidenceChain(
                                 path=[query_entity, memory_entity],

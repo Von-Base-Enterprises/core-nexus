@@ -1,0 +1,135 @@
+{
+  "timestamp": "2025-07-22T17:26:58.034909",
+  "url": "https://core-nexus-memory-service.onrender.com",
+  "results": [
+    {
+      "test": "Graph Provider Status",
+      "passed": true,
+      "details": "Graph provider enabled",
+      "response": {
+        "providers": [
+          {
+            "name": "pgvector",
+            "enabled": true,
+            "primary": true,
+            "config": {
+              "retry_count": 3,
+              "timeout_seconds": 30.0
+            },
+            "stats": {
+              "provider": "pgvector",
+              "total_memories": 1728,
+              "avg_importance_score": 0.45881931691991995,
+              "oldest_memory": "2025-06-08T11:57:43.998336",
+              "newest_memory": "2025-07-22T02:59:19.847917",
+              "table_size": "31 MB",
+              "table_name": "vector_memories",
+              "embedding_dimension": 1536
+            }
+          },
+          {
+            "name": "chromadb",
+            "enabled": true,
+            "primary": false,
+            "config": {
+              "retry_count": 3,
+              "timeout_seconds": 30.0
+            },
+            "stats": {
+              "provider": "chromadb",
+              "total_memories": 0,
+              "collection_name": "core_nexus_memories",
+              "embedding_dimension": 1536
+            }
+          },
+          {
+            "name": "graph",
+            "enabled": true,
+            "primary": false,
+            "config": {
+              "retry_count": 3,
+              "timeout_seconds": 30.0
+            },
+            "stats": {
+              "total_nodes": 783,
+              "total_relationships": 48,
+              "entity_types": 11,
+              "relationship_types": 15,
+              "avg_mentions_per_entity": 2.8314176245210727,
+              "avg_occurrences_per_relationship": 1.5
+            }
+          }
+        ],
+        "primary_provider": "pgvector",
+        "total_providers": 3,
+        "embedding_model": {
+          "model_type": "OpenAIEmbeddingModel",
+          "dimension": 1536,
+          "health": {
+            "status": "healthy",
+            "model": "text-embedding-3-small",
+            "dimension": 1536,
+            "response_time_ms": 1338.73,
+            "api_key_configured": true,
+            "max_batch_size": 100
+          }
+        }
+      }
+    },
+    {
+      "test": "Graph Statistics",
+      "passed": true,
+      "details": "Entities: 0, Relationships: 48",
+      "response": {
+        "health": {
+          "status": "healthy",
+          "details": {
+            "connection": "active",
+            "graph_nodes": 783,
+            "graph_relationships": 48,
+            "entity_extractor": "regex"
+          }
+        },
+        "statistics": {
+          "total_nodes": 783,
+          "total_relationships": 48,
+          "entity_types": 11,
+          "relationship_types": 15,
+          "avg_mentions_per_entity": 2.8314176245210727,
+          "avg_occurrences_per_relationship": 1.5
+        }
+      }
+    },
+    {
+      "test": "Memory Storage",
+      "passed": false,
+      "error": "Status 404: {\"detail\":\"Not Found\"}"
+    },
+    {
+      "test": "Entity Exploration",
+      "passed": true,
+      "memories_found": 20,
+      "details": "Found 20 memories for entity"
+    },
+    {
+      "test": "Graph-Enhanced Query",
+      "passed": true,
+      "memories_found": 10,
+      "entities_extracted": 0,
+      "evidence_chains": 0,
+      "graph_enabled": false,
+      "details": "Found 10 memories with 0 evidence chains"
+    },
+    {
+      "test": "Path Finding",
+      "passed": true,
+      "paths_found": 0,
+      "details": "Found 0 paths between entities"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 1,
+    "total": 6
+  }
+}

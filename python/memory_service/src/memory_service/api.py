@@ -2418,6 +2418,92 @@ def create_memory_app() -> FastAPI:
     except ImportError:
         logger.warning("⚠️ Jarvis agent not available - skipping AI assistant endpoints")
     
+    # ADK Test Endpoint - Verify installation
+    @app.get("/test/adk")
+    async def test_adk_installation():
+        """
+        Test Google ADK installation and basic functionality.
+        
+        This endpoint verifies that ADK is properly installed and can be imported.
+        Used for production deployment verification.
+        """
+        test_results = {
+            "status": "testing",
+            "checks": {},
+            "adk_available": False,
+            "errors": []
+        }
+        
+        try:
+            # Test basic imports
+            try:
+                from google.adk.agents import Agent, LlmAgent
+                test_results["checks"]["agents_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["agents_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Agent import error: {str(e)}")
+            
+            try:
+                from google.adk.runners import Runner
+                test_results["checks"]["runner_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["runner_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Runner import error: {str(e)}")
+            
+            try:
+                from google.adk.sessions import InMemorySessionService
+                test_results["checks"]["session_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["session_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Session import error: {str(e)}")
+            
+            try:
+                from google.adk.tools import FunctionTool
+                test_results["checks"]["tools_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["tools_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Tools import error: {str(e)}")
+            
+            # Test agent creation (without running)
+            try:
+                from google.adk.agents import Agent
+                test_agent = Agent(
+                    name="test_agent",
+                    model="gemini-2.0-flash-exp",
+                    instructions="Test agent for verification"
+                )
+                test_results["checks"]["agent_creation"] = "✅ Success"
+                test_results["adk_available"] = True
+            except Exception as e:
+                test_results["checks"]["agent_creation"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Agent creation error: {str(e)}")
+            
+            # Check ADK version if possible
+            try:
+                import google.adk
+                if hasattr(google.adk, "__version__"):
+                    test_results["adk_version"] = google.adk.__version__
+                else:
+                    test_results["adk_version"] = "Version not available"
+            except:
+                test_results["adk_version"] = "Unable to determine"
+            
+            # Overall status
+            if test_results["adk_available"] and not test_results["errors"]:
+                test_results["status"] = "✅ ADK fully operational"
+            elif test_results["adk_available"]:
+                test_results["status"] = "⚠️ ADK partially operational"
+            else:
+                test_results["status"] = "❌ ADK not available"
+            
+            return JSONResponse(test_results)
+            
+        except Exception as e:
+            logger.error(f"ADK test failed: {e}")
+            test_results["status"] = "❌ Test failed"
+            test_results["errors"].append(f"Unexpected error: {str(e)}")
+            return JSONResponse(test_results, status_code=500)
+    
     return app
 
 

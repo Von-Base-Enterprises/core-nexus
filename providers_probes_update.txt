@@ -1,0 +1,11 @@
+
+# Add this line in the query method after acquiring the connection (line ~375):
+await conn.execute("SET ivfflat.probes = 3")
+
+# Full context - add after this line:
+async with self.connection_pool.acquire() as conn:
+    # Set optimal probes for IVFFlat index (based on lists=8)
+    await conn.execute("SET ivfflat.probes = 3")
+    
+    # Build query with filters
+    ...

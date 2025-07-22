@@ -1,52 +1,52 @@
 {
-  "timestamp": "2025-07-21T23:23:59.012745",
+  "timestamp": "2025-07-22T00:14:44.236523",
   "api_metrics": {
-    "timestamp": "2025-07-21T23:23:59.007110",
+    "timestamp": "2025-07-22T00:14:44.231358",
     "total_queries": 21,
     "successful_queries": 21,
     "latency": {
-      "mean": 341.5026437668573,
-      "median": 239.51482772827148,
-      "p90": 528.4554958343506,
-      "p95": 758.8067054748535,
-      "min": 179.29887771606445,
-      "max": 930.1831722259521
+      "mean": 360.77297301519485,
+      "median": 211.07172966003418,
+      "p90": 750.1387596130371,
+      "p95": 801.0344505310059,
+      "min": 181.65087699890137,
+      "max": 892.3640251159668
     },
     "results": {
-      "avg_results_per_query": 9.571428571428571,
-      "min_results": 7,
+      "avg_results_per_query": 10,
+      "min_results": 10,
       "max_results": 10
     }
   },
   "probes_results": {
     "1": {
-      "avg_latency_ms": 252.6270866394043,
-      "min_latency_ms": 94.57659721374512,
-      "max_latency_ms": 874.1340637207031,
+      "avg_latency_ms": 252.98357009887695,
+      "min_latency_ms": 97.8388786315918,
+      "max_latency_ms": 839.1437530517578,
       "samples": 5
     },
     "2": {
-      "avg_latency_ms": 95.47901153564453,
-      "min_latency_ms": 92.47684478759766,
-      "max_latency_ms": 100.6462574005127,
+      "avg_latency_ms": 96.09251022338867,
+      "min_latency_ms": 92.30470657348633,
+      "max_latency_ms": 102.96487808227539,
       "samples": 5
     },
     "3": {
-      "avg_latency_ms": 96.16670608520508,
-      "min_latency_ms": 92.04959869384766,
-      "max_latency_ms": 98.45685958862305,
+      "avg_latency_ms": 98.0508804321289,
+      "min_latency_ms": 95.76177597045898,
+      "max_latency_ms": 100.37803649902344,
       "samples": 5
     },
     "4": {
-      "avg_latency_ms": 127.96120643615723,
-      "min_latency_ms": 93.25218200683594,
-      "max_latency_ms": 208.27984809875488,
+      "avg_latency_ms": 100.48613548278809,
+      "min_latency_ms": 95.9925651550293,
+      "max_latency_ms": 109.52544212341309,
       "samples": 5
     },
     "5": {
-      "avg_latency_ms": 98.42863082885742,
-      "min_latency_ms": 92.38958358764648,
-      "max_latency_ms": 108.65497589111328,
+      "avg_latency_ms": 101.60307884216309,
+      "min_latency_ms": 96.70209884643555,
+      "max_latency_ms": 110.33248901367188,
       "samples": 5
     }
   },

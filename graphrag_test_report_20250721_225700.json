@@ -1,0 +1,98 @@
+{
+  "tests": [
+    {
+      "name": "API Health Check",
+      "passed": true,
+      "details": "(Response time: 380ms)",
+      "duration_ms": 380.33509254455566
+    },
+    {
+      "name": "Get Initial Stats",
+      "passed": true,
+      "details": "(Nodes: 783, Relationships: 48)",
+      "duration_ms": null
+    },
+    {
+      "name": "Create Memory A",
+      "passed": true,
+      "details": "ID: 8d5f04c5-d0ec-478b-95d3-159c9946cd1a (658ms)",
+      "duration_ms": 658.414363861084
+    },
+    {
+      "name": "Create Memory B",
+      "passed": true,
+      "details": "ID: 35f992df-1694-4afc-abca-5787b0ea173e (476ms)",
+      "duration_ms": 476.03321075439453
+    },
+    {
+      "name": "Create Memory C",
+      "passed": true,
+      "details": "ID: dcf866ae-e674-48c2-a8d4-53f055d4076d (409ms)",
+      "duration_ms": 408.71715545654297
+    },
+    {
+      "name": "Stats Increased",
+      "passed": false,
+      "details": "Nodes: 783\u2192783 (+0), Relationships: 48\u219248 (+0)",
+      "duration_ms": null
+    },
+    {
+      "name": "Explore 'Tyvonne'",
+      "passed": true,
+      "details": "Found 4 memories (119ms)",
+      "duration_ms": 118.69573593139648
+    },
+    {
+      "name": "Explore 'Von Base Enterprises'",
+      "passed": true,
+      "details": "Found 20 memories (128ms)",
+      "duration_ms": 128.29971313476562
+    },
+    {
+      "name": "Explore 'React'",
+      "passed": true,
+      "details": "Found 12 memories (116ms)",
+      "duration_ms": 116.40143394470215
+    },
+    {
+      "name": "Graph Query {'entity_name': 'Tyvonne'}",
+      "passed": true,
+      "details": "Found 1 nodes (128ms)",
+      "duration_ms": 128.07273864746094
+    },
+    {
+      "name": "Graph Query {'entity_name': 'Python'}",
+      "passed": true,
+      "details": "Found 1 nodes (121ms)",
+      "duration_ms": 120.74065208435059
+    },
+    {
+      "name": "Graph Query {'entity_type': 'organization'}",
+      "passed": true,
+      "details": "Found 7 nodes (134ms)",
+      "duration_ms": 133.78238677978516
+    },
+    {
+      "name": "No API Key \u2192 401",
+      "passed": true,
+      "details": "Got status 401",
+      "duration_ms": null
+    },
+    {
+      "name": "Non-existent Entity",
+      "passed": true,
+      "details": "Returns empty result",
+      "duration_ms": null
+    },
+    {
+      "name": "Live Stats",
+      "passed": true,
+      "details": "Entities: 783, Relationships: 48 (416ms)",
+      "duration_ms": 416.20802879333496
+    }
+  ],
+  "passed": 14,
+  "failed": 1,
+  "start_time": "2025-07-21 22:56:46.863227",
+  "end_time": "2025-07-21 22:57:00.596689"
+}

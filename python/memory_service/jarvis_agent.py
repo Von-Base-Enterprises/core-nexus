@@ -19,28 +19,23 @@ from typing import List, Dict, Any, Optional
 from uuid import uuid4
 import logging
 
-# Google ADK imports
-from google import genai
-from google.genai import types
-from google.genai.chats import ChatSession
-from google.genai.errors import GenAIError
+# Google Generative AI imports
+import google.generativeai as genai
 
 # Add the source directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from memory_service.unified_store import UnifiedMemoryStore
-from memory_service.models import MemoryInput, QueryRequest
+from memory_service.unified_store import UnifiedVectorStore
+from memory_service.models import MemoryRequest, QueryRequest
 from memory_service.logging_config import setup_logging, get_logger
 
 # Setup logging
 setup_logging()
 logger = get_logger("jarvis_agent")
 
-# Configure Google ADK
+# Configure Google Generative AI
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAIl8F81WwFfx5_62y19KuO12ermaDC6FQ")
-
-# Initialize the client
-client = genai.Client(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
 # Jarvis system prompt
 JARVIS_SYSTEM_PROMPT = """You are Jarvis, an intelligent AI assistant powered by Core Nexus.
@@ -131,38 +126,21 @@ class JarvisAgent:
     """Jarvis conversational AI agent using Google ADK."""
     
     def __init__(self):
-        self.client = client
-        self.memory_store: Optional[UnifiedMemoryStore] = None
+        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.memory_store: Optional[UnifiedVectorStore] = None
         self.session_id = str(uuid4())
         self.conversation_id = str(uuid4())
         self.user_id = "jarvis_user"  # Default user, can be customized
-        self.chat_session: Optional[ChatSession] = None
         self.conversation_history: List[Dict[str, Any]] = []
         
     async def initialize(self):
         """Initialize the agent with memory store connection."""
         # Initialize memory store
-        self.memory_store = UnifiedMemoryStore()
+        self.memory_store = UnifiedVectorStore()
         await self.memory_store.initialize()
         
-        # Create chat session with Gemini
+        # Initialize model configuration
         try:
-            # Configure the model with functions
-            model_config = types.GenerateContentConfig(
-                temperature=0.7,
-                top_p=0.9,
-                max_output_tokens=2048,
-                response_mime_type="text/plain",
-                system_instruction=JARVIS_SYSTEM_PROMPT,
-                tools=[types.Tool(function_declarations=JARVIS_FUNCTIONS)]
-            )
-            
-            # Start chat session
-            self.chat_session = self.client.models.generate_content(
-                model="gemini-2.0-flash-latest",
-                config=model_config
-            )
-            
             logger.info(f"✅ Jarvis initialized with session {self.session_id}")
             
         except Exception as e:
@@ -205,8 +183,8 @@ class JarvisAgent:
     async def create_memory(self, content: str, importance: float = 0.7, tags: List[str] = None) -> str:
         """Create a new memory in Core Nexus."""
         try:
-            # Create memory input
-            memory_input = MemoryInput(
+            # Create memory request
+            memory_request = MemoryRequest(
                 content=content,
                 user_id=self.user_id,
                 conversation_id=self.conversation_id,
@@ -220,7 +198,7 @@ class JarvisAgent:
             )
             
             # Store memory
-            memory = await self.memory_store.add_memory(memory_input)
+            memory = await self.memory_store.add_memory(memory_request)
             
             logger.info(f"💾 Created memory: {memory.id}")
             return str(memory.id)
@@ -270,41 +248,39 @@ class JarvisAgent:
                 "timestamp": datetime.now().isoformat()
             })
             
-            # Generate response using Gemini
-            response = await self.client.models.generate_content_async(
-                model="gemini-2.0-flash-latest",
-                contents=user_input,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    top_p=0.9,
-                    max_output_tokens=2048,
-                    system_instruction=JARVIS_SYSTEM_PROMPT,
-                    tools=[types.Tool(function_declarations=JARVIS_FUNCTIONS)]
-                )
-            )
+            # Build prompt with context
+            context = f"{JARVIS_SYSTEM_PROMPT}\n\n"
             
-            # Check for function calls
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate.content, 'parts'):
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'function_call'):
-                            # Execute function
-                            result = await self.handle_function_call(part.function_call)
-                            
-                            # Generate final response with function result
-                            final_response = await self.client.models.generate_content_async(
-                                model="gemini-2.0-flash-latest",
-                                contents=[
-                                    user_input,
-                                    f"Function result: {json.dumps(result)}"
-                                ],
-                                config=types.GenerateContentConfig(
-                                    temperature=0.7,
-                                    system_instruction=JARVIS_SYSTEM_PROMPT
-                                )
-                            )
-                            response = final_response
+            # Add conversation history
+            if self.conversation_history:
+                context += "Recent conversation:\n"
+                for msg in self.conversation_history[-5:]:
+                    context += f"{msg['role'].title()}: {msg['content']}\n"
+                context += "\n"
+            
+            # Check if we need to search memories
+            if any(word in user_input.lower() for word in ['search', 'find', 'know', 'remember', 'tell me about']):
+                # Extract search query
+                search_query = user_input
+                memories = await self.search_memories(search_query, limit=3)
+                
+                if memories:
+                    context += "Relevant memories found:\n"
+                    for mem in memories:
+                        context += f"- {mem['content'][:100]}... (similarity: {mem['similarity']:.2f})\n"
+                    context += "\n"
+            
+            # Check if we need to create a memory
+            if "remember" in user_input.lower() or "store" in user_input.lower():
+                # Extract content to remember
+                content = user_input.replace("remember", "").replace("Remember", "").strip()
+                if content:
+                    memory_id = await self.create_memory(content, importance=0.8)
+                    context += f"Memory created with ID: {memory_id}\n\n"
+            
+            # Generate response
+            prompt = context + f"Current user input: {user_input}\n\nResponse:"
+            response = self.model.generate_content(prompt)
             
             # Extract text response
             response_text = response.text if hasattr(response, 'text') else str(response)
@@ -315,14 +291,6 @@ class JarvisAgent:
                 "content": response_text,
                 "timestamp": datetime.now().isoformat()
             })
-            
-            # Store conversation turn as memory if it contains important information
-            if len(user_input) > 50 or "remember" in user_input.lower():
-                await self.create_memory(
-                    content=f"User: {user_input}\nJarvis: {response_text}",
-                    importance=0.6,
-                    tags=["conversation", "jarvis_chat"]
-                )
             
             return response_text
             

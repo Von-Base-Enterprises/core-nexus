@@ -71,6 +71,12 @@ class PineconeProvider(VectorProvider):
             'enabled': self.enabled,
             'message': 'Pinecone integration pending'
         }
+    
+    async def get_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Get a specific memory by its ID."""
+        # Pinecone is not currently enabled
+        logger.warning("PineconeProvider.get_by_id called but provider is not enabled")
+        return None
 
 
 class ChromaProvider(VectorProvider):
@@ -238,6 +244,35 @@ class ChromaProvider(VectorProvider):
                 'provider': 'chromadb',
                 'error': str(e)
             }
+    
+    async def get_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Get a specific memory by its ID."""
+        try:
+            if not self.collection:
+                return None
+            
+            # ChromaDB uses string IDs
+            result = self.collection.get(ids=[str(memory_id)], include=['metadatas', 'documents'])
+            
+            if not result['ids'] or len(result['ids']) == 0:
+                return None
+            
+            # Extract the data
+            content = result['documents'][0]
+            metadata = result['metadatas'][0] if result['metadatas'] else {}
+            
+            return MemoryResponse(
+                id=memory_id,
+                content=content,
+                metadata=metadata,
+                importance_score=metadata.get('importance_score', 0.5),
+                similarity_score=None,  # Not applicable for direct retrieval
+                created_at=metadata.get('created_at', '')
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get memory by ID {memory_id} from ChromaDB: {e}")
+            return None
 
 
 class PgVectorProvider(VectorProvider):
@@ -583,6 +618,38 @@ class PgVectorProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to update importance for {memory_id}: {e}")
             return False
+    
+    async def get_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Get a specific memory by its ID."""
+        if not self.connection_pool:
+            return None
+            
+        try:
+            async with self.connection_pool.acquire() as conn:
+                row = await conn.fetchrow(f"""
+                    SELECT id, content, metadata, importance_score, created_at, updated_at
+                    FROM {self.table_name}
+                    WHERE id = $1
+                """, memory_id)
+                
+                if not row:
+                    return None
+                
+                # Parse metadata from JSON
+                metadata = json.loads(row['metadata']) if row['metadata'] else {}
+                
+                return MemoryResponse(
+                    id=row['id'],
+                    content=row['content'],
+                    metadata=metadata,
+                    importance_score=float(row['importance_score']),
+                    similarity_score=None,  # Not applicable for direct retrieval
+                    created_at=row['created_at'].isoformat() if row['created_at'] else ''
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to get memory by ID {memory_id}: {e}")
+            return None
             
     async def close(self):
         """Close the connection pool."""
@@ -1088,3 +1155,10 @@ class GraphProvider(VectorProvider):
         except Exception as e:
             logger.error(f"Failed to get graph stats: {e}")
             return {'error': str(e)}
+    
+    async def get_by_id(self, memory_id: UUID) -> Optional[MemoryResponse]:
+        """Get a specific memory by its ID."""
+        # Graph provider doesn't store memories directly - delegate to main provider
+        # This is a design choice: graph provider focuses on relationships, not storage
+        logger.debug(f"GraphProvider.get_by_id({memory_id}) - returning None (not a storage provider)")
+        return None
