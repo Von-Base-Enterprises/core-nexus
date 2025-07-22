@@ -25,6 +25,9 @@ openai==1.3.6             # For embeddings integration
 # Async support
 asyncio-pool==0.6.0
 
+# Caching
+redis==5.0.1                  # Redis client for query caching
+
 # Monitoring and logging
 structlog==23.2.0
 loguru==0.7.2

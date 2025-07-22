@@ -40,6 +40,11 @@ services:
       - key: PGVECTOR_USER
         value: nexus_memory_db_user
       # PGVECTOR_PASSWORD must be set in the dashboard for security
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: core-nexus-redis-cache
+          property: connectionString
 
   # Keep-alive Background Worker
   - type: worker
@@ -88,3 +93,11 @@ services:
         value: admin123
       - key: PROMETHEUS_URL
         value: https://core-nexus-prometheus.onrender.com
+
+  # Redis Cache Service
+  - type: redis
+    name: core-nexus-redis-cache
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow access from all Render services

@@ -18,7 +18,12 @@ from .models import (
     QueryRequest, 
     QueryResponse, 
     ProviderConfig,
-    ImportanceScoring
+    ImportanceScoring,
+    GraphAwareQueryRequest,
+    GraphAwareQueryResponse,
+    EnhancedMemoryResponse,
+    EvidenceChain,
+    GraphConnection
 )
 
 logger = logging.getLogger(__name__)
@@ -121,11 +126,45 @@ class UnifiedVectorStore:
             # Test connection
             redis_client.ping()
             logger.info("Redis cache initialized")
+            self._cache_type = 'redis'
             return redis_client
             
         except Exception as e:
             logger.info(f"Redis not available, using in-memory cache: {e}")
+            self._cache_type = 'memory'
             return {}
+    
+    def _get_cached_result(self, cache_key: str):
+        """Get cached result with proper handling for Redis vs in-memory cache."""
+        try:
+            if self._cache_type == 'redis':
+                # Use Redis get operation
+                cached_data = self.query_cache.get(cache_key)
+                if cached_data:
+                    import json
+                    return json.loads(cached_data)
+                return None
+            else:
+                # Use dict get operation
+                return self.query_cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache get error: {e}")
+            return None
+    
+    def _set_cached_result(self, cache_key: str, result: dict, ttl_seconds: int = 300):
+        """Set cached result with proper handling for Redis vs in-memory cache."""
+        try:
+            if self._cache_type == 'redis':
+                # Use Redis setex operation with JSON serialization
+                import json
+                serialized_result = json.dumps(result, default=str)  # default=str handles datetime
+                self.query_cache.setex(cache_key, ttl_seconds, serialized_result)
+            else:
+                # Use dict operation
+                self.query_cache[cache_key] = result
+        except Exception as e:
+            logger.warning(f"Cache set error: {e}")
+            # Don't fail the query if cache fails
     
     async def store_memory(self, request: MemoryRequest) -> MemoryResponse:
         """
@@ -241,11 +280,10 @@ class UnifiedVectorStore:
         try:
             # Check cache first (simple key based on query + filters)
             cache_key = self._get_cache_key(request)
-            if cache_key in self.query_cache:
-                cached_result = self.query_cache[cache_key]
-                if time.time() - cached_result['timestamp'] < 300:  # 5 min cache
-                    logger.debug(f"Cache hit for query: {request.query[:50]}...")
-                    return cached_result['response']
+            cached_result = self._get_cached_result(cache_key)
+            if cached_result and time.time() - cached_result['timestamp'] < 300:  # 5 min cache
+                logger.debug(f"Cache hit for query: {request.query[:50]}...")
+                return cached_result['response']
             
             # Generate query embedding
             # For empty queries, use a zero vector to match all memories
@@ -295,16 +333,166 @@ class UnifiedVectorStore:
             )
             
             # Cache result
-            self.query_cache[cache_key] = {
+            self._set_cached_result(cache_key, {
                 'response': response,
                 'timestamp': time.time()
-            }
+            })
             
             logger.info(f"Query returned {len(filtered_memories)} memories in {query_time:.1f}ms")
             return response
             
         except Exception as e:
             logger.error(f"Query failed: {e}")
+            raise
+    
+    async def query_memories_with_graph(self, request: GraphAwareQueryRequest) -> GraphAwareQueryResponse:
+        """
+        Enhanced query method that combines vector similarity with graph relationships.
+        
+        This hybrid approach:
+        1. Performs parallel vector search across all providers
+        2. Extracts entities from the query using graph provider
+        3. Finds graph connections to boost relevant results
+        4. Generates evidence chains showing reasoning paths
+        5. Provides 70% vector + 30% graph weighted scoring
+        """
+        start_time = time.time()
+        graph_start_time = None
+        
+        try:
+            logger.info(f"Graph-aware query: '{request.query[:100]}...' (graph_weight={request.graph_weight})")
+            
+            # Check if graph provider is available
+            graph_provider = self.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                logger.warning("Graph provider not available, falling back to regular vector search")
+                # Fallback to regular query
+                regular_response = await self.query_memories(request)
+                return GraphAwareQueryResponse(
+                    memories=[EnhancedMemoryResponse(**mem.dict()) for mem in regular_response.memories],
+                    total_found=regular_response.total_found,
+                    query_time_ms=regular_response.query_time_ms,
+                    providers_used=regular_response.providers_used,
+                    graph_enabled=False,
+                    extracted_entities=[],
+                    entity_coverage=0.0,
+                    graph_query_time_ms=0.0
+                )
+            
+            # Step 1: Generate query embedding and extract entities in parallel
+            if not request.query or request.query.strip() == "":
+                query_embedding = [0.0] * 1536  # Zero vector for "get all" queries
+                extracted_entities = []
+            else:
+                # Parallel execution of embedding generation and entity extraction
+                embedding_task = asyncio.create_task(self._generate_embedding(request.query))
+                entity_extraction_task = asyncio.create_task(self._extract_query_entities(request.query, graph_provider))
+                
+                query_embedding, extracted_entities = await asyncio.gather(embedding_task, entity_extraction_task)
+            
+            logger.info(f"Extracted {len(extracted_entities)} entities from query: {extracted_entities}")
+            
+            # Step 2: Parallel vector search and graph relationship queries
+            graph_start_time = time.time()
+            
+            # Determine providers for vector search
+            vector_providers = self._select_providers(request)
+            
+            # Create parallel tasks
+            tasks = []
+            
+            # Vector similarity search
+            if len(vector_providers) == 1:
+                vector_task = asyncio.create_task(
+                    self._query_provider(vector_providers[0], query_embedding, request)
+                )
+            else:
+                vector_task = asyncio.create_task(
+                    self._query_multiple_providers(vector_providers, query_embedding, request)
+                )
+            tasks.append(('vector', vector_task))
+            
+            # Graph relationship search for each entity
+            for entity_name in extracted_entities:
+                entity_filters = {**request.filters, 'entity_name': entity_name}
+                graph_task = asyncio.create_task(
+                    graph_provider.query(query_embedding, request.limit, entity_filters)
+                )
+                tasks.append(('graph', graph_task))
+            
+            # Wait for all queries to complete
+            results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
+            
+            # Process results
+            vector_memories = []
+            graph_memories = []
+            providers_used = []
+            
+            for i, (task_type, result) in enumerate(zip([task[0] for task in tasks], results)):
+                if isinstance(result, Exception):
+                    logger.warning(f"{task_type} search failed: {result}")
+                    continue
+                
+                if task_type == 'vector':
+                    if isinstance(result, tuple):  # Multiple providers result
+                        vector_memories, providers_used = result
+                    else:  # Single provider result
+                        vector_memories = result
+                        providers_used = [vector_providers[0].name]
+                else:  # graph
+                    graph_memories.extend(result)
+            
+            graph_query_time = (time.time() - graph_start_time) * 1000 if graph_start_time else 0
+            
+            # Step 3: Hybrid scoring and evidence chain generation
+            if request.enable_graph_retrieval and extracted_entities:
+                enhanced_memories = await self._create_enhanced_memories_with_graph(
+                    vector_memories, graph_memories, extracted_entities, request
+                )
+            else:
+                # No graph enhancement, convert to EnhancedMemoryResponse
+                enhanced_memories = [
+                    EnhancedMemoryResponse(**mem.dict(), graph_boost_factor=1.0)
+                    for mem in vector_memories
+                ]
+            
+            # Step 4: Final filtering and ranking
+            filtered_memories = self._filter_and_rank_graph_memories(enhanced_memories, request)
+            
+            # Calculate statistics
+            total_query_time = (time.time() - start_time) * 1000
+            entity_coverage = self._calculate_entity_coverage(filtered_memories) if filtered_memories else 0.0
+            avg_evidence_chains = self._calculate_avg_evidence_chains(filtered_memories) if filtered_memories else 0.0
+            
+            # Update stats
+            self.stats['total_queries'] += 1
+            self.stats['avg_query_time'] = (
+                (self.stats['avg_query_time'] * (self.stats['total_queries'] - 1) + total_query_time) / 
+                self.stats['total_queries']
+            )
+            
+            # Build response
+            response = GraphAwareQueryResponse(
+                memories=filtered_memories[:request.limit],
+                total_found=len(filtered_memories),
+                query_time_ms=total_query_time,
+                providers_used=providers_used + (['graph'] if graph_memories else []),
+                extracted_entities=extracted_entities,
+                graph_enabled=request.enable_graph_retrieval,
+                related_entities=[],  # TODO: Implement in future iterations
+                entity_coverage=entity_coverage,
+                average_evidence_chains=avg_evidence_chains,
+                graph_query_time_ms=graph_query_time,
+                entity_connections=self._build_entity_connection_map(filtered_memories)
+            )
+            
+            logger.info(f"Graph-aware query returned {len(filtered_memories)} memories in {total_query_time:.1f}ms "
+                       f"(graph: {graph_query_time:.1f}ms, coverage: {entity_coverage:.1%})")
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Graph-aware query failed: {e}")
             raise
     
     async def health_check(self) -> Dict[str, Any]:
@@ -333,11 +521,21 @@ class UnifiedVectorStore:
                 if provider == self.primary_provider:
                     overall_healthy = False
         
+        # Get cache size in a type-safe way
+        try:
+            if self._cache_type == 'redis':
+                cache_size = self.query_cache.dbsize()  # Redis command for key count
+            else:
+                cache_size = len(self.query_cache)
+        except:
+            cache_size = -1  # Unknown cache size
+        
         return {
             'status': 'healthy' if overall_healthy else 'degraded',
             'providers': results,
             'stats': self.stats,
-            'cache_size': len(self.query_cache)
+            'cache_size': cache_size,
+            'cache_type': self._cache_type
         }
     
     def _calculate_importance(self, request: MemoryRequest) -> float:
@@ -475,3 +673,229 @@ class UnifiedVectorStore:
             request.conversation_id or ""
         ]
         return "|".join(key_parts)
+    
+    # =====================================================
+    # GRAPH-AWARE RETRIEVAL HELPER METHODS (Phase 1.2)
+    # =====================================================
+    
+    async def _extract_query_entities(self, query: str, graph_provider) -> List[str]:
+        """Extract entities from query text using the graph provider."""
+        try:
+            # Use the graph provider's entity extraction
+            entities = await graph_provider._extract_entities(query)
+            return [entity['name'] for entity in entities if entity['confidence'] > 0.6]
+        except Exception as e:
+            logger.warning(f"Query entity extraction failed: {e}")
+            return []
+    
+    async def _create_enhanced_memories_with_graph(
+        self, 
+        vector_memories: List[MemoryResponse], 
+        graph_memories: List[MemoryResponse], 
+        extracted_entities: List[str], 
+        request: GraphAwareQueryRequest
+    ) -> List[EnhancedMemoryResponse]:
+        """
+        Create enhanced memories by combining vector and graph search results.
+        
+        Uses hybrid scoring: (1 - graph_weight) * vector_score + graph_weight * graph_score
+        """
+        # Create a map for fast lookups
+        vector_map = {str(mem.id): mem for mem in vector_memories}
+        graph_map = {str(mem.id): mem for mem in graph_memories}
+        
+        # Get all unique memory IDs
+        all_memory_ids = set(vector_map.keys()) | set(graph_map.keys())
+        
+        enhanced_memories = []
+        
+        for memory_id in all_memory_ids:
+            vector_mem = vector_map.get(memory_id)
+            graph_mem = graph_map.get(memory_id)
+            
+            # Determine base memory (prefer vector for completeness)
+            base_memory = vector_mem or graph_mem
+            
+            # Calculate hybrid score
+            vector_score = vector_mem.similarity_score if vector_mem else 0.0
+            graph_score = graph_mem.similarity_score if graph_mem else 0.0
+            
+            # Hybrid scoring: combine vector and graph scores
+            hybrid_score = (
+                (1 - request.graph_weight) * vector_score + 
+                request.graph_weight * graph_score
+            )
+            
+            # Calculate graph boost factor
+            graph_boost_factor = 1.0
+            if graph_mem and vector_mem:
+                # Memory found in both - significant boost
+                graph_boost_factor = 1.5
+            elif graph_mem and not vector_mem:
+                # Memory found only through graph relationships
+                graph_boost_factor = 1.2
+            
+            # Generate evidence chains for graph-connected memories
+            evidence_chains = []
+            if graph_mem and request.max_evidence_chains > 0:
+                evidence_chains = await self._generate_evidence_chains(
+                    base_memory, extracted_entities, request.max_evidence_chains
+                )
+            
+            # Create graph connection info
+            graph_connections = GraphConnection(
+                connected_entities=self._extract_memory_entities(base_memory),
+                relationship_count=len(evidence_chains),
+                centrality_score=graph_score,  # Use graph score as proxy for centrality
+                cluster_id=None  # TODO: Implement graph clustering
+            )
+            
+            # Create enhanced memory
+            enhanced_mem = EnhancedMemoryResponse(
+                **base_memory.dict(),
+                similarity_score=hybrid_score,
+                evidence_chains=evidence_chains,
+                graph_connections=graph_connections,
+                graph_boost_factor=graph_boost_factor,
+                connection_strength=graph_score if graph_mem else None
+            )
+            
+            enhanced_memories.append(enhanced_mem)
+        
+        return enhanced_memories
+    
+    def _extract_memory_entities(self, memory: MemoryResponse) -> List[str]:
+        """Extract entity names from memory metadata or content."""
+        entities = []
+        
+        # Check if entities are stored in metadata
+        if memory.metadata and 'entities' in memory.metadata:
+            entities = memory.metadata['entities']
+        else:
+            # Simple extraction from content (fallback)
+            import re
+            pattern = r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
+            entities = re.findall(pattern, memory.content)
+        
+        return entities[:5]  # Limit to top 5 entities
+    
+    async def _generate_evidence_chains(
+        self, 
+        memory: MemoryResponse, 
+        query_entities: List[str], 
+        max_chains: int
+    ) -> List[EvidenceChain]:
+        """Generate evidence chains showing how memory connects to query entities."""
+        evidence_chains = []
+        
+        try:
+            memory_entities = self._extract_memory_entities(memory)
+            
+            # For each query entity, try to find connections to memory entities
+            for query_entity in query_entities[:max_chains]:
+                for memory_entity in memory_entities:
+                    if query_entity.lower() == memory_entity.lower():
+                        # Direct match - strongest evidence
+                        evidence_chains.append(EvidenceChain(
+                            path=[query_entity],
+                            relationship_types=[],
+                            strength=1.0,
+                            confidence=1.0,
+                            reasoning=f"Direct mention of '{query_entity}' in memory",
+                            hop_count=0
+                        ))
+                    else:
+                        # TODO: Implement BFS graph traversal for multi-hop connections
+                        # For now, create a simple semantic connection
+                        if self._are_entities_related(query_entity, memory_entity):
+                            evidence_chains.append(EvidenceChain(
+                                path=[query_entity, memory_entity],
+                                relationship_types=['relates_to'],
+                                strength=0.7,
+                                confidence=0.8,
+                                reasoning=f"Semantic relationship between '{query_entity}' and '{memory_entity}'",
+                                hop_count=1
+                            ))
+                
+                # Limit evidence chains per memory
+                if len(evidence_chains) >= max_chains:
+                    break
+        
+        except Exception as e:
+            logger.warning(f"Evidence chain generation failed: {e}")
+        
+        return evidence_chains[:max_chains]
+    
+    def _are_entities_related(self, entity1: str, entity2: str) -> bool:
+        """Simple heuristic to determine if two entities might be related."""
+        # Very simple semantic similarity check
+        entity1_lower = entity1.lower()
+        entity2_lower = entity2.lower()
+        
+        # Check for common words or similar patterns
+        if len(set(entity1_lower.split()) & set(entity2_lower.split())) > 0:
+            return True
+        
+        # Check for similar prefixes/suffixes
+        if entity1_lower.startswith(entity2_lower[:3]) or entity2_lower.startswith(entity1_lower[:3]):
+            return True
+            
+        return False
+    
+    def _filter_and_rank_graph_memories(
+        self, 
+        memories: List[EnhancedMemoryResponse], 
+        request: GraphAwareQueryRequest
+    ) -> List[EnhancedMemoryResponse]:
+        """Filter and rank memories using graph-aware scoring."""
+        # Filter by similarity threshold
+        filtered = [
+            m for m in memories 
+            if m.similarity_score and m.similarity_score >= request.min_similarity
+        ]
+        
+        # Apply graph-specific filters
+        if request.require_entity_match:
+            filtered = [m for m in filtered if m.evidence_chains]
+        
+        # Sort by enhanced scoring that considers graph connections
+        filtered.sort(key=lambda m: (
+            m.similarity_score * (m.graph_boost_factor if request.boost_connected_results else 1.0) * 0.8 +
+            m.importance_score * 0.2
+        ), reverse=True)
+        
+        return filtered
+    
+    def _calculate_entity_coverage(self, memories: List[EnhancedMemoryResponse]) -> float:
+        """Calculate what percentage of results have entity connections."""
+        if not memories:
+            return 0.0
+        
+        with_entities = sum(1 for mem in memories if mem.graph_connections.connected_entities)
+        return with_entities / len(memories)
+    
+    def _calculate_avg_evidence_chains(self, memories: List[EnhancedMemoryResponse]) -> float:
+        """Calculate average number of evidence chains per result."""
+        if not memories:
+            return 0.0
+        
+        total_chains = sum(len(mem.evidence_chains) for mem in memories)
+        return total_chains / len(memories)
+    
+    def _build_entity_connection_map(self, memories: List[EnhancedMemoryResponse]) -> Dict[str, List[str]]:
+        """Build a map showing connections between query entities and result entities."""
+        connection_map = {}
+        
+        for memory in memories:
+            for chain in memory.evidence_chains:
+                if len(chain.path) >= 2:
+                    from_entity = chain.path[0]
+                    to_entity = chain.path[-1]
+                    
+                    if from_entity not in connection_map:
+                        connection_map[from_entity] = []
+                    
+                    if to_entity not in connection_map[from_entity]:
+                        connection_map[from_entity].append(to_entity)
+        
+        return connection_map
