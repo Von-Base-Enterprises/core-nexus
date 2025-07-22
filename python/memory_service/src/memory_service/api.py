@@ -1614,13 +1614,57 @@ def create_memory_app() -> FastAPI:
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
             
-            # TODO: Implement memory fetching and entity extraction
-            # This requires fetching the memory content from the primary provider
-            # and running it through the graph provider's entity extraction
-            raise HTTPException(
-                status_code=501,
-                detail="Memory sync not yet implemented. This endpoint will extract entities from existing memories."
-            )
+            # Convert string memory_id to UUID
+            try:
+                memory_uuid = UUID(memory_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid memory ID format")
+            
+            # Fetch the memory from the primary provider
+            memory = await store.get_memory_by_id(memory_uuid)
+            if not memory:
+                raise HTTPException(status_code=404, detail=f"Memory {memory_id} not found")
+            
+            # Extract entities from the memory content
+            extracted_entities = store._extract_memory_entities(memory)
+            
+            # Store the memory in the graph provider to extract entities and relationships
+            if extracted_entities:
+                try:
+                    # Use the graph provider to store and process the memory
+                    await graph_provider.store(
+                        content=memory.content,
+                        embedding=[],  # Graph provider doesn't need embeddings
+                        metadata={
+                            **memory.metadata,
+                            "source_memory_id": str(memory_uuid),
+                            "extracted_entities": extracted_entities,
+                            "sync_timestamp": time.time()
+                        },
+                        memory_id=memory_uuid
+                    )
+                    
+                    logger.info(f"Successfully synced memory {memory_id} to graph with {len(extracted_entities)} entities")
+                    
+                    return {
+                        "memory_id": memory_uuid,
+                        "status": "synced",
+                        "entities_extracted": len(extracted_entities),
+                        "entities": extracted_entities,
+                        "message": f"Memory synced to knowledge graph with {len(extracted_entities)} entities"
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Failed to store memory in graph provider: {e}")
+                    raise HTTPException(status_code=500, detail=f"Failed to sync to graph: {str(e)}")
+            else:
+                return {
+                    "memory_id": memory_uuid,
+                    "status": "no_entities",
+                    "entities_extracted": 0,
+                    "entities": [],
+                    "message": "No entities found in memory content"
+                }
             
         except Exception as e:
             logger.error(f"Graph sync failed: {e}")
@@ -1671,70 +1715,287 @@ def create_memory_app() -> FastAPI:
             logger.error(f"Entity exploration failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to explore entity: {str(e)}")
     
-    @app.get("/graph/path/{from_entity}/{to_entity}")
+    @app.get("/graph/path/{from_entity}/{to_entity}", response_model=PathFindingResponse)
     async def find_entity_path(
         from_entity: str,
         to_entity: str,
         max_depth: int = 3,
+        include_indirect: bool = True,
+        min_strength: float = 0.3,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Find the shortest path between two entities in the knowledge graph.
         
-        Uses graph traversal to find connections.
+        Uses BFS traversal to find actual multi-hop connections with evidence chains.
         """
         try:
-            graph_provider = store.providers.get('graph')
-            if not graph_provider or not graph_provider.enabled:
-                raise HTTPException(status_code=503, detail="Graph provider not available")
+            # Check if graph provider and traversal engine are available
+            if not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph traversal engine not available")
             
-            # TODO: Implement actual path finding
-            return {
-                "from": from_entity,
-                "to": to_entity,
-                "path_found": False,
-                "message": "Path finding not yet implemented"
-            }
+            # Use the advanced BFS path finding
+            start_time = time.time()
+            
+            path_result = await store.graph_traversal_engine.find_shortest_paths(
+                from_entity=from_entity,
+                to_entity=to_entity,
+                max_depth=max_depth,
+                max_paths=5,
+                min_strength=min_strength
+            )
+            
+            # Convert GraphPath objects to EvidenceChain objects for the response
+            evidence_chains = []
+            for path in path_result.paths_found:
+                evidence_chains.append(EvidenceChain(
+                    path=path.entities,
+                    relationship_types=path.relationships,
+                    strength=path.total_strength,
+                    confidence=path.total_confidence,
+                    reasoning=f"Path through {len(path.entities)} entities with {path.hop_count} hops",
+                    hop_count=path.hop_count
+                ))
+            
+            return PathFindingResponse(
+                from_entity=from_entity,
+                to_entity=to_entity,
+                path_found=path_result.success,
+                paths=evidence_chains,
+                total_paths=len(evidence_chains),
+                query_time_ms=path_result.execution_time_ms,
+                max_depth_reached=path_result.search_depth_reached
+            )
             
         except Exception as e:
             logger.error(f"Path finding failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to find path: {str(e)}")
     
-    @app.get("/graph/insights/{memory_id}")
+    async def _extract_entity_relationships_for_memory(
+        memory: MemoryResponse, 
+        entities: List[str], 
+        store: UnifiedVectorStore
+    ) -> List[Dict[str, Any]]:
+        """Extract relationships between entities in a memory."""
+        relationships = []
+        
+        if len(entities) < 2:
+            return relationships
+        
+        # Get graph provider for relationship queries
+        graph_provider = store.providers.get('graph')
+        if not graph_provider or not graph_provider.enabled:
+            return relationships
+        
+        try:
+            # For each pair of entities, check if there's a known relationship
+            for i, entity1 in enumerate(entities):
+                for j, entity2 in enumerate(entities[i+1:], i+1):
+                    if store.graph_traversal_engine:
+                        # Use the traversal engine to find paths between entities
+                        path_result = await store.graph_traversal_engine.find_shortest_paths(
+                            entity1, entity2, max_depth=2, max_paths=1, min_strength=0.4
+                        )
+                        
+                        if path_result.success and path_result.paths_found:
+                            path = path_result.paths_found[0]
+                            relationships.append({
+                                "from_entity": entity1,
+                                "to_entity": entity2,
+                                "relationship_type": path.relationships[0] if path.relationships else "relates_to",
+                                "strength": path.total_strength,
+                                "confidence": path.total_confidence,
+                                "path_length": path.hop_count
+                            })
+                    else:
+                        # Simple fallback - assume entities in same memory are related
+                        relationships.append({
+                            "from_entity": entity1,
+                            "to_entity": entity2,
+                            "relationship_type": "co_occurs_with",
+                            "strength": 0.7,
+                            "confidence": 0.8,
+                            "path_length": 1
+                        })
+                        
+        except Exception as e:
+            logger.warning(f"Failed to extract entity relationships: {e}")
+        
+        return relationships
+    
+    @app.get("/graph/insights/{memory_id}", response_model=MemoryInsightsResponse)
     async def get_memory_graph_insights(
         memory_id: str,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
-        Get graph-based insights for a specific memory.
+        Get comprehensive graph-based insights for a specific memory.
         
-        Shows entities extracted and their relationships.
+        Shows entities extracted, their relationships, and evidence chains to key entities.
         """
         try:
-            graph_provider = store.providers.get('graph')
-            if not graph_provider or not graph_provider.enabled:
-                raise HTTPException(status_code=503, detail="Graph provider not available")
+            if not store.graph_scoring_engine or not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph analysis engines not available")
             
-            # TODO: Implement actual insights gathering
-            # For now, return mock data
-            return {
-                "memory_id": memory_id,
-                "entity": {
-                    "id": memory_id,
-                    "entity_type": "concept",
-                    "entity_name": "placeholder",
-                    "properties": {},
-                    "importance_score": 0.5
+            # Convert string memory_id to UUID
+            try:
+                memory_uuid = UUID(memory_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid memory ID format")
+            
+            # Get memory from primary provider to extract entities
+            memory = await store.get_memory_by_id(memory_uuid)
+            if not memory:
+                raise HTTPException(status_code=404, detail=f"Memory {memory_id} not found")
+            
+            # Extract entities from the memory
+            extracted_entities = store._extract_memory_entities(memory)
+            
+            # Get graph scoring data for this memory
+            if store.graph_scoring_engine:
+                graph_data = await store.graph_scoring_engine.calculate_memory_graph_score(
+                    memory_uuid, extracted_entities, [], None
+                )
+            else:
+                graph_data = {"graph_score": 0.5, "entity_scores": []}
+            
+            # Find related memories through graph connections
+            connected_memories = []
+            if extracted_entities:
+                # Query for memories that contain the same entities
+                graph_provider = store.providers.get('graph')
+                if graph_provider and graph_provider.enabled:
+                    try:
+                        for entity in extracted_entities[:3]:  # Limit to top 3 entities
+                            filters = {"entity_name": entity}
+                            related_memories = await graph_provider.query([], 5, filters)
+                            for related_mem in related_memories:
+                                if related_mem.id != memory_uuid and related_mem.id not in connected_memories:
+                                    connected_memories.append(related_mem.id)
+                    except Exception as e:
+                        logger.warning(f"Failed to find connected memories: {e}")
+                        connected_memories = []
+            
+            # Generate evidence chains to important entities
+            evidence_chains = []
+            if extracted_entities and store.graph_traversal_engine:
+                try:
+                    # Find paths to some key entities in the system
+                    key_entities = ["Tyvonne", "Von Base Enterprises", "React", "Core Nexus"]  # Example key entities
+                    
+                    for key_entity in key_entities[:3]:  # Limit to avoid long computation
+                        for memory_entity in extracted_entities[:2]:
+                            path_result = await store.graph_traversal_engine.find_shortest_paths(
+                                memory_entity, key_entity, max_depth=2, max_paths=1, min_strength=0.4
+                            )
+                            
+                            if path_result.success:
+                                path = path_result.paths_found[0]
+                                evidence_chains.append(EvidenceChain(
+                                    path=path.entities,
+                                    relationship_types=path.relationships,
+                                    strength=path.total_strength,
+                                    confidence=path.total_confidence,
+                                    reasoning=f"Connection from memory entity to {key_entity}",
+                                    hop_count=path.hop_count
+                                ))
+                except Exception as e:
+                    logger.warning(f"Evidence chain generation failed for memory insights: {e}")
+            
+            # Create mock EntityExtraction objects for response
+            entity_extractions = []
+            for i, entity in enumerate(extracted_entities):
+                entity_extractions.append({
+                    "entity_name": entity,
+                    "entity_type": "concept",  # Simplified
+                    "position_start": i * 10,
+                    "position_end": i * 10 + len(entity),
+                    "confidence": 0.8,
+                    "context": f"Context for {entity}"
+                })
+            
+            return MemoryInsightsResponse(
+                memory_id=memory_uuid,
+                extracted_entities=entity_extractions,
+                entity_relationships=await _extract_entity_relationships_for_memory(
+                    memory, extracted_entities, store
+                ),
+                connected_memories=connected_memories,
+                graph_summary={
+                    "total_entities": len(extracted_entities),
+                    "graph_score": graph_data.get("graph_score", 0.5),
+                    "analysis_method": "graph_scoring_engine",
+                    "scoring_components": graph_data
                 },
-                "memory_count": 1,
-                "relationship_count": 0,
-                "top_relationships": [],
-                "co_occurring_entities": []
-            }
+                evidence_chains_to_key_entities=evidence_chains
+            )
             
         except Exception as e:
             logger.error(f"Graph insights failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get insights: {str(e)}")
+    
+    @app.get("/graph/explore/{entity_name}")
+    async def explore_entity_neighborhood(
+        entity_name: str,
+        depth: int = 2,
+        max_neighbors: int = 20,
+        min_strength: float = 0.3,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Explore the neighborhood of an entity in the knowledge graph.
+        
+        Returns all connected entities within the specified depth with relationship information.
+        """
+        try:
+            if not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph traversal engine not available")
+            
+            # Use the neighborhood exploration feature
+            neighborhood = await store.graph_traversal_engine.find_entity_neighborhood(
+                entity_name=entity_name,
+                depth=depth,
+                max_neighbors=max_neighbors,
+                min_strength=min_strength
+            )
+            
+            return {
+                "entity": entity_name,
+                "exploration_depth": depth,
+                "neighbors_found": neighborhood["total_neighbors"],
+                "depth_reached": neighborhood["depth_reached"],
+                "neighbors": neighborhood["neighbors"],
+                "relationships": neighborhood["relationships"],
+                "visualization_data": {
+                    "center_node": {
+                        "name": entity_name,
+                        "type": "center",
+                        "level": 0
+                    },
+                    "connected_nodes": [
+                        {
+                            "name": neighbor["entity_name"],
+                            "type": neighbor["entity_type"],
+                            "level": neighbor["depth"],
+                            "importance": neighbor["importance_score"]
+                        }
+                        for neighbor in neighborhood["neighbors"]
+                    ],
+                    "edges": [
+                        {
+                            "from": rel["from"],
+                            "to": rel["to"],
+                            "type": rel["type"],
+                            "strength": rel["strength"]
+                        }
+                        for rel in neighborhood["relationships"]
+                    ]
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Entity exploration failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to explore entity: {str(e)}")
     
     @app.post("/graph/bulk-sync")
     async def bulk_sync_memories_to_graph(
@@ -2088,6 +2349,74 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Sync status error: {e}")
             return JSONResponse({"error": str(e)}, status_code=500)
+    
+    # Jarvis AI Assistant Endpoints
+    try:
+        from jarvis_agent import ChatRequest, ChatResponse, get_jarvis_instance
+        
+        @app.post("/jarvis/chat", response_model=ChatResponse)
+        async def jarvis_chat(request: ChatRequest):
+            """
+            Chat with Jarvis AI assistant powered by Google ADK.
+            
+            Jarvis can:
+            - Search through Core Nexus memories
+            - Create new memories from conversations
+            - Maintain conversation context
+            - Provide intelligent responses based on stored knowledge
+            """
+            try:
+                jarvis = await get_jarvis_instance()
+                
+                # Set user and conversation context
+                if request.user_id:
+                    jarvis.user_id = request.user_id
+                if request.conversation_id:
+                    jarvis.conversation_id = request.conversation_id
+                
+                # Get response
+                response = await jarvis.chat(request.message)
+                
+                return ChatResponse(
+                    response=response,
+                    conversation_id=jarvis.conversation_id,
+                    session_id=jarvis.session_id
+                )
+                
+            except Exception as e:
+                logger.error(f"Jarvis chat error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/jarvis/status")
+        async def jarvis_status():
+            """Check Jarvis agent status and capabilities."""
+            try:
+                jarvis = await get_jarvis_instance()
+                
+                return JSONResponse({
+                    "status": "online",
+                    "session_id": jarvis.session_id,
+                    "capabilities": [
+                        "memory_search",
+                        "memory_creation",
+                        "conversation_history",
+                        "context_awareness"
+                    ],
+                    "model": "gemini-2.0-flash-latest",
+                    "framework": "google-adk",
+                    "conversation_history_size": len(jarvis.conversation_history)
+                })
+                
+            except Exception as e:
+                return JSONResponse({
+                    "status": "offline",
+                    "error": str(e)
+                }, status_code=503)
+        
+        logger.info("✅ Jarvis AI assistant endpoints registered")
+        
+    except ImportError:
+        logger.warning("⚠️ Jarvis agent not available - skipping AI assistant endpoints")
     
     return app
 
