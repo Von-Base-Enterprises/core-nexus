@@ -79,6 +79,23 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment check - GRAPH_ENABLED: {os.getenv('GRAPH_ENABLED', 'NOT_SET')}")
     logger.info(f"Total environment variables: {len(os.environ)}")
     
+    # Check if dotenv is available and working
+    try:
+        import dotenv
+        logger.info(f"✅ python-dotenv version: {dotenv.__version__}")
+    except ImportError:
+        logger.error("❌ python-dotenv not available!")
+    
+    # Log build verification if file exists
+    if os.path.exists('build_verification.json'):
+        try:
+            with open('build_verification.json', 'r') as f:
+                build_info = json.load(f)
+                logger.info(f"Build timestamp: {build_info.get('build_timestamp', 'unknown')}")
+                logger.info(f"Build detected Render: {build_info.get('render_detected', False)}")
+        except Exception as e:
+            logger.warning(f"Could not read build verification: {e}")
+    
     # Initialize providers based on environment/config
     providers = []
     

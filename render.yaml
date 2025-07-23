@@ -7,7 +7,19 @@ services:
     plan: starter
     branch: main
     rootDir: python/memory_service
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      echo "=== Build Environment Check ==="
+      echo "Python version: $(python --version)"
+      echo "Current directory: $(pwd)"
+      echo "Files in directory: $(ls -la)"
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      echo "=== Verifying python-dotenv installation ==="
+      pip show python-dotenv || echo "WARNING: python-dotenv not installed!"
+      echo "=== Creating build verification file ==="
+      echo "Build timestamp: $(date)" > build_info.txt
+      echo "Python packages installed:" >> build_info.txt
+      pip list >> build_info.txt
     startCommand: ./scripts/startup.sh
     healthCheckPath: /health
     envVars:

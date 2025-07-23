@@ -7,6 +7,7 @@
 set -e  # Exit on error
 
 echo "Starting Core Nexus Memory Service..."
+echo "Startup time: $(date)"
 
 # Debug environment variables
 echo "=== Environment Variable Check ==="
@@ -17,6 +18,25 @@ echo "GEMINI_API_KEY: ${GEMINI_API_KEY:+SET}"
 echo "GRAPH_ENABLED: ${GRAPH_ENABLED:-NOT_SET}"
 echo "PGVECTOR_HOST: ${PGVECTOR_HOST:-NOT_SET}"
 echo "Total env vars: $(env | wc -l)"
+
+# Check specific Render variables
+echo ""
+echo "=== Render Platform Check ==="
+if [ -n "$RENDER" ]; then
+    echo "✅ Running on Render platform"
+    echo "Service Name: ${RENDER_SERVICE_NAME:-unknown}"
+    echo "Service ID: ${RENDER_SERVICE_ID:-unknown}"
+else
+    echo "❌ NOT running on Render platform"
+fi
+
+# Check if build verification file exists
+if [ -f "build_verification.json" ]; then
+    echo ""
+    echo "=== Build Verification ==="
+    cat build_verification.json
+fi
+
 echo "================================="
 
 # Ensure indexes exist
