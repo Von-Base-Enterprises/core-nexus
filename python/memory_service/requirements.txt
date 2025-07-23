@@ -52,7 +52,7 @@ spacy>=3.5.0              # Entity extraction with NLP
 pandas==2.0.3
 
 # Agent Development Kit
-google-adk>=1.7.0                # Google Agent Development Kit for multi-agent systems (latest)
+google-adk==1.7.0                # Google Agent Development Kit for multi-agent systems (latest)
 google-generativeai>=0.8.0  # Required for Gemini models with ADK
 apscheduler==3.10.4        # For heartbeat scheduling and periodic tasks
 nest-asyncio==1.6.0        # Handle event loop conflicts with FastAPI
