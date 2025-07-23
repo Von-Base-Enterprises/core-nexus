@@ -737,11 +737,13 @@ class GraphProvider(VectorProvider):
                         import google.generativeai as genai
                         genai.configure(api_key=gemini_api_key)
                         self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
-                        logger.info("Initialized Gemini model for entity extraction")
+                        logger.info("✅ Initialized Gemini model for entity extraction")
+                        logger.info(f"Gemini API key starts with: {gemini_api_key[:7]}...")
                     except Exception as e:
                         logger.warning(f"Failed to initialize Gemini: {e}")
                         self.gemini_model = None
                 else:
+                    logger.warning("❌ GEMINI_API_KEY not found - using fallback entity extraction")
                     self.gemini_model = None
                     
             if self.gemini_model:

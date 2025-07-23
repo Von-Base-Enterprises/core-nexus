@@ -41,6 +41,7 @@ httpx==0.28.1             # For testing FastAPI endpoints
 gunicorn==21.2.0
 prometheus-client==0.19.0  # For metrics export
 prometheus-fastapi-instrumentator==6.1.0  # FastAPI Prometheus integration
+python-dotenv==1.0.1       # For reliable environment variable loading
 
 # Graph integration dependencies (for Knowledge Graph)
 spacy>=3.5.0              # Entity extraction with NLP

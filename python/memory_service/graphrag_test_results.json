@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-07-22T18:08:47.926058",
+  "timestamp": "2025-07-23T10:23:09.865210",
   "url": "https://core-nexus-memory-service.onrender.com",
   "results": [
     {
@@ -63,16 +63,8 @@
         "primary_provider": "pgvector",
         "total_providers": 3,
         "embedding_model": {
-          "model_type": "OpenAIEmbeddingModel",
-          "dimension": 1536,
-          "health": {
-            "status": "healthy",
-            "model": "text-embedding-3-small",
-            "dimension": 1536,
-            "response_time_ms": 889.95,
-            "api_key_configured": true,
-            "max_batch_size": 100
-          }
+          "model_type": "MockEmbeddingModel",
+          "dimension": 1536
         }
       }
     },
@@ -113,23 +105,18 @@
     },
     {
       "test": "Graph-Enhanced Query",
-      "passed": true,
-      "memories_found": 10,
-      "entities_extracted": 0,
-      "evidence_chains": 0,
-      "graph_enabled": false,
-      "details": "Found 10 memories with 0 evidence chains"
+      "passed": false,
+      "error": "Status 500: {\"detail\":\"Internal server error\"}"
     },
     {
       "test": "Path Finding",
-      "passed": true,
-      "paths_found": 0,
-      "details": "Found 0 paths between entities"
+      "passed": false,
+      "error": "Status 500: {\"detail\":\"Failed to find path: 503: Graph traversal engine not available\"}"
     }
   ],
   "summary": {
-    "passed": 5,
-    "failed": 1,
+    "passed": 3,
+    "failed": 3,
     "total": 6
   }
 }

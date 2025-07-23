@@ -15,6 +15,10 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
+# Load environment variables from .env file if present
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -65,6 +69,14 @@ async def lifespan(app: FastAPI):
     
     # Startup
     logger.info("Initializing Core Nexus Memory Service...")
+    
+    # Log environment variable status
+    logger.info(f"Environment check - RENDER: {os.getenv('RENDER', 'NOT_SET')}")
+    logger.info(f"Environment check - PORT: {os.getenv('PORT', 'NOT_SET')}")
+    logger.info(f"Environment check - OPENAI_API_KEY: {'SET' if os.getenv('OPENAI_API_KEY') else 'NOT_SET'}")
+    logger.info(f"Environment check - GEMINI_API_KEY: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT_SET'}")
+    logger.info(f"Environment check - GRAPH_ENABLED: {os.getenv('GRAPH_ENABLED', 'NOT_SET')}")
+    logger.info(f"Total environment variables: {len(os.environ)}")
     
     # Initialize providers based on environment/config
     providers = []
