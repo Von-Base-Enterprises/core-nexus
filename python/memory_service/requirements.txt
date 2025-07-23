@@ -1,7 +1,7 @@
 # Core Nexus Memory Service Dependencies
 
 # Web framework
-fastapi==0.115.0
+fastapi>=0.116.0
 uvicorn[standard]==0.32.1
 
 # Data models and validation
@@ -24,7 +24,6 @@ openai==1.54.0             # For embeddings integration
 
 # Async support
 asyncio-pool==0.6.0
-anyio>=4.9.0,<5.0.0           # Explicit version constraint for google-adk compatibility
 
 # Caching
 redis==5.0.1                  # Redis client for query caching
@@ -52,7 +51,7 @@ spacy>=3.5.0              # Entity extraction with NLP
 pandas==2.0.3
 
 # Agent Development Kit
-google-adk==1.5.0          # Google Agent Development Kit for multi-agent systems
+google-adk                 # Google Agent Development Kit for multi-agent systems (latest)
 google-generativeai>=0.8.0  # Required for Gemini models with ADK
 apscheduler==3.10.4        # For heartbeat scheduling and periodic tasks
 nest-asyncio==1.6.0        # Handle event loop conflicts with FastAPI
