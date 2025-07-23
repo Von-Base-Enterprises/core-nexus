@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
     # Check if dotenv is available and working
     try:
         import dotenv
-        logger.info(f"✅ python-dotenv version: {dotenv.__version__}")
+        logger.info("✅ python-dotenv is available")
     except ImportError:
         logger.error("❌ python-dotenv not available!")
     
