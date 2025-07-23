@@ -1,7 +1,7 @@
 # Core Nexus Memory Service Dependencies
 
 # Web framework
-fastapi>=0.116.0
+fastapi==0.116.0
 uvicorn[standard]==0.34.0
 
 # Data models and validation
@@ -44,7 +44,7 @@ prometheus-fastapi-instrumentator==6.1.0  # FastAPI Prometheus integration
 python-dotenv==1.0.1       # For reliable environment variable loading
 
 # Graph integration dependencies (for Knowledge Graph)
-spacy>=3.5.0              # Entity extraction with NLP
+spacy==3.7.4              # Entity extraction with NLP
 # Note: spacy model needs to be downloaded separately:
 # python -m spacy download en_core_web_sm
 
@@ -53,6 +53,6 @@ pandas==2.0.3
 
 # Agent Development Kit
 google-adk==1.7.0                # Google Agent Development Kit for multi-agent systems (latest)
-google-generativeai>=0.8.0  # Required for Gemini models with ADK
+google-generativeai==0.8.3  # Required for Gemini models with ADK
 apscheduler==3.10.4        # For heartbeat scheduling and periodic tasks
 nest-asyncio==1.6.0        # Handle event loop conflicts with FastAPI
