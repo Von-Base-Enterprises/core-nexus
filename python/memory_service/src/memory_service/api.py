@@ -14,6 +14,7 @@ import json
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from uuid import UUID
 
 # Load environment variables from .env file if present
 from dotenv import load_dotenv
