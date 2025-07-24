@@ -45,7 +45,7 @@ python-dotenv==1.0.1       # For reliable environment variable loading
 
 # OpenTelemetry Core
 opentelemetry-api==1.31.0
-opentelemetry-sdk==1.31.0
+opentelemetry-sdk==1.21.0
 opentelemetry-instrumentation==0.52b0
 
 # OpenTelemetry Instrumentation
@@ -56,7 +56,7 @@ opentelemetry-instrumentation-logging==0.52b0
 
 # OpenTelemetry Exporters
 opentelemetry-exporter-otlp==1.24.0
-opentelemetry-exporter-prometheus==0.45b0
+opentelemetry-exporter-prometheus==0.52b0
 opentelemetry-exporter-otlp-proto-grpc==1.24.0
 
 # OpenTelemetry Utilities
