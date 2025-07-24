@@ -93,3 +93,5 @@ chroma_db/
 memory_cache/
 vector_indexes/
 graph_data/
+*_results.json
+*_report.json

@@ -1,0 +1,2 @@
+b7d50170f13ee2f2484fdc453e1b6c538221e43f fix: Use getattr for safe table_name access
+Backup branch: pre-cleanup-backup
