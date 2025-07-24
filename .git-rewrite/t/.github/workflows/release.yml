@@ -1,0 +1,465 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  
+  # Allow manual triggering for testing
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v1.0.0)'
+        required: true
+        type: string
+      dry-run:
+        description: 'Dry run - build artifacts but do not publish'
+        required: false
+        type: boolean
+        default: false
+
+# Required for OIDC token generation
+permissions:
+  contents: write       # Create releases and upload assets
+  packages: write       # Push to GHCR
+  id-token: write      # Generate OIDC tokens for keyless signing
+  actions: read        # Read workflow artifacts
+  attestations: write  # Create attestations
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  FORCE_COLOR: 1
+  CI: true
+
+jobs:
+  # Generate build metadata
+  metadata:
+    name: Generate Build Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      created: ${{ steps.meta.outputs.created }}
+      revision: ${{ steps.meta.outputs.revision }}
+      is-prerelease: ${{ steps.meta.outputs.is-prerelease }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          # Determine version from tag or input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+            VERSION="${TAG#v}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG#v}"
+          fi
+          
+          # Generate timestamps
+          CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          REVISION=${{ github.sha }}
+          
+          # Check if pre-release
+          IS_PRERELEASE="false"
+          if [[ "$VERSION" =~ (alpha|beta|rc|dev|pre) ]]; then
+            IS_PRERELEASE="true"
+          fi
+          
+          # Generate Docker tags
+          TAGS="$REGISTRY/$IMAGE_NAME:$VERSION"
+          if [ "$IS_PRERELEASE" = "false" ]; then
+            TAGS="$TAGS,$REGISTRY/$IMAGE_NAME:latest"
+          fi
+          
+          # Generate labels
+          LABELS="org.opencontainers.image.title=core-nexus"
+          LABELS="$LABELS,org.opencontainers.image.description=Core Nexus monorepo"
+          LABELS="$LABELS,org.opencontainers.image.version=$VERSION"
+          LABELS="$LABELS,org.opencontainers.image.created=$CREATED"
+          LABELS="$LABELS,org.opencontainers.image.revision=$REVISION"
+          LABELS="$LABELS,org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}"
+          LABELS="$LABELS,org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}"
+          LABELS="$LABELS,org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}#readme"
+          LABELS="$LABELS,org.opencontainers.image.vendor=Von Base Enterprises"
+          LABELS="$LABELS,org.opencontainers.image.licenses=MIT"
+          
+          # Output all metadata
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "labels=$LABELS" >> $GITHUB_OUTPUT
+          echo "created=$CREATED" >> $GITHUB_OUTPUT
+          echo "revision=$REVISION" >> $GITHUB_OUTPUT
+          echo "is-prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          
+          echo "Release metadata:"
+          echo "  Version: $VERSION"
+          echo "  Tags: $TAGS"
+          echo "  Created: $CREATED"
+          echo "  Pre-release: $IS_PRERELEASE"
+
+  # Build and publish Docker image
+  docker:
+    name: Build and Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: metadata
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-url: ${{ steps.build.outputs.image-url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ !github.event.inputs.dry-run }}
+          tags: ${{ needs.metadata.outputs.tags }}
+          labels: ${{ needs.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ !github.event.inputs.dry-run }}
+
+      - name: Generate Docker image URL
+        id: image-url
+        run: |
+          IMAGE_URL="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          echo "image-url=$IMAGE_URL" >> $GITHUB_OUTPUT
+          echo "Docker image: $IMAGE_URL"
+
+  # Build Python wheel
+  python-wheel:
+    name: Build Python Wheel
+    runs-on: ubuntu-latest
+    needs: metadata
+    outputs:
+      wheel-path: ${{ steps.build.outputs.wheel-path }}
+      wheel-name: ${{ steps.build.outputs.wheel-name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: '1.8.0'
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Configure Poetry for packaging
+        run: |
+          # Update pyproject.toml for packaging
+          poetry config virtualenvs.create true
+          poetry config virtualenvs.in-project true
+          
+          # Set version from tag
+          poetry version ${{ needs.metadata.outputs.version }}
+
+      - name: Build wheel
+        id: build
+        run: |
+          # Build the wheel
+          poetry build --format wheel
+          
+          # Find the built wheel
+          WHEEL_PATH=$(find dist -name "*.whl" -type f | head -1)
+          WHEEL_NAME=$(basename "$WHEEL_PATH")
+          
+          echo "wheel-path=$WHEEL_PATH" >> $GITHUB_OUTPUT
+          echo "wheel-name=$WHEEL_NAME" >> $GITHUB_OUTPUT
+          
+          echo "Built wheel: $WHEEL_NAME"
+          ls -la dist/
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/*.whl
+          retention-days: 30
+
+  # Generate SBOMs for both artifacts
+  generate-sboms:
+    name: Generate SBOMs
+    runs-on: ubuntu-latest
+    needs: [metadata, docker, python-wheel]
+    outputs:
+      docker-sbom: docker-sbom.json
+      python-sbom: python-sbom.json
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/
+
+      - name: Install CycloneDX tools
+        run: |
+          pip install cyclonedx-bom cyclonedx-python
+
+      - name: Generate Docker SBOM
+        run: |
+          # Create a basic SBOM for the Docker image
+          cat > docker-sbom.json << EOF
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "serialNumber": "urn:uuid:$(uuidgen)",
+            "version": 1,
+            "metadata": {
+              "timestamp": "${{ needs.metadata.outputs.created }}",
+              "tools": [
+                {
+                  "vendor": "Von Base Enterprises",
+                  "name": "core-nexus-release-pipeline",
+                  "version": "${{ needs.metadata.outputs.version }}"
+                }
+              ],
+              "component": {
+                "type": "container",
+                "bom-ref": "${{ needs.docker.outputs.image-url }}",
+                "name": "core-nexus",
+                "version": "${{ needs.metadata.outputs.version }}",
+                "description": "Core Nexus Docker image",
+                "licenses": [{"license": {"id": "MIT"}}],
+                "externalReferences": [
+                  {
+                    "type": "website",
+                    "url": "${{ github.server_url }}/${{ github.repository }}"
+                  }
+                ]
+              }
+            },
+            "components": []
+          }
+          EOF
+
+      - name: Generate Python SBOM
+        run: |
+          # Generate SBOM for Python wheel
+          cyclonedx-py --output-format json --output-file python-sbom.json .
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            docker-sbom.json
+            python-sbom.json
+          retention-days: 30
+
+  # Sign artifacts with Cosign
+  sign-artifacts:
+    name: Sign Artifacts
+    runs-on: ubuntu-latest
+    needs: [metadata, docker, python-wheel, generate-sboms]
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.2.2'
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Sign Docker image
+        if: ${{ !github.event.inputs.dry-run }}
+        run: |
+          echo "Signing Docker image: ${{ needs.docker.outputs.image-url }}"
+          cosign sign --yes ${{ needs.docker.outputs.image-url }}
+
+      - name: Sign Python wheel
+        run: |
+          echo "Signing Python wheel: ${{ needs.python-wheel.outputs.wheel-name }}"
+          cosign sign-blob --yes --output-signature ${{ needs.python-wheel.outputs.wheel-name }}.sig ${{ needs.python-wheel.outputs.wheel-path }}
+
+      - name: Sign SBOMs
+        run: |
+          echo "Signing SBOMs"
+          cosign sign-blob --yes --output-signature docker-sbom.json.sig docker-sbom.json
+          cosign sign-blob --yes --output-signature python-sbom.json.sig python-sbom.json
+
+      - name: Upload signatures
+        uses: actions/upload-artifact@v4
+        with:
+          name: signatures
+          path: |
+            *.sig
+          retention-days: 30
+
+  # Generate SLSA-3 provenance
+  provenance:
+    name: Generate SLSA-3 Provenance
+    needs: [metadata, docker, python-wheel]
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.10.0
+    with:
+      base64-subjects: |
+        ${{ needs.docker.outputs.image-digest }}
+        ${{ needs.python-wheel.outputs.wheel-name }}
+      upload-assets: true
+      upload-tag-name: ${{ github.ref_name }}
+
+  # Publish to PyPI
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [metadata, python-wheel, sign-artifacts]
+    if: ${{ !github.event.inputs.dry-run }}
+    environment:
+      name: pypi
+      url: https://pypi.org/p/core-nexus
+    steps:
+      - name: Download wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
+          
+  # Create GitHub release
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [metadata, docker, python-wheel, generate-sboms, sign-artifacts, provenance]
+    if: always() && (needs.docker.result == 'success' || needs.python-wheel.result == 'success')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+          path: release-assets/
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          cat > release-notes.md << EOF
+          # Release ${{ needs.metadata.outputs.version }}
+          
+          Released on ${{ needs.metadata.outputs.created }}
+          
+          ## 🚀 Artifacts
+          
+          ### Docker Image
+          \`\`\`
+          docker pull ${{ needs.docker.outputs.image-url }}
+          \`\`\`
+          
+          ### Python Wheel
+          \`\`\`
+          pip install core-nexus==${{ needs.metadata.outputs.version }}
+          \`\`\`
+          
+          ## 🔒 Security
+          
+          All artifacts are:
+          - ✅ Signed with Sigstore Cosign (keyless)
+          - ✅ Accompanied by CycloneDX SBOMs
+          - ✅ Protected by SLSA-3 provenance
+          
+          ## 📋 Supply Chain Artifacts
+          
+          - **Docker SBOM**: \`docker-sbom.json\`
+          - **Python SBOM**: \`python-sbom.json\`
+          - **SLSA-3 Provenance**: \`multiple.intoto.jsonl\`
+          - **Cosign Signatures**: \`*.sig\` files
+          
+          ## 🔍 Verification
+          
+          ### Verify Docker image signature
+          \`\`\`bash
+          cosign verify ${{ needs.docker.outputs.image-url }} --certificate-identity-regexp="https://github.com/${{ github.repository }}" --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+          \`\`\`
+          
+          ### Verify wheel signature
+          \`\`\`bash
+          cosign verify-blob ${{ needs.python-wheel.outputs.wheel-name }} --signature ${{ needs.python-wheel.outputs.wheel-name }}.sig --certificate-identity-regexp="https://github.com/${{ github.repository }}" --certificate-oidc-issuer="https://token.actions.githubusercontent.com"
+          \`\`\`
+          
+          ### Verify SLSA-3 provenance
+          \`\`\`bash
+          slsa-verifier verify-artifact ${{ needs.python-wheel.outputs.wheel-name }} --provenance-path multiple.intoto.jsonl --source-uri github.com/${{ github.repository }}
+          \`\`\`
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ needs.metadata.outputs.version }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.metadata.outputs.is-prerelease }}
+          draft: false
+          files: |
+            release-assets/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Summary
+        run: |
+          echo "## 🚀 Release ${{ needs.metadata.outputs.version }} Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Published Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Image**: \`${{ needs.docker.outputs.image-url }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Python Wheel**: \`${{ needs.python-wheel.outputs.wheel-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔒 Security Features" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Sigstore Cosign keyless signing" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ CycloneDX SBOMs generated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SLSA-3 provenance attestation" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Multi-platform Docker images" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎯 Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- **GHCR**: Published to GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.dry-run }}" != "true" ]; then
+            echo "- **PyPI**: Published to Python Package Index" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **PyPI**: Skipped (dry run)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **GitHub**: Release created with all artifacts" >> $GITHUB_STEP_SUMMARY

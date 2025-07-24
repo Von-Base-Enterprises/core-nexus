@@ -1,0 +1,107 @@
+{
+  "timestamp": "2025-07-22 00:18:34",
+  "tests": {
+    "raw_db": {
+      "samples": [
+        {
+          "connect_time": 747.230454988312,
+          "setup_time": 130.00305503373966,
+          "sample_time": 789.6600409876555,
+          "query_time": 256.91488798474893,
+          "close_time": 85.10583796305582,
+          "total_time": 2008.914276957512,
+          "result_count": 10
+        },
+        {
+          "connect_time": 663.6407490004785,
+          "setup_time": 84.41001898609102,
+          "sample_time": 739.1526459832676,
+          "query_time": 263.00586701836437,
+          "close_time": 83.36529298685491,
+          "total_time": 1833.5745739750564,
+          "result_count": 10
+        },
+        {
+          "connect_time": 666.7318999534473,
+          "setup_time": 89.25233903573826,
+          "sample_time": 736.3623960409313,
+          "query_time": 286.94834298221394,
+          "close_time": 87.15921302791685,
+          "total_time": 1866.4541910402477,
+          "result_count": 10
+        },
+        {
+          "connect_time": 592.1874690102413,
+          "setup_time": 86.19704196462408,
+          "sample_time": 742.0203399960883,
+          "query_time": 260.8275059610605,
+          "close_time": 92.46393799548969,
+          "total_time": 1773.696294927504,
+          "result_count": 10
+        },
+        {
+          "connect_time": 667.1316740103066,
+          "setup_time": 93.4821889968589,
+          "sample_time": 742.1072560246103,
+          "query_time": 262.9912789561786,
+          "close_time": 89.74828396458179,
+          "total_time": 1855.460681952536,
+          "result_count": 10
+        }
+      ],
+      "avg_total": 1867.6200037705712,
+      "avg_query": 266.13757658051327,
+      "avg_connect": 667.3844493925571
+    },
+    "pooled_db": {
+      "samples": [
+        {
+          "pool_create_time": 620.1361510320567,
+          "acquire_time": 84.71563196508214,
+          "query_time": 269.44404101232067,
+          "close_time": 84.33650503866374,
+          "total_time": 1058.6323290481232,
+          "result_count": 10
+        },
+        {
+          "pool_create_time": 601.2545980047435,
+          "acquire_time": 82.30243297293782,
+          "query_time": 258.62264196621254,
+          "close_time": 85.7662379858084,
+          "total_time": 1027.9459109297022,
+          "result_count": 10
+        },
+        {
+          "pool_create_time": 930.8874830021523,
+          "acquire_time": 85.04884300054982,
+          "query_time": 276.8257260322571,
+          "close_time": 79.86277702730149,
+          "total_time": 1372.6248290622607,
+          "result_count": 10
+        },
+        {
+          "pool_create_time": 956.3256719848141,
+          "acquire_time": 79.32621100917459,
+          "query_time": 258.063082001172,
+          "close_time": 85.84185299696401,
+          "total_time": 1379.5568179921247,
+          "result_count": 10
+        },
+        {
+          "pool_create_time": 617.6894410164095,
+          "acquire_time": 84.77687498088926,
+          "query_time": 260.4749680031091,
+          "close_time": 89.44880799390376,
+          "total_time": 1052.3900919943117,
+          "result_count": 10
+        }
+      ],
+      "avg_total": 1178.2299958053045,
+      "avg_query": 264.6860918030143,
+      "avg_acquire": 83.23399878572673
+    },
+    "api": {
+      "error": "No successful API requests"
+    }
+  }
+}

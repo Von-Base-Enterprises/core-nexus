@@ -1,0 +1,7 @@
+{
+  "probes": "unknown",
+  "probes_error": "unrecognized configuration parameter \"ivfflat.probes\"",
+  "index_name": "idx_vector_memories_embedding",
+  "index_size": "14 MB",
+  "total_memories": 1728
+}

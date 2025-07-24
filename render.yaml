@@ -7,8 +7,20 @@ services:
     plan: starter
     branch: main
     rootDir: python/memory_service
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn src.memory_service.api:app --host 0.0.0.0 --port $PORT --workers 1
+    buildCommand: |
+      echo "=== Build Environment Check ==="
+      echo "Python version: $(python --version)"
+      echo "Current directory: $(pwd)"
+      echo "Files in directory: $(ls -la)"
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      echo "=== Verifying python-dotenv installation ==="
+      pip show python-dotenv || echo "WARNING: python-dotenv not installed!"
+      echo "=== Creating build verification file ==="
+      echo "Build timestamp: $(date)" > build_info.txt
+      echo "Python packages installed:" >> build_info.txt
+      pip list >> build_info.txt
+    startCommand: ./scripts/startup.sh
     healthCheckPath: /health
     envVars:
       - key: SERVICE_NAME
@@ -49,6 +61,11 @@ services:
       - key: PGVECTOR_USER
         value: nexus_memory_db_user
       # PGVECTOR_PASSWORD must be set in the dashboard for security
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: core-nexus-redis-cache
+          property: connectionString
 
   # Keep-alive Background Worker
   - type: worker
@@ -97,3 +114,11 @@ services:
         value: admin123
       - key: PROMETHEUS_URL
         value: https://core-nexus-prometheus.onrender.com
+
+  # Redis Cache Service
+  - type: redis
+    name: core-nexus-redis-cache
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []  # Allow access from all Render services

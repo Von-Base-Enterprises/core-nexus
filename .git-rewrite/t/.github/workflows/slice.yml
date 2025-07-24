@@ -1,0 +1,97 @@
+name: Day-1 Slice Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'python/core_memory_slice/**'
+      - 'scripts/ingest_one.py'
+      - 'scripts/query_one.py'
+      - 'requirements-slice.txt'
+  push:
+    branches:
+      - main
+      - 'feat/day1-vertical-slice'
+
+jobs:
+  slice-test:
+    name: Test Day-1 Vertical Slice
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install slice dependencies
+        run: |
+          pip install -r requirements-slice.txt
+      
+      - name: Test document ingestion
+        run: |
+          python scripts/ingest_one.py "Test document for CI pipeline"
+          echo "✅ Ingestion completed"
+      
+      - name: Test document query
+        run: |
+          python scripts/query_one.py "test document"
+          echo "✅ Query completed"
+      
+      - name: Validate performance targets
+        run: |
+          # Run ingest and capture latency
+          echo "Testing ingest performance..."
+          python scripts/ingest_one.py "Performance test document" > ingest_output.txt
+          cat ingest_output.txt
+          
+          # Run query and capture latency
+          echo "Testing query performance..."
+          python scripts/query_one.py "performance test" > query_output.txt
+          cat query_output.txt
+          
+          # Check for success indicators
+          if grep -q "SUCCESS" query_output.txt; then
+            echo "✅ Performance targets met"
+          else
+            echo "❌ Performance targets not met"
+            exit 1
+          fi
+      
+      - name: Test with multiple documents
+        run: |
+          echo "Testing multiple document scenario..."
+          python scripts/ingest_one.py "First document about agriculture"
+          python scripts/ingest_one.py "Second document about technology"
+          python scripts/ingest_one.py "Third document about science"
+          python scripts/query_one.py "agriculture technology"
+          echo "✅ Multi-document test completed"
+      
+      - name: Validate storage consistency
+        run: |
+          echo "Checking storage consistency..."
+          python -c "
+          import sys, os
+          sys.path.insert(0, 'python')
+          from core_memory_slice import LiteVectorStore, LiteGraphStore
+          
+          vs = LiteVectorStore('./slice_data/vectors.json')
+          gs = LiteGraphStore('./slice_data/graph.db')
+          
+          print(f'Vector store count: {vs.count()}')
+          print(f'Graph store count: {gs.count_nodes()}')
+          
+          if vs.count() != gs.count_nodes():
+              print('❌ Storage inconsistency detected!')
+              sys.exit(1)
+          else:
+              print('✅ Storage consistency verified')
+          "
+      
+      - name: Clean up test data
+        run: |
+          rm -rf slice_data/
+          echo "✅ Test data cleaned up"

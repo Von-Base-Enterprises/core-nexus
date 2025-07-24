@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-07-22 00:03:55",
+  "single_query_test": {
+    "recall": 1.0,
+    "speedup": 0.9855709265556022,
+    "exact_time_ms": 90.8055305480957,
+    "approx_time_ms": 92.13495254516602,
+    "order_accuracy": 1.0
+  },
+  "multi_query_test": {
+    "avg_recall": 1.0,
+    "min_recall": 1.0,
+    "max_recall": 1.0,
+    "avg_speedup": 1.182035134839029,
+    "num_queries": 5
+  }
+}

@@ -1,0 +1,272 @@
+repos:
+  # Universal quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # File formatting and cleanup
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        description: Trims trailing whitespace
+        exclude: '^(.*\.md|.*\.txt)$'
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Makes sure files end in a newline and only a newline
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+        description: Replaces or checks mixed line endings
+        args: ['--fix=lf']
+      
+      # JSON/YAML validation
+      - id: check-json
+        name: Check JSON syntax
+        description: Checks JSON files for parseable syntax
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Checks YAML files for parseable syntax
+        args: ['--allow-multiple-documents']
+      - id: check-toml
+        name: Check TOML syntax
+        description: Checks TOML files for parseable syntax
+      
+      # Merge conflict detection
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Checks for files that contain merge conflict strings
+      - id: check-added-large-files
+        name: Check for large files
+        description: Prevents giant files from being committed
+        args: ['--maxkb=1000']
+      
+      # Security and best practices
+      - id: detect-private-key
+        name: Detect private keys
+        description: Checks for the existence of private keys
+      - id: check-case-conflict
+        name: Check case conflicts
+        description: Checks for files with names that would conflict on case-insensitive filesystems
+      - id: check-executables-have-shebangs
+        name: Check executables have shebangs
+        description: Checks that non-binary executables have a proper shebang
+      - id: check-shebang-scripts-are-executable
+        name: Check shebang scripts are executable
+        description: Checks that scripts with shebangs are executable
+
+  # Conventional commits validation
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.3.0
+    hooks:
+      - id: conventional-pre-commit
+        name: Conventional commits
+        description: Validates commit messages follow conventional commit format
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - build
+          - ci
+          - chore
+          - revert
+
+  # JavaScript/TypeScript hooks
+  - repo: local
+    hooks:
+      # ESLint for JavaScript/TypeScript
+      - id: eslint
+        name: ESLint
+        description: Run ESLint on JavaScript/TypeScript files
+        entry: yarn lint:fix
+        language: system
+        files: \.(js|jsx|ts|tsx)$
+        exclude: '^(node_modules/|\.yarn/|dist/|build/)'
+        pass_filenames: false
+        stages: [pre-commit]
+      
+      # Prettier for JavaScript/TypeScript formatting
+      - id: prettier
+        name: Prettier
+        description: Run Prettier on JavaScript/TypeScript files
+        entry: yarn prettier --write
+        language: system
+        files: \.(js|jsx|ts|tsx|json|yaml|yml|md)$
+        exclude: '^(node_modules/|\.yarn/|dist/|build/|\.git/)'
+        stages: [pre-commit]
+      
+      # TypeScript type checking
+      - id: typescript-check
+        name: TypeScript Check
+        description: Run TypeScript compiler check
+        entry: yarn type-check
+        language: system
+        files: \.(ts|tsx)$
+        exclude: '^(node_modules/|\.yarn/|dist/|build/)'
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # Python hooks
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      # Ruff linting (replaces flake8, isort, etc.)
+      - id: ruff
+        name: Ruff Linter
+        description: Run Ruff linter on Python files
+        args: [--fix, --exit-non-zero-on-fix]
+        types: [python]
+      # Ruff formatting (can replace black for some use cases)
+      - id: ruff-format
+        name: Ruff Formatter
+        description: Run Ruff formatter on Python files
+        types: [python]
+
+  # Black formatting for Python
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Black Formatter
+        description: Run Black formatter on Python files
+        language_version: python3
+        types: [python]
+        args: ['--line-length=88']
+
+  # Additional Python quality checks
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.16.0
+    hooks:
+      - id: mypy
+        name: MyPy Type Checker
+        description: Run MyPy type checker on Python files
+        additional_dependencies: [types-all]
+        args: ['--ignore-missing-imports', '--strict']
+        types: [python]
+        exclude: '^(tests/|docs/)'
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        name: Bandit Security Linter
+        description: Run Bandit security linter on Python files
+        args: ['-r', '.', '-f', 'json', '-o', '/tmp/bandit-report.json']
+        types: [python]
+        exclude: '^tests/'
+
+  # Additional file checks
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      # Python-specific checks
+      - id: python-check-blanket-noqa
+        name: Check blanket noqa
+        description: Require specific codes when using noqa
+        types: [python]
+      - id: python-check-blanket-type-ignore
+        name: Check blanket type ignore
+        description: Require specific codes when using type ignore
+        types: [python]
+      - id: python-no-eval
+        name: No eval() usage
+        description: Check for eval() usage
+        types: [python]
+      - id: python-no-log-warn
+        name: No log.warn usage
+        description: Check for deprecated log.warn usage
+        types: [python]
+      - id: python-use-type-annotations
+        name: Use type annotations
+        description: Check for proper type annotations
+        types: [python]
+      
+      # General text checks
+      - id: text-unicode-replacement-char
+        name: Check unicode replacement chars
+        description: Check for unicode replacement characters
+      - id: rst-backticks
+        name: Check RST backticks
+        description: Check for incorrect backticks in RST files
+        types: [rst]
+
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.1-beta
+    hooks:
+      - id: hadolint-docker
+        name: Hadolint Dockerfile Linter
+        description: Run Hadolint on Dockerfiles
+        files: ^.*Dockerfile.*$
+        args: ['--ignore', 'DL3008', '--ignore', 'DL3009']
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        name: Markdown Linter
+        description: Run markdownlint on Markdown files
+        args: ['--fix']
+        types: [markdown]
+        exclude: '^(node_modules/|\.yarn/|CHANGELOG\.md)'
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: ShellCheck
+        description: Run ShellCheck on shell scripts
+        types: [shell]
+        args: ['--severity=warning']
+
+  # Secrets detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect Secrets
+        description: Detect secrets in committed files
+        args: ['--baseline', '.secrets.baseline']
+        exclude: '^(poetry\.lock|yarn\.lock|package-lock\.json)$'
+
+# Configuration for pre-commit
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: monthly
+  skip: []
+  submodules: false
+
+# Default language version
+default_language_version:
+  python: python3.10
+  node: '20'
+
+# Default stages
+default_stages: [pre-commit]
+
+# Exclude patterns
+exclude: |
+  (?x)^(
+    \.yarn/.*|
+    node_modules/.*|
+    \.venv/.*|
+    __pycache__/.*|
+    \.git/.*|
+    \.pytest_cache/.*|
+    \.mypy_cache/.*|
+    dist/.*|
+    build/.*|
+    \.coverage.*|
+    coverage/.*|
+    .*\.egg-info/.*
+  )$

@@ -1,0 +1,126 @@
+{
+  "test_run_timestamp": 1753193299.8744352,
+  "summary": {
+    "total_tests": 19,
+    "passed_tests": 19,
+    "failed_tests": 0,
+    "pass_rate_percent": 100.0,
+    "average_execution_time_ms": 1264.5090002762645
+  },
+  "test_details": [
+    {
+      "test_name": "Entity Centrality Calculation",
+      "success": true,
+      "message": "Centrality score: 0.720 for Test",
+      "execution_time_ms": 457.9019546508789
+    },
+    {
+      "test_name": "Memory Graph Scoring",
+      "success": true,
+      "message": "Graph score: 0.500 (1000.0ms)",
+      "execution_time_ms": 1838.9711380004883
+    },
+    {
+      "test_name": "Graph Boost Factor Calculation",
+      "success": true,
+      "message": "Boost factor: 1.00x",
+      "execution_time_ms": 764.0926837921143
+    },
+    {
+      "test_name": "Scoring Statistics Generation",
+      "success": true,
+      "message": "Stats: 783 entities, 48 relationships",
+      "execution_time_ms": 271.18563652038574
+    },
+    {
+      "test_name": "Direct Entity Path Finding",
+      "success": true,
+      "message": "Found 2 paths in 1407.2ms (shortest: 1 hops)",
+      "execution_time_ms": 1492.5875663757324
+    },
+    {
+      "test_name": "Multi-hop Path Finding",
+      "success": true,
+      "message": "Multi-hop search from Test to Core Nexus: 2 paths found",
+      "execution_time_ms": 1742.856502532959
+    },
+    {
+      "test_name": "Path Finding with Strength Filter",
+      "success": true,
+      "message": "Weak filter: 2 paths, Strong filter: 2 paths",
+      "execution_time_ms": 1048.8874912261963
+    },
+    {
+      "test_name": "Path Finding Cache Efficiency",
+      "success": true,
+      "message": "Cache efficiency: 16.2x speedup (622.8ms -> 38.5ms)",
+      "execution_time_ms": 661.3521575927734
+    },
+    {
+      "test_name": "Direct Evidence Chain Generation",
+      "success": true,
+      "message": "Generated 2 evidence chains, direct match found",
+      "execution_time_ms": 436.4781379699707
+    },
+    {
+      "test_name": "Multi-hop Evidence Chain Generation",
+      "success": true,
+      "message": "Generated 2 total chains, 0 multi-hop chains",
+      "execution_time_ms": 3756.9265365600586
+    },
+    {
+      "test_name": "Evidence Chain Quality Scoring",
+      "success": true,
+      "message": "No chains generated for quality testing",
+      "execution_time_ms": 340.3799533843994
+    },
+    {
+      "test_name": "Entity Neighborhood Discovery",
+      "success": true,
+      "message": "Neighborhood: 12 neighbors, depth 2",
+      "execution_time_ms": 553.6158084869385
+    },
+    {
+      "test_name": "Depth-limited Neighborhood Exploration",
+      "success": true,
+      "message": "Depth 1: 3 neighbors, Depth 3: 21 neighbors",
+      "execution_time_ms": 725.1412868499756
+    },
+    {
+      "test_name": "Graph Scoring Performance",
+      "success": true,
+      "message": "Scored 5 memories in 2459.2ms (avg: 491.8ms each)",
+      "execution_time_ms": 2459.1751098632812
+    },
+    {
+      "test_name": "BFS Path Finding Performance",
+      "success": true,
+      "message": "Found 6 paths across 4 entities in 3192.9ms",
+      "execution_time_ms": 3192.9538249969482
+    },
+    {
+      "test_name": "Concurrent Graph Operations",
+      "success": true,
+      "message": "Concurrent operations: 5/5 successful in 971.0ms",
+      "execution_time_ms": 970.9668159484863
+    },
+    {
+      "test_name": "Tyvonne to Von Base Enterprises Connection",
+      "success": true,
+      "message": "Found connection: Tyvonne \u2192 Von Base Enterprises (strength: 0.92)",
+      "execution_time_ms": 31.785011291503906
+    },
+    {
+      "test_name": "React Technology Entity Exploration",
+      "success": true,
+      "message": "React exploration: 4 tech-related neighbors out of 18 total",
+      "execution_time_ms": 1076.0929584503174
+    },
+    {
+      "test_name": "Multi-entity Memory Scoring",
+      "success": true,
+      "message": "Multi-entity score: 0.500, Single-entity score: 0.556",
+      "execution_time_ms": 2204.3204307556152
+    }
+  ]
+}

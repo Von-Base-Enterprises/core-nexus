@@ -1,0 +1,181 @@
+[tool.poetry]
+name = "core-nexus"
+version = "0.0.0"
+description = "Core Nexus monorepo - production-ready TypeScript and Python packages"
+authors = ["Tyvonne Boykin <tyvonne@vonbase.com>"]
+license = "MIT"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+# Linting and formatting
+ruff = "^0.8.0"
+black = "^24.0.0"
+isort = "^5.13.0"
+mypy = "^1.8.0"
+
+# Testing
+pytest = "^8.0.0"
+pytest-cov = "^6.0.0"
+pytest-asyncio = "^0.24.0"
+pytest-mock = "^3.12.0"
+
+# Development tools
+pre-commit = "^4.0.0"
+poethepoet = "^0.31.0"
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6.0"
+mkdocs-material = "^9.5.0"
+mkdocstrings = "^0.27.0"
+mkdocstrings-python = "^1.12.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+# Poetry workspace configuration
+[tool.poetry-workspace]
+workspace-dir = "python"
+
+# Ruff configuration
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG001", # unused arguments
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*" = ["ARG001"]
+
+[tool.ruff.isort]
+known-first-party = ["core_nexus", "vonbase"]
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# pytest configuration
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = [
+    "tests",
+    "python/*/tests",
+]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+]
+python_classes = [
+    "Test*",
+]
+python_functions = [
+    "test_*",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src", "python"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# Poethepoet task runner configuration
+[tool.poe.tasks]
+# Linting and formatting
+lint = "ruff check ."
+lint-fix = "ruff check --fix ."
+format = "black ."
+format-check = "black --check ."
+type-check = "mypy ."
+sort-imports = "isort ."
+
+# Testing
+test = "pytest"
+test-cov = "pytest --cov=src --cov=python --cov-report=term-missing --cov-report=xml"
+test-watch = "pytest -f"
+
+# Combined tasks
+check = ["lint", "format-check", "type-check"]
+fix = ["lint-fix", "format", "sort-imports"]
+
+# Documentation
+docs-serve = "mkdocs serve"
+docs-build = "mkdocs build"
+
+# Clean
+clean = "find . -type d -name '__pycache__' -exec rm -rf {} + || true"

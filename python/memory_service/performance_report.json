@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-07-21T21:20:05.013659",
+  "results": {
+    "Empty query": {
+      "avg_query_time": 90.15488624572754,
+      "avg_total_time": 239.24155235290527,
+      "min_query_time": 90.15488624572754,
+      "max_query_time": 90.15488624572754,
+      "samples": 5
+    },
+    "Single word": {
+      "avg_query_time": 457.7610492706299,
+      "avg_total_time": 265.6674861907959,
+      "min_query_time": 457.7610492706299,
+      "max_query_time": 457.7610492706299,
+      "samples": 5
+    },
+    "Multi word": {
+      "avg_query_time": 500.7007122039795,
+      "avg_total_time": 366.6229724884033,
+      "min_query_time": 500.7007122039795,
+      "max_query_time": 500.7007122039795,
+      "samples": 5
+    },
+    "Technical query": {
+      "avg_query_time": 446.9873905181885,
+      "avg_total_time": 348.48413467407227,
+      "min_query_time": 446.9873905181885,
+      "max_query_time": 446.9873905181885,
+      "samples": 5
+    }
+  },
+  "overall_average_ms": 373.90100955963135
+}

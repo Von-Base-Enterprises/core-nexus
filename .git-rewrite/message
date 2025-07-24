@@ -1,0 +1,10 @@
+Add targeted esbuild rebuild and permission fix for linting
+
+- Rebuild only esbuild packages before linting step
+- Apply permission fix: find .yarn/unplugged -name esbuild -type f -exec chmod +x {} \;
+- Keep skip-build for initial install to avoid compilation issues
+- Minimal targeted approach to fix linting failures
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>

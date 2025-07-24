@@ -1,0 +1,48 @@
+{
+  "timestamp": "2025-07-21T22:38:06.679537",
+  "total_requests": 145,
+  "total_errors": 0,
+  "error_breakdown": {},
+  "test_results": {
+    "edge_cases": {
+      "request_count": 10,
+      "success_count": 10,
+      "avg_query_time_ms": 419.49849128723145,
+      "min_query_time_ms": 0,
+      "max_query_time_ms": 902.1201133728027,
+      "p50_query_time_ms": 538.6817455291748,
+      "p95_query_time_ms": 902.1201133728027,
+      "avg_total_time_ms": 594.1624164581299
+    },
+    "burst": {
+      "request_count": 25,
+      "success_count": 25,
+      "avg_query_time_ms": 627.5850200653076,
+      "min_query_time_ms": 116.85466766357422,
+      "max_query_time_ms": 1515.4130458831787,
+      "p50_query_time_ms": 663.5746955871582,
+      "p95_query_time_ms": 1420.4490423202515,
+      "avg_total_time_ms": 1023.6329364776611
+    },
+    "concurrent": {
+      "request_count": 50,
+      "success_count": 50,
+      "avg_query_time_ms": 241.69365406036377,
+      "min_query_time_ms": 0,
+      "max_query_time_ms": 846.9729423522949,
+      "p50_query_time_ms": 100.06344318389893,
+      "p95_query_time_ms": 828.6003589630127,
+      "avg_total_time_ms": 209.74514961242676
+    },
+    "sustained": {
+      "request_count": 60,
+      "success_count": 60,
+      "avg_query_time_ms": 0,
+      "min_query_time_ms": 0,
+      "max_query_time_ms": 0,
+      "p50_query_time_ms": 0.0,
+      "p95_query_time_ms": 0.0,
+      "avg_total_time_ms": 142.5898313522339
+    }
+  }
+}

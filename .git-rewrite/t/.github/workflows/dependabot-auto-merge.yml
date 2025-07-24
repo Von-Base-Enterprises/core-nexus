@@ -1,0 +1,202 @@
+name: Dependabot Auto-Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+
+# Required permissions for auto-merge
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  # Check if PR is from Dependabot and eligible for auto-merge
+  dependabot-auto-merge:
+    name: Auto-merge Dependabot PRs
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Determine auto-merge eligibility
+        id: eligibility
+        run: |
+          echo "## Dependabot Auto-Merge Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract metadata
+          UPDATE_TYPE="${{ steps.metadata.outputs.update-type }}"
+          DEPENDENCY_TYPE="${{ steps.metadata.outputs.dependency-type }}"
+          PACKAGE_ECOSYSTEM="${{ steps.metadata.outputs.package-ecosystem }}"
+          DEPENDENCY_NAMES="${{ steps.metadata.outputs.dependency-names }}"
+          
+          echo "**Dependency Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Package: $DEPENDENCY_NAMES" >> $GITHUB_STEP_SUMMARY
+          echo "- Ecosystem: $PACKAGE_ECOSYSTEM" >> $GITHUB_STEP_SUMMARY
+          echo "- Update Type: $UPDATE_TYPE" >> $GITHUB_STEP_SUMMARY
+          echo "- Dependency Type: $DEPENDENCY_TYPE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Determine if auto-merge should be enabled
+          AUTO_MERGE="false"
+          REASON=""
+          
+          # Security updates are always auto-merged
+          if [[ "${{ github.event.pull_request.title }}" == *"security"* ]] || [[ "${{ github.event.pull_request.title }}" == *"Security"* ]]; then
+            AUTO_MERGE="true"
+            REASON="Security update"
+          # Auto-merge patch and minor updates for dev dependencies
+          elif [[ "$DEPENDENCY_TYPE" == "development" ]] && [[ "$UPDATE_TYPE" =~ ^(version-update:semver-patch|version-update:semver-minor)$ ]]; then
+            AUTO_MERGE="true"
+            REASON="Development dependency with patch/minor update"
+          # Auto-merge patch updates for direct dependencies
+          elif [[ "$DEPENDENCY_TYPE" == "direct" ]] && [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]]; then
+            AUTO_MERGE="true"
+            REASON="Direct dependency with patch update"
+          # Auto-merge GitHub Actions updates (usually safe)
+          elif [[ "$PACKAGE_ECOSYSTEM" == "github-actions" ]] && [[ "$UPDATE_TYPE" =~ ^(version-update:semver-patch|version-update:semver-minor)$ ]]; then
+            AUTO_MERGE="true"
+            REASON="GitHub Actions with patch/minor update"
+          # Auto-merge Docker base image updates if they're patch/minor
+          elif [[ "$PACKAGE_ECOSYSTEM" == "docker" ]] && [[ "$UPDATE_TYPE" =~ ^(version-update:semver-patch|version-update:semver-minor)$ ]]; then
+            AUTO_MERGE="true"
+            REASON="Docker image with patch/minor update"
+          else
+            REASON="Major update or production dependency requires manual review"
+          fi
+          
+          echo "auto-merge=$AUTO_MERGE" >> $GITHUB_OUTPUT
+          echo "reason=$REASON" >> $GITHUB_OUTPUT
+          
+          if [[ "$AUTO_MERGE" == "true" ]]; then
+            echo "✅ **Auto-merge enabled**: $REASON" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏸️ **Manual review required**: $REASON" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Wait for CI checks
+        if: steps.eligibility.outputs.auto-merge == 'true'
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          running-workflow-name: 'Auto-merge Dependabot PRs'
+          allowed-conclusions: success
+          check-regexp: '^(Node\.js CI|Python CI|Reusable Test Workflow).*'
+
+      - name: Approve PR
+        if: steps.eligibility.outputs.auto-merge == 'true'
+        run: |
+          gh pr review --approve "$PR_URL" --body "Auto-approving Dependabot PR: ${{ steps.eligibility.outputs.reason }}"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge
+        if: steps.eligibility.outputs.auto-merge == 'true'
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+          echo "✅ Auto-merge enabled for PR" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The PR will be automatically merged when all required checks pass." >> $GITHUB_STEP_SUMMARY
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add labels
+        if: steps.eligibility.outputs.auto-merge == 'true'
+        run: |
+          gh pr edit "$PR_URL" --add-label "auto-merge"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Comment on manual review required
+        if: steps.eligibility.outputs.auto-merge == 'false'
+        run: |
+          gh pr comment "$PR_URL" --body "🔍 **Manual review required**
+          
+          This Dependabot PR requires manual review because: ${{ steps.eligibility.outputs.reason }}
+          
+          **Next steps:**
+          1. Review the changes carefully
+          2. Run tests locally if needed: \`make ci\`
+          3. Approve and merge when ready
+          
+          **Auto-merge criteria:**
+          - ✅ Security updates (any type)
+          - ✅ Patch updates for direct dependencies
+          - ✅ Patch/minor updates for dev dependencies
+          - ✅ GitHub Actions patch/minor updates
+          - ✅ Docker image patch/minor updates
+          - ❌ Major updates (require manual review)
+          - ❌ Production dependency minor updates (require manual review)"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Additional security check for dependencies
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: '1.8.0'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: |
+          yarn install --immutable
+          poetry install
+
+      - name: Run security audits
+        run: |
+          echo "## Security Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # JavaScript security audit
+          echo "### JavaScript Dependencies" >> $GITHUB_STEP_SUMMARY
+          if yarn audit --json > js-audit.json 2>&1; then
+            echo "✅ No JavaScript vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ JavaScript vulnerabilities detected - see job logs" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Python security audit
+          echo "### Python Dependencies" >> $GITHUB_STEP_SUMMARY
+          if poetry add --group dev safety && poetry run safety check --json > py-audit.json 2>&1; then
+            echo "✅ No Python vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Python vulnerabilities detected - see job logs" >> $GITHUB_STEP_SUMMARY
+          fi

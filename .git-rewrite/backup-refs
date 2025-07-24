@@ -1,0 +1,13 @@
+1be5be187410128c3114025b0442e20f2410725e commit	refs/heads/main
+b7d50170f13ee2f2484fdc453e1b6c538221e43f commit	refs/heads/pre-cleanup-backup
+b7d50170f13ee2f2484fdc453e1b6c538221e43f commit	refs/remotes/origin/HEAD
+9419734f0d4aec81efd7f089106ee4c8209d28c4 commit	refs/remotes/origin/codex/add-test-cases-for-graph-provider
+599f227a8452e5c69fbff679e3fadf780a989a7b commit	refs/remotes/origin/codex/find-and-fix-bug-in-codebase
+15a811cbfffe71055afaf836f2d3e306111ef1d5 commit	refs/remotes/origin/codex/implement-memory-service-logic-and-tests
+3ce5c2b9306a76c12480b24def875bdc410b59b2 commit	refs/remotes/origin/dependabot/npm_and_yarn/dev-dependencies-26a4320961
+e001f2040a50a125e8c39ca1a9faf5a2fb21e8b3 commit	refs/remotes/origin/dependabot/pip/testing-ed2313a973
+b0444b10880dd0699d41677abd03c4c5c5278631 commit	refs/remotes/origin/feat/day1-vertical-slice
+33229e058176d030f1470b12aff658b70b66b441 commit	refs/remotes/origin/feature/enterprise-deduplication
+bd3892331dcb7dd7e169e9c2da786330c951fa9c commit	refs/remotes/origin/feature/opentelemetry-observability
+b0a372220a5ccd0d0022ed570c11d7e35f22e5e8 commit	refs/remotes/origin/fix/data-processor-logic-bug
+b7d50170f13ee2f2484fdc453e1b6c538221e43f commit	refs/remotes/origin/main

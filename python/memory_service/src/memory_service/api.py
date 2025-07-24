@@ -6,51 +6,44 @@ wrapping the UnifiedVectorStore with proper error handling and validation.
 """
 
 import asyncio
-import hashlib
-import json
 import logging
+import time
 import os
 import sys
-import time
+import json
 from contextlib import asynccontextmanager
+from typing import Dict, List, Optional, Any
 from datetime import datetime
-from typing import Any
+from uuid import UUID
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+# Load environment variables from .env file if present
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from .bulk_import_simple import (
-    BulkImportRequest,
-    BulkImportService,
-    ImportProgress,
-)
-from .logging_config import get_logger, setup_logging
-from .memory_export import (
-    ExportRequest,
-    MemoryExportService,
-)
 from .models import (
-    HealthCheckResponse,
-    MemoryRequest,
-    MemoryResponse,
-    MemoryStats,
-    ProviderConfig,
-    QueryRequest,
-    QueryResponse,
+    MemoryRequest, MemoryResponse, QueryRequest, QueryResponse,
+    HealthCheckResponse, MemoryStats, ProviderConfig,
+    GraphAwareQueryRequest, GraphAwareQueryResponse, EnhancedMemoryResponse,
+    PathFindingRequest, PathFindingResponse, MemoryInsightsResponse
 )
-from .providers import ChromaProvider, PgVectorProvider, PineconeProvider
 from .unified_store import UnifiedVectorStore
-from .observability import (
-    initialize_observability,
-    ObservabilityConfig,
-    TraceRequestMiddleware,
-    get_current_trace_id,
-    trace_operation,
-    record_metric
+from .providers import PineconeProvider, ChromaProvider, PgVectorProvider
+from .logging_config import setup_logging, get_logger
+from .bulk_import_simple import (
+    BulkImportService, BulkImportRequest, ImportProgress,
+    ImportStatus, ImportFormat
 )
-
+from .memory_export import (
+    MemoryExportService, ExportRequest, ExportFormat,
+    ExportFilters
+)
+# Auth middleware imported where needed
 # Temporarily disable complex imports for stable deployment
 # from .metrics import (
 #     metrics_collector, get_metrics, record_request, time_request,
@@ -63,43 +56,59 @@ setup_logging()
 logger = get_logger("api")
 
 # Global instances
-unified_store: UnifiedVectorStore | None = None
-usage_collector: Any = None  # Type: UsageCollector when implemented
-memory_dashboard: Any = None  # Type: MemoryDashboard when implemented
-bulk_import_service: BulkImportService | None = None
-memory_export_service: MemoryExportService | None = None
+unified_store: Optional[UnifiedVectorStore] = None
+usage_collector: Optional['UsageCollector'] = None
+memory_dashboard: Optional['MemoryDashboard'] = None
+bulk_import_service: Optional[BulkImportService] = None
+memory_export_service: Optional[MemoryExportService] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
     global unified_store, usage_collector, memory_dashboard, bulk_import_service, memory_export_service
-
+    
     # Startup
     logger.info("Initializing Core Nexus Memory Service...")
     
-    # Initialize OpenTelemetry observability
+    # Log environment variable status
+    logger.info(f"Environment check - RENDER: {os.getenv('RENDER', 'NOT_SET')}")
+    logger.info(f"Environment check - PORT: {os.getenv('PORT', 'NOT_SET')}")
+    logger.info(f"Environment check - OPENAI_API_KEY: {'SET' if os.getenv('OPENAI_API_KEY') else 'NOT_SET'}")
+    logger.info(f"Environment check - GEMINI_API_KEY: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT_SET'}")
+    logger.info(f"Environment check - GRAPH_ENABLED: {os.getenv('GRAPH_ENABLED', 'NOT_SET')}")
+    logger.info(f"Total environment variables: {len(os.environ)}")
+    
+    # Check if dotenv is available and working
     try:
-        observability_config = ObservabilityConfig()
-        initialize_observability(app, observability_config)
-        logger.info("OpenTelemetry observability initialized successfully")
-    except Exception as e:
-        logger.warning(f"Failed to initialize observability: {e}")
-        # Continue without observability rather than failing startup
-
+        import dotenv
+        logger.info("✅ python-dotenv is available")
+    except ImportError:
+        logger.error("❌ python-dotenv not available!")
+    
+    # Log build verification if file exists
+    if os.path.exists('build_verification.json'):
+        try:
+            with open('build_verification.json', 'r') as f:
+                build_info = json.load(f)
+                logger.info(f"Build timestamp: {build_info.get('build_timestamp', 'unknown')}")
+                logger.info(f"Build detected Render: {build_info.get('render_detected', False)}")
+        except Exception as e:
+            logger.warning(f"Could not read build verification: {e}")
+    
     # Initialize providers based on environment/config
     providers = []
-
+    
     # Add pgvector if PostgreSQL is available
     # Use Render PostgreSQL internal hostname for better performance
     pgvector_host = os.getenv("PGVECTOR_HOST", "dpg-d12n0np5pdvs73ctmm40-a")
-
+    
     # Validate required password is set (check both possible env var names)
     pgvector_password = os.getenv("PGPASSWORD") or os.getenv("PGVECTOR_PASSWORD")
     if not pgvector_password:
         logger.error("PGPASSWORD or PGVECTOR_PASSWORD environment variable is required but not set")
         raise ValueError("PGPASSWORD or PGVECTOR_PASSWORD must be set in environment variables")
-
+    
     pgvector_config = ProviderConfig(
         name="pgvector",
         enabled=True,
@@ -116,21 +125,14 @@ async def lifespan(app: FastAPI):
         }
     )
     try:
-        # Use instrumented provider if observability is enabled
-        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-            from .providers_instrumented import InstrumentedPgVectorProvider
-            pgvector_provider = InstrumentedPgVectorProvider(pgvector_config)
-            logger.info("Using instrumented PgVector provider")
-        else:
-            pgvector_provider = PgVectorProvider(pgvector_config)
-        
+        pgvector_provider = PgVectorProvider(pgvector_config)
         providers.append(pgvector_provider)
         pgvector_config.primary = True  # Make primary if successful
         logger.info("PgVector provider initialized as primary")
     except Exception as e:
         logger.warning(f"PgVector provider failed to initialize: {e}")
         pgvector_config.enabled = False
-
+    
     # Add Pinecone if configured
     pinecone_config = ProviderConfig(
         name="pinecone",
@@ -149,7 +151,7 @@ async def lifespan(app: FastAPI):
             logger.info("Pinecone provider initialized")
     except Exception as e:
         logger.warning(f"Pinecone provider failed to initialize: {e}")
-
+    
     # Add ChromaDB (always available as local fallback)
     chroma_config = ProviderConfig(
         name="chromadb",
@@ -161,14 +163,7 @@ async def lifespan(app: FastAPI):
         }
     )
     try:
-        # Use instrumented provider if observability is enabled
-        if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-            from .providers_instrumented import InstrumentedChromaProvider
-            chroma_provider = InstrumentedChromaProvider(chroma_config)
-            logger.info("Using instrumented ChromaDB provider")
-        else:
-            chroma_provider = ChromaProvider(chroma_config)
-        
+        chroma_provider = ChromaProvider(chroma_config)
         providers.append(chroma_provider)
         # If pgvector was successfully initialized, make it primary instead
         if any(p.name == "pgvector" and p.enabled for p in providers):
@@ -178,40 +173,43 @@ async def lifespan(app: FastAPI):
             logger.info("ChromaDB provider initialized as primary")
     except Exception as e:
         logger.error(f"ChromaDB provider failed to initialize: {e}")
-
+    
     # Add Graph Provider for knowledge graph functionality
     # Feature flag controlled activation for safe rollout
     if os.getenv("GRAPH_ENABLED", "false").lower() == "true":
         logger.info("Graph provider enabled via GRAPH_ENABLED environment variable")
-
-        # Check if pgvector is available to share the same database
+        
+        # Reuse pgvector's connection pool for security and efficiency
         pgvector_provider = next((p for p in providers if p.name == 'pgvector' and p.enabled), None)
         if pgvector_provider:
             try:
-                # Build connection string from pgvector config
-                # This avoids timing issues with async pool initialization
-                pg_config = pgvector_config.config
-                connection_string = (
-                    f"postgresql://{pg_config['user']}:{pg_config['password']}@"
-                    f"{pg_config['host']}:{pg_config['port']}/{pg_config['database']}"
-                )
+                # Get connection pool and string from pgvector provider
+                pgvector_pool = getattr(pgvector_provider, 'connection_pool', None)
+                connection_string = getattr(pgvector_provider, 'connection_string', None)
+                
+                # If no connection string from provider, get from environment
+                if not connection_string:
+                    connection_string = os.getenv('POSTGRES_CONNECTION_STRING') or os.getenv('DATABASE_URL')
+                
+                logger.info(f"Graph provider init - pool exists: {pgvector_pool is not None}, conn_string exists: {connection_string is not None}")
                 
                 graph_config = ProviderConfig(
                     name="graph",
                     enabled=True,
                     primary=False,
                     config={
-                        "connection_string": connection_string,  # Pass connection string instead of pool
+                        "connection_pool": pgvector_pool,  # Share pool if available
+                        "connection_string": connection_string,  # Fallback option
                         "table_prefix": "graph"
                     }
                 )
-
+                
                 # Import and initialize GraphProvider
                 from .providers import GraphProvider
                 graph_provider = GraphProvider(graph_config)
                 providers.append(graph_provider)
                 logger.info("✅ Graph provider initialized successfully - Knowledge graph is ACTIVE!")
-
+                
             except Exception as e:
                 logger.error(f"Graph provider initialization failed: {e}")
                 logger.info("Continuing without graph provider - system remains stable")
@@ -219,26 +217,26 @@ async def lifespan(app: FastAPI):
             logger.warning("Graph provider requires pgvector to be enabled")
     else:
         logger.info("Graph provider disabled (set GRAPH_ENABLED=true to activate)")
-
+    
     if not providers:
         raise RuntimeError("No vector providers could be initialized")
-
+    
     # Ensure we have at least one enabled primary provider
     enabled_providers = [p for p in providers if p.enabled]
     if not enabled_providers:
         raise RuntimeError("No enabled vector providers available")
-
+    
     # If no primary provider is enabled, make the first enabled one primary
     has_enabled_primary = any(p.enabled and p.config.primary for p in providers)
     if not has_enabled_primary:
         enabled_providers[0].config.primary = True
         logger.warning(f"No enabled primary provider found, setting {enabled_providers[0].name} as primary")
-
+    
     # Initialize OpenAI embedding model
     embedding_model = None
     try:
         from .embedding_models import create_embedding_model
-
+        
         # Check if OpenAI API key is available
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if openai_api_key and openai_api_key.strip():
@@ -253,40 +251,40 @@ async def lifespan(app: FastAPI):
         else:
             embedding_model = create_embedding_model(provider="mock", dimension=1536)
             logger.warning("No OpenAI API key found, using mock embeddings")
-
+            
     except Exception as e:
         logger.error(f"Failed to initialize embedding model: {e}")
         # Fallback to mock model
         from .embedding_models import MockEmbeddingModel
         embedding_model = MockEmbeddingModel(dimension=1536)
         logger.warning("Using mock embedding model as fallback")
-
+    
     # Initialize unified store with ADM enabled and embedding model
     unified_store = UnifiedVectorStore(providers, embedding_model=embedding_model, adm_enabled=True)
     logger.info(f"Memory service started with {len(providers)} providers and {embedding_model.__class__.__name__}")
-
+    
     # Initialize bulk import service (simplified version without Redis)
     global bulk_import_service, memory_export_service
     bulk_import_service = BulkImportService(unified_store)
     memory_export_service = MemoryExportService(unified_store)
     logger.info("Bulk import/export services initialized")
-
+    
     # Initialize usage tracking - DISABLED FOR STABLE DEPLOYMENT
     # from .tracking import UsageCollector
     # usage_collector = UsageCollector(unified_store=unified_store)
     # logger.info("Usage tracking initialized")
     usage_collector = None
-
+    
     # Initialize dashboard - DISABLED FOR STABLE DEPLOYMENT
     # from .dashboard import MemoryDashboard
     # memory_dashboard = MemoryDashboard(unified_store)
     # logger.info("Memory dashboard initialized")
     memory_dashboard = None
-
+    
     # Set startup time for uptime tracking
     import time
     app.state.start_time = time.time()
-
+    
     # Initialize service info metrics - DISABLED FOR STABLE DEPLOYMENT
     # set_service_info(
     #     version="0.1.0",
@@ -295,12 +293,12 @@ async def lifespan(app: FastAPI):
     #         "environment": os.getenv("ENVIRONMENT", "production")
     #     }
     # )
-
+    
     yield
-
+    
     # Shutdown
     logger.info("Shutting down Memory Service...")
-
+    
     # Close provider connections
     for provider in providers:
         if hasattr(provider, 'close'):
@@ -308,7 +306,7 @@ async def lifespan(app: FastAPI):
                 await provider.close()
             except Exception as e:
                 logger.warning(f"Error closing provider {provider.name}: {e}")
-
+    
     unified_store = None
     usage_collector = None
     memory_dashboard = None
@@ -316,14 +314,23 @@ async def lifespan(app: FastAPI):
 
 def create_memory_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-
+    
     app = FastAPI(
         title="Core Nexus Memory Service",
         description="Unified Long Term Memory Module with multi-provider vector storage",
         version="0.1.0",
         lifespan=lifespan
     )
-
+    
+    # Authentication middleware - must be added before other middleware
+    # to ensure all requests are authenticated
+    from .auth import AuthMiddleware
+    
+    app.add_middleware(
+        AuthMiddleware,
+        bypass_endpoints={"/health", "/metrics", "/metrics/fastapi", "/docs", "/openapi.json", "/redoc"}
+    )
+    
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -333,10 +340,6 @@ def create_memory_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # Add OpenTelemetry request tracing middleware
-    if os.getenv("OTEL_TRACING_ENABLED", "true").lower() == "true":
-        app.middleware("http")(TraceRequestMiddleware(app))
-
     # FastAPI Prometheus Instrumentator for enhanced metrics
     instrumentator = Instrumentator(
         should_group_status_codes=True,
@@ -346,15 +349,15 @@ def create_memory_app() -> FastAPI:
     )
     instrumentator.instrument(app)
     instrumentator.expose(app, endpoint="/metrics/fastapi")
-
+    
     # Custom Prometheus metrics middleware
     @app.middleware("http")
     async def metrics_middleware(request: Request, call_next):
         start_time = time.time()
-
+        
         # Process request
         response = await call_next(request)
-
+        
         # Record metrics - DISABLED FOR STABLE DEPLOYMENT
         process_time = time.time() - start_time
         # record_request(
@@ -362,19 +365,19 @@ def create_memory_app() -> FastAPI:
         #     endpoint=request.url.path,
         #     status_code=response.status_code
         # )
-
+        
         # Add process time header
         response.headers["X-Process-Time"] = str(process_time)
-
+        
         return response
-
+    
     # Add usage tracking middleware - DISABLED FOR STABLE DEPLOYMENT
     # @app.on_event("startup")
     # async def add_usage_tracking():
     #     if usage_collector:
     #         from .tracking import UsageTrackingMiddleware
     #         app.add_middleware(UsageTrackingMiddleware, usage_collector=usage_collector)
-
+    
     def get_store() -> UnifiedVectorStore:
         """Dependency to get the unified store instance."""
         if unified_store is None:
@@ -383,41 +386,43 @@ def create_memory_app() -> FastAPI:
                 detail="Memory service not initialized"
             )
         return unified_store
-
+    
     @app.get("/health", response_model=HealthCheckResponse)
     async def health_check(store: UnifiedVectorStore = Depends(get_store)):
         """
         Check the health of all vector providers.
-
+        
         Returns detailed status of each provider and overall service health.
         """
         try:
             health_data = await store.health_check()
-
+            
             return HealthCheckResponse(
                 status=health_data['status'],
                 providers=health_data['providers'],
                 total_memories=health_data['stats']['total_stores'],
                 avg_query_time_ms=health_data['stats']['avg_query_time'],
-                uptime_seconds=(time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0
+                uptime_seconds=(time.time() - app.state.start_time) if hasattr(app.state, 'start_time') else 0,
+                cache_type=health_data.get('cache_type', 'unknown'),
+                cache_size=health_data.get('cache_size', -1)
             )
-
+            
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-
+    
     # @app.get("/metrics") - DISABLED FOR STABLE DEPLOYMENT
     # async def metrics_endpoint():
     #     """
     #     Prometheus metrics endpoint.
-    #
+    #     
     #     Returns service metrics in Prometheus text format for monitoring and alerting.
     #     """
     #     try:
     #         # Collect current metrics
     #         if unified_store:
     #             await metrics_collector.collect_service_metrics(unified_store)
-    #
+    #         
     #         # Return Prometheus metrics
     #         metrics_data = get_metrics()
     #         return Response(
@@ -428,12 +433,12 @@ def create_memory_app() -> FastAPI:
     #     except Exception as e:
     #         logger.error(f"Metrics collection failed: {e}")
     #         raise HTTPException(status_code=500, detail="Metrics collection failed")
-
+    
     # @app.get("/db/stats") - DISABLED FOR STABLE DEPLOYMENT
     # async def database_stats():
     #     """
     #     Database statistics and performance metrics.
-    #
+    #     
     #     Returns connection pool status, slow queries, and database health information.
     #     """
     #     try:
@@ -442,9 +447,8 @@ def create_memory_app() -> FastAPI:
     #     except Exception as e:
     #         logger.error(f"Database stats failed: {e}")
     #         raise HTTPException(status_code=500, detail="Database stats unavailable")
-
+    
     @app.post("/memories", response_model=MemoryResponse)
-    @trace_operation("api.store_memory")
     async def store_memory(
         request: MemoryRequest,
         background_tasks: BackgroundTasks,
@@ -452,84 +456,51 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Store a new memory with automatic embedding generation.
-
+        
         The memory will be stored across all enabled providers for resilience.
         """
         try:
             start_time = time.time()
-            
-            # Add tracing context
-            trace_id = get_current_trace_id()
-            if trace_id:
-                logger.info(f"Storing memory with trace_id: {trace_id}")
-            
             memory = await store.store_memory(request)
-
-            # Log and record performance
+            
+            # Log performance
             store_time = (time.time() - start_time) * 1000
             logger.info(f"Memory stored in {store_time:.1f}ms: {memory.id}")
             
-            # Record metrics
-            record_metric("memory_operations_total", 1, {"operation": "store", "status": "success"})
-            record_metric("memory_operation_duration", store_time, {"operation": "store"})
-
             return memory
-
+            
         except ValueError as e:
-            record_metric("memory_operations_total", 1, {"operation": "store", "status": "error", "error_type": "validation"})
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            record_metric("memory_operations_total", 1, {"operation": "store", "status": "error", "error_type": "internal"})
             logger.error(f"Failed to store memory: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
+    
     @app.post("/memories/query", response_model=QueryResponse)
-    @trace_operation("api.query_memories")
     async def query_memories(
         request: QueryRequest,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Query memories using natural language.
-
+        
         Returns semantically similar memories ranked by relevance and importance.
         Special handling: Empty queries return all memories (fixes 3-result bug).
         """
         try:
             start_time = time.time()
             
-            # Add tracing attributes
-            from opentelemetry import trace
-            span = trace.get_current_span()
-            if span:
-                span.set_attribute("query.text", request.query[:100] if request.query else "")
-                span.set_attribute("query.limit", request.limit)
-                span.set_attribute("query.min_similarity", request.min_similarity)
-                span.set_attribute("query.is_empty", not request.query or request.query.strip() == "")
-
             # Fix for empty query returning only 3 results
             if not request.query or request.query.strip() == "":
                 logger.info(f"Empty query detected - returning all memories with limit {request.limit}")
                 # For empty queries, set min_similarity to 0 to get all memories
                 request.min_similarity = 0.0
-
+                
             response = await store.query_memories(request)
-
+            
             # Add request timing info
             total_time = (time.time() - start_time) * 1000
             logger.info(f"Query completed in {total_time:.1f}ms, found {response.total_found} memories, returned {len(response.memories)}")
             
-            # Record metrics
-            record_metric("memory_operations_total", 1, {"operation": "query", "status": "success"})
-            record_metric("memory_operation_duration", total_time, {"operation": "query"})
-            record_metric("vector_search_results", len(response.memories))
-            
-            # Add span attributes for results
-            if span:
-                span.set_attribute("results.total_found", response.total_found)
-                span.set_attribute("results.returned", len(response.memories))
-                span.set_attribute("results.query_time_ms", total_time)
-
             # Add trust metrics to build confidence
             response.trust_metrics = {
                 "confidence_score": 1.0 if len(response.memories) > 3 else 0.3,
@@ -538,24 +509,107 @@ def create_memory_app() -> FastAPI:
                 "fix_applied": True,
                 "expected_behavior": "Returns all memories up to limit for empty queries"
             }
-
+            
             response.query_metadata = {
                 "original_query": request.query,
                 "limit_requested": request.limit,
                 "actual_returned": len(response.memories),
                 "api_version": "1.1.0-fixed"
             }
-
+            
             return response
-
+            
         except ValueError as e:
-            record_metric("memory_operations_total", 1, {"operation": "query", "status": "error", "error_type": "validation"})
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            record_metric("memory_operations_total", 1, {"operation": "query", "status": "error", "error_type": "internal"})
             logger.error(f"Query failed: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
+    
+    @app.post("/memories/query-graph", response_model=GraphAwareQueryResponse)
+    async def query_memories_with_graph(
+        request: GraphAwareQueryRequest,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Enhanced query that combines vector similarity with knowledge graph relationships.
+        
+        This hybrid approach:
+        - Extracts entities from the query
+        - Performs parallel vector and graph searches
+        - Generates evidence chains showing reasoning paths
+        - Provides weighted scoring (vector + graph)
+        
+        Requires GRAPH_ENABLED=true to be fully functional.
+        """
+        try:
+            start_time = time.time()
+            
+            logger.info(f"Graph-aware query request: '{request.query[:50]}...' "
+                       f"(graph_weight={request.graph_weight}, entities_enabled={request.enable_graph_retrieval})")
+            
+            # Check if graph provider is available
+            graph_provider = store.providers.get('graph')
+            if not graph_provider or not graph_provider.enabled:
+                logger.info("Graph provider not available - using fallback to regular vector search")
+                # Convert to regular QueryRequest for fallback
+                regular_request = QueryRequest(**request.dict(exclude={'enable_graph_retrieval', 'max_evidence_chains', 'max_traversal_depth', 'graph_weight', 'require_entity_match', 'boost_connected_results'}))
+                regular_response = await store.query_memories(regular_request)
+                
+                # Convert to GraphAwareQueryResponse with graph features disabled
+                return GraphAwareQueryResponse(
+                    **regular_response.dict(exclude={'memories'}),
+                    memories=[EnhancedMemoryResponse(**mem.dict()) for mem in regular_response.memories],
+                    extracted_entities=[],
+                    graph_enabled=False,
+                    entity_coverage=0.0,
+                    average_evidence_chains=0.0,
+                    graph_query_time_ms=0.0,
+                    entity_connections={}
+                )
+            
+            # Fix for empty query (same as regular query endpoint)
+            if not request.query or request.query.strip() == "":
+                logger.info(f"Empty graph query detected - returning all memories with limit {request.limit}")
+                request.min_similarity = 0.0
+            
+            # Use the hybrid retrieval method
+            response = await store.query_memories_with_graph(request)
+            
+            # Add timing and metadata
+            total_time = (time.time() - start_time) * 1000
+            logger.info(f"Graph-aware query completed in {total_time:.1f}ms, "
+                       f"found {response.total_found} memories, "
+                       f"entities: {len(response.extracted_entities)}, "
+                       f"coverage: {response.entity_coverage:.1%}")
+            
+            # Update response with additional metadata
+            response.query_metadata = {
+                "original_query": request.query,
+                "limit_requested": request.limit,
+                "actual_returned": len(response.memories),
+                "api_version": "2.0.0-graphrag",
+                "graph_enabled": response.graph_enabled,
+                "entity_extraction_count": len(response.extracted_entities),
+                "hybrid_scoring_weight": request.graph_weight
+            }
+            
+            response.trust_metrics = {
+                "confidence_score": 0.9 if response.graph_enabled else 0.7,
+                "data_completeness": len(response.memories) / max(response.total_found, 1),
+                "query_type": "graphrag_hybrid" if response.graph_enabled else "vector_fallback",
+                "entity_coverage": response.entity_coverage,
+                "evidence_quality": response.average_evidence_chains / 3.0 if response.average_evidence_chains > 0 else 0.0
+            }
+            
+            return response
+            
+        except ValueError as e:
+            logger.error(f"Graph query validation error: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Graph query failed: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+    
     @app.get("/memories", response_model=QueryResponse)
     async def get_all_memories(
         limit: int = 100,
@@ -564,7 +618,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Get all memories without search (returns most recent first).
-
+        
         This endpoint addresses the issue where only 3 memories were returned.
         Now properly returns all memories with configurable limit.
         """
@@ -575,10 +629,10 @@ def create_memory_app() -> FastAPI:
                 limit=min(limit, 1000),  # Cap at 1000 for performance
                 min_similarity=0.0  # Accept all memories
             )
-
+            
             response = await store.query_memories(request)
             logger.info(f"GET /memories returned {len(response.memories)} of {response.total_found} total memories")
-
+            
             # Add trust metrics
             response.trust_metrics = {
                 "confidence_score": 1.0,
@@ -587,148 +641,77 @@ def create_memory_app() -> FastAPI:
                 "fix_applied": True,
                 "note": "This endpoint was added to fix the 3-result bug"
             }
-
+            
             response.query_metadata = {
                 "limit_requested": limit,
                 "offset": offset,
                 "actual_returned": len(response.memories),
                 "total_available": response.total_found
             }
-
+            
             return response
-
+            
         except Exception as e:
             logger.error(f"Failed to get memories: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
-    @app.get("/emergency/find-all-memories")
-    async def emergency_find_all_memories(
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        EMERGENCY: Find ALL memories in the database, regardless of embeddings.
-        
-        This endpoint bypasses all vector operations to ensure users can see their data.
-        """
-        try:
-            pgvector = store.providers.get('pgvector')
-            if not pgvector or not pgvector.enabled:
-                raise HTTPException(status_code=503, detail="PgVector provider not available")
-            
-            from .search_fix import EmergencySearchFix
-            emergency_search = EmergencySearchFix(pgvector.connection_pool)
-            
-            # Get diagnostic info
-            diagnostics = await emergency_search.ensure_all_memories_visible()
-            
-            # Get all memories
-            all_memories = await emergency_search.emergency_search_all(limit=10000)
-            
-            return {
-                "status": "emergency_retrieval",
-                "diagnostics": diagnostics,
-                "total_memories_found": len(all_memories),
-                "memories": [
-                    {
-                        "id": str(memory.id),
-                        "content": memory.content[:200] + "..." if len(memory.content) > 200 else memory.content,
-                        "created_at": memory.created_at,
-                        "has_embedding": "unknown"
-                    }
-                    for memory in all_memories[:100]  # Show first 100
-                ],
-                "message": f"Found {len(all_memories)} total memories. Showing first 100.",
-                "fix_instructions": "Use /memories/search/text?q=your_query for text-based search"
-            }
-            
-        except Exception as e:
-            logger.error(f"Emergency retrieval failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Emergency retrieval failed: {str(e)}")
-
-    @app.get("/memories/search/text")
-    async def text_search_memories(
-        q: str,
-        limit: int = 100,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Text-based search fallback when vector search fails.
-        
-        Uses PostgreSQL full-text search and fuzzy matching.
-        """
-        try:
-            pgvector = store.providers.get('pgvector')
-            if not pgvector or not pgvector.enabled:
-                raise HTTPException(status_code=503, detail="PgVector provider not available")
-            
-            from .search_fix import EmergencySearchFix
-            emergency_search = EmergencySearchFix(pgvector.connection_pool)
-            
-            # Try text search first
-            memories = await emergency_search.text_search(q, limit=limit)
-            
-            # If no results, try fuzzy search
-            if not memories:
-                memories = await emergency_search.fuzzy_search(q, limit=limit)
-            
-            return {
-                "query": q,
-                "results_found": len(memories),
-                "search_type": "text_based",
-                "memories": [
-                    {
-                        "id": str(memory.id),
-                        "content": memory.content,
-                        "relevance_score": memory.similarity_score,
-                        "created_at": memory.created_at
-                    }
-                    for memory in memories
-                ]
-            }
-            
-        except Exception as e:
-            logger.error(f"Text search failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Text search failed: {str(e)}")
 
     @app.get("/memories/stats", response_model=MemoryStats)
     async def get_memory_stats(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get comprehensive memory service statistics.
-
+        
         Includes counts, performance metrics, and provider-specific details.
         """
         try:
             stats = store.stats
-            health_data = await store.health_check()
-
-            # Calculate provider-specific stats
+            
+            # Get detailed stats from each provider
             memories_by_provider = {}
-            for provider_name, provider_health in health_data['providers'].items():
-                if 'details' in provider_health and 'total_vectors' in provider_health['details']:
-                    memories_by_provider[provider_name] = provider_health['details']['total_vectors']
+            total_memories = 0
+            total_importance = 0
+            count_with_importance = 0
+            
+            for provider_name, provider in store.providers.items():
+                if provider.enabled:
+                    try:
+                        provider_stats = await provider.get_stats()
+                        if 'total_memories' in provider_stats:
+                            provider_count = provider_stats['total_memories']
+                            memories_by_provider[provider_name] = provider_count
+                            total_memories += provider_count
+                            
+                            # Aggregate importance scores if available
+                            if 'avg_importance_score' in provider_stats and provider_stats['avg_importance_score'] > 0:
+                                total_importance += provider_stats['avg_importance_score'] * provider_count
+                                count_with_importance += provider_count
+                        else:
+                            memories_by_provider[provider_name] = 0
+                    except Exception as e:
+                        logger.error(f"Failed to get stats from provider {provider_name}: {e}")
+                        memories_by_provider[provider_name] = 0
                 else:
                     memories_by_provider[provider_name] = 0
-
-            # Get actual total from provider stats
-            actual_total = sum(memories_by_provider.values())
-
+            
+            # Calculate average importance score
+            avg_importance = total_importance / count_with_importance if count_with_importance > 0 else 0.5
+            
             return MemoryStats(
-                total_memories=actual_total if actual_total > 0 else stats['total_stores'],
+                total_memories=total_memories,
                 memories_by_provider=memories_by_provider,
-                avg_importance_score=0.5,  # TODO: Calculate from actual data
+                avg_importance_score=avg_importance,
                 queries_last_hour=stats['total_queries'],  # TODO: Implement time-based tracking
                 avg_query_time_ms=stats['avg_query_time']
             )
-
+            
         except Exception as e:
             logger.error(f"Failed to get stats: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
+    
     @app.get("/debug/env")
     async def debug_environment():
         """Debug endpoint to check environment variables."""
         import os
-
+        
         # Check various environment variables
         env_status = {
             "openai": {
@@ -763,27 +746,28 @@ def create_memory_app() -> FastAPI:
             "embedding_model": unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else "None",
             "primary_provider": unified_store.primary_provider.name if unified_store and unified_store.primary_provider else "None"
         }
-
+        
         return env_status
-
+    
     @app.get("/debug/logs")
     async def get_recent_logs(lines: int = 100):
         """
         Get recent application logs for debugging.
-
+        
         Returns last N lines of logs with timestamps and levels.
         """
         try:
+            import os
             from collections import deque
             from datetime import datetime
-
+            
             # Create in-memory log buffer if not exists
             if not hasattr(app.state, 'log_buffer'):
                 app.state.log_buffer = deque(maxlen=1000)
-
+                
                 # Set up log capture handler
                 import logging
-
+                
                 class BufferHandler(logging.Handler):
                     def emit(self, record):
                         try:
@@ -799,7 +783,7 @@ def create_memory_app() -> FastAPI:
                             app.state.log_buffer.append(log_entry)
                         except Exception:
                             pass
-
+                
                 # Add handler to root logger
                 buffer_handler = BufferHandler()
                 buffer_handler.setLevel(logging.DEBUG)
@@ -807,16 +791,16 @@ def create_memory_app() -> FastAPI:
                     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
                 ))
                 logging.getLogger().addHandler(buffer_handler)
-
+                
                 # Also add to our logger
                 logger.addHandler(buffer_handler)
-
+                
                 # Log that we started capturing
                 logger.info("Log capture initialized for debug endpoint")
-
+            
             # Get requested number of recent logs
             recent_logs = list(app.state.log_buffer)[-lines:]
-
+            
             # Add some system info
             system_info = {
                 'python_version': sys.version,
@@ -831,14 +815,14 @@ def create_memory_app() -> FastAPI:
                 } if unified_store else {},
                 'embedding_model': unified_store.embedding_model.__class__.__name__ if unified_store and unified_store.embedding_model else None
             }
-
+            
             return {
                 'logs': recent_logs,
                 'total_logs_captured': len(app.state.log_buffer),
                 'logs_returned': len(recent_logs),
                 'system_info': system_info
             }
-
+            
         except Exception as e:
             logger.error(f"Failed to get logs: {e}")
             return {
@@ -846,12 +830,12 @@ def create_memory_app() -> FastAPI:
                 'logs': [],
                 'message': 'Log capture may not be initialized yet'
             }
-
+    
     @app.get("/debug/startup-logs")
     async def get_startup_logs():
         """
         Get startup and initialization logs.
-
+        
         Shows what happened during service initialization.
         """
         # Create a summary of startup state
@@ -862,7 +846,7 @@ def create_memory_app() -> FastAPI:
             'embedding_model': None,
             'initialization_errors': []
         }
-
+        
         # Check providers
         if unified_store:
             for name, provider in unified_store.providers.items():
@@ -871,14 +855,14 @@ def create_memory_app() -> FastAPI:
                     'primary': provider == unified_store.primary_provider,
                     'status': 'active' if provider.enabled else 'disabled'
                 }
-
+            
             # Check embedding model
             if unified_store.embedding_model:
                 startup_info['embedding_model'] = {
                     'type': unified_store.embedding_model.__class__.__name__,
                     'dimension': unified_store.embedding_model.dimension
                 }
-
+                
                 # Check if it's OpenAI and why it might have failed
                 if startup_info['embedding_model']['type'] == 'MockEmbeddingModel':
                     import os
@@ -891,35 +875,36 @@ def create_memory_app() -> FastAPI:
                         startup_info['initialization_errors'].append(
                             "OPENAI_API_KEY is set to mock value from render.yaml"
                         )
-
+        
         # Check for common issues
         if 'pgvector' in startup_info['providers'] and not startup_info['providers']['pgvector']['enabled']:
             startup_info['initialization_errors'].append(
                 "PgVector provider failed to initialize - PostgreSQL connection refused"
             )
-
+        
         return startup_info
-
+    
     @app.get("/logs/stream")
     async def stream_logs(format: str = "json"):
         """
         Stream logs in real-time via Server-Sent Events (SSE).
-
+        
         Formats:
         - json: JSON formatted logs
         - syslog: Syslog format (RFC3164) compatible with Papertrail
         - plain: Plain text logs
-
+        
         Usage:
         - curl https://service.com/logs/stream
         - curl https://service.com/logs/stream?format=syslog
         """
         import queue
+        import threading
         from datetime import datetime
-
+        
         # Create queue for log streaming
         log_queue = queue.Queue(maxsize=100)
-
+        
         # Custom handler to capture logs
         class StreamHandler(logging.Handler):
             def emit(self, record):
@@ -945,14 +930,14 @@ def create_memory_app() -> FastAPI:
                             'line': record.lineno
                         }
                         log_line = f"data: {json.dumps(log_data)}\n\n"
-
+                    
                     # Non-blocking put
                     log_queue.put_nowait(log_line)
                 except queue.Full:
                     pass  # Drop log if queue is full
                 except Exception:
                     pass
-
+            
             def _get_syslog_priority(self, levelno):
                 """Convert Python log level to syslog priority."""
                 # Facility = 16 (local0), Severity based on level
@@ -968,17 +953,17 @@ def create_memory_app() -> FastAPI:
                 else:  # DEBUG
                     severity = 7
                 return facility * 8 + severity
-
+        
         # Add handler to capture logs
         stream_handler = StreamHandler()
         stream_handler.setLevel(logging.DEBUG)
         stream_handler.setFormatter(logging.Formatter('%(message)s'))
-
+        
         # Add to root logger and our logger
         root_logger = logging.getLogger()
         root_logger.addHandler(stream_handler)
         logger.addHandler(stream_handler)
-
+        
         async def generate():
             """Generate log stream."""
             try:
@@ -989,7 +974,7 @@ def create_memory_app() -> FastAPI:
                     yield f"<134>{datetime.now().strftime('%b %d %H:%M:%S')} {os.getenv('RENDER_SERVICE_NAME', 'core-nexus')} logger[{os.getpid()}]: Log streaming connected\n"
                 else:
                     yield "Log streaming connected\n"
-
+                
                 # Stream logs
                 while True:
                     try:
@@ -998,22 +983,22 @@ def create_memory_app() -> FastAPI:
                             None, log_queue.get, True, 1.0
                         )
                         yield log_line
-
+                        
                         # Send keepalive every 30 seconds
                         if format == "json" and asyncio.get_event_loop().time() % 30 < 1:
                             yield f"data: {json.dumps({'keepalive': True})}\n\n"
-
+                            
                     except queue.Empty:
                         # Send keepalive
                         if format == "json":
                             yield "\n"  # SSE keepalive
                         await asyncio.sleep(0.1)
-
+                        
             finally:
                 # Cleanup
                 root_logger.removeHandler(stream_handler)
                 logger.removeHandler(stream_handler)
-
+        
         # Return appropriate response type
         if format == "json":
             return StreamingResponse(
@@ -1035,12 +1020,12 @@ def create_memory_app() -> FastAPI:
                     "X-Accel-Buffering": "no"
                 }
             )
-
+    
     @app.get("/logs/syslog")
     async def syslog_endpoint(request: Request):
         """
         Syslog endpoint information for external log aggregation.
-
+        
         Returns connection details for setting up syslog forwarding.
         """
         return {
@@ -1069,17 +1054,17 @@ def create_memory_app() -> FastAPI:
                 "service_name": os.getenv("RENDER_SERVICE_NAME", "core-nexus-memory")
             }
         }
-
+    
     @app.get("/providers")
     async def list_providers(store: UnifiedVectorStore = Depends(get_store)):
         """
         List all configured vector providers and their status.
-
+        
         Useful for monitoring and debugging provider configurations.
         """
         try:
             provider_info = []
-
+            
             for name, provider in store.providers.items():
                 provider_stats = await provider.get_stats()
                 provider_info.append({
@@ -1092,13 +1077,13 @@ def create_memory_app() -> FastAPI:
                     },
                     'stats': provider_stats
                 })
-
+            
             # Add embedding model info
             embedding_info = {
                 'model_type': store.embedding_model.__class__.__name__ if store.embedding_model else None,
                 'dimension': store.embedding_model.dimension if store.embedding_model else None
             }
-
+            
             # Add health check for embedding model if it's OpenAI
             if hasattr(store.embedding_model, 'health_check'):
                 try:
@@ -1106,18 +1091,18 @@ def create_memory_app() -> FastAPI:
                     embedding_info['health'] = embedding_health
                 except Exception as e:
                     embedding_info['health'] = {'status': 'error', 'error': str(e)}
-
+            
             return {
                 'providers': provider_info,
                 'primary_provider': store.primary_provider.name,
                 'total_providers': len(store.providers),
                 'embedding_model': embedding_info
             }
-
+            
         except Exception as e:
             logger.error(f"Failed to list providers: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
+    
     @app.post("/embeddings/test")
     async def test_embedding(
         text: str,
@@ -1125,17 +1110,17 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Test the embedding functionality with provided text.
-
+        
         Useful for verifying OpenAI integration and debugging embedding issues.
         """
         try:
             if not store.embedding_model:
                 raise HTTPException(status_code=503, detail="No embedding model configured")
-
+            
             start_time = time.time()
             embedding = await store.embedding_model.embed_text(text)
             duration = (time.time() - start_time) * 1000
-
+            
             return {
                 'text': text,
                 'embedding_dimension': len(embedding),
@@ -1144,34 +1129,34 @@ def create_memory_app() -> FastAPI:
                 'generation_time_ms': round(duration, 2),
                 'success': True
             }
-
+            
         except Exception as e:
             logger.error(f"Embedding test failed: {e}")
             raise HTTPException(status_code=500, detail=f"Embedding test failed: {str(e)}")
-
-    @app.post("/memories/batch", response_model=list[MemoryResponse])
+    
+    @app.post("/memories/batch", response_model=List[MemoryResponse])
     async def store_memories_batch(
-        requests: list[MemoryRequest],
+        requests: List[MemoryRequest],
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Store multiple memories in batch for better performance.
-
+        
         Processes memories concurrently while maintaining data integrity.
         """
         try:
             if len(requests) > 100:
                 raise HTTPException(
-                    status_code=400,
+                    status_code=400, 
                     detail="Batch size limited to 100 memories"
                 )
-
+            
             start_time = time.time()
-
+            
             # Process batch concurrently
             tasks = [store.store_memory(req) for req in requests]
             memories = await asyncio.gather(*tasks, return_exceptions=True)
-
+            
             # Handle any failures
             successful_memories = []
             for i, memory in enumerate(memories):
@@ -1179,22 +1164,22 @@ def create_memory_app() -> FastAPI:
                     logger.error(f"Failed to store memory {i}: {memory}")
                 else:
                     successful_memories.append(memory)
-
+            
             batch_time = (time.time() - start_time) * 1000
             logger.info(f"Batch stored {len(successful_memories)}/{len(requests)} memories in {batch_time:.1f}ms")
-
+            
             return successful_memories
-
+            
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Batch store failed: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
-
+    
     # =====================================================
     # BULK IMPORT API - Enterprise Features
     # =====================================================
-
+    
     @app.post("/api/v1/memories/import")
     async def import_memories_bulk(
         request: BulkImportRequest,
@@ -1202,15 +1187,15 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Import memories in bulk from CSV, JSON, or JSONL format.
-
+        
         This endpoint starts an asynchronous import job and returns immediately
         with a job ID for tracking progress.
-
+        
         Supports:
         - CSV with content column and optional metadata columns
         - JSON array or object with memories array
         - JSONL (newline-delimited JSON) for streaming large datasets
-
+        
         Features:
         - Automatic deduplication
         - Validation and error handling
@@ -1222,7 +1207,7 @@ def create_memory_app() -> FastAPI:
                 status_code=503,
                 detail="Bulk import service not available"
             )
-
+            
         try:
             result = await bulk_import_service.import_memories(request, background_tasks)
             return result
@@ -1231,12 +1216,12 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Bulk import failed: {e}")
             raise HTTPException(status_code=500, detail="Import initialization failed")
-
+    
     @app.get("/api/v1/memories/import/{import_id}/status", response_model=ImportProgress)
     async def get_import_status(import_id: str):
         """
         Get the status of a bulk import job.
-
+        
         Returns detailed progress information including:
         - Current status (pending, processing, completed, failed)
         - Records processed/successful/failed
@@ -1248,7 +1233,7 @@ def create_memory_app() -> FastAPI:
                 status_code=503,
                 detail="Bulk import service not available"
             )
-
+            
         try:
             progress = await bulk_import_service.get_import_status(import_id)
             return progress
@@ -1259,21 +1244,21 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Failed to get import status: {e}")
             raise HTTPException(status_code=500, detail="Failed to retrieve import status")
-
+    
     # =====================================================
     # MEMORY EXPORT API - Data Portability
     # =====================================================
-
+    
     @app.post("/api/v1/memories/export")
     async def export_memories(request: ExportRequest):
         """
         Export memories in various formats with filtering.
-
+        
         Supports:
         - JSON: Complete data with metadata
         - CSV: Spreadsheet-compatible format
         - PDF: Formatted document (coming soon)
-
+        
         Features:
         - Date range filtering
         - Importance score filtering
@@ -1286,7 +1271,7 @@ def create_memory_app() -> FastAPI:
                 status_code=503,
                 detail="Export service not available"
             )
-
+            
         try:
             return await memory_export_service.export_memories(request)
         except HTTPException:
@@ -1294,18 +1279,18 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Export failed: {e}")
             raise HTTPException(status_code=500, detail="Export failed")
-
+    
     @app.get("/api/v1/memories/export/gdpr/{user_id}")
     async def export_gdpr_package(user_id: str):
         """
         Export GDPR-compliant data package for a specific user.
-
+        
         Creates a comprehensive data export including:
         - All user memories
         - Complete metadata
         - Data sources and processing information
         - Export metadata and timestamps
-
+        
         Compliant with GDPR Article 20 (Right to Data Portability)
         """
         if not memory_export_service:
@@ -1313,182 +1298,152 @@ def create_memory_app() -> FastAPI:
                 status_code=503,
                 detail="Export service not available"
             )
-
+            
         try:
             return await memory_export_service.create_gdpr_package(user_id)
         except Exception as e:
             logger.error(f"GDPR export failed: {e}")
             raise HTTPException(status_code=500, detail="GDPR export failed")
-
+    
     @app.delete("/memories/cache")
     async def clear_query_cache(store: UnifiedVectorStore = Depends(get_store)):
         """
         Clear the query result cache.
-
+        
         Use this when you need fresh results or after significant data updates.
         """
         try:
             cache_size = len(store.query_cache)
             store.query_cache.clear()
-
+            
             return {
                 'message': f'Cleared {cache_size} cached queries',
                 'cache_size_before': cache_size,
                 'cache_size_after': 0
             }
-
+            
         except Exception as e:
             logger.error(f"Failed to clear cache: {e}")
             raise HTTPException(status_code=500, detail="Internal server error")
     
-    @app.post("/admin/refresh-stats")
-    async def refresh_stats(
-        admin_key: str | None = None,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Manually refresh memory statistics from all providers.
-        
-        This fixes the issue where stats show 0 memories when there are actually memories in the database.
-        """
-        # Simple security check
-        if admin_key != os.getenv("ADMIN_KEY", "refresh-stats-2025"):
-            raise HTTPException(status_code=403, detail="Invalid admin key")
-        
-        try:
-            old_total = store.stats.get('total_stores', 0)
-            new_total = await store.refresh_stats()
-            
-            return {
-                "status": "success",
-                "old_total_memories": old_total,
-                "new_total_memories": new_total,
-                "difference": new_total - old_total,
-                "message": f"Stats refreshed successfully. Found {new_total} total memories across all providers."
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to refresh stats: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to refresh stats: {str(e)}")
-
     # =============================================================================
     # DASHBOARD AND ANALYTICS ENDPOINTS
     # =============================================================================
-
+    
     @app.get("/dashboard/metrics")
     async def get_dashboard_metrics():
         """
         Get comprehensive dashboard metrics.
-
+        
         Provides real-time insights into memory service performance and quality.
         """
         try:
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             metrics = await memory_dashboard.get_comprehensive_metrics()
             return metrics.to_dict()
-
+            
         except Exception as e:
             logger.error(f"Dashboard metrics failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get dashboard metrics")
-
+    
     @app.get("/dashboard/quality-trends")
     async def get_quality_trends(days: int = 7):
         """
         Get memory quality trends over time.
-
+        
         Shows how memory quality has evolved over the specified period.
         """
         try:
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             trends = await memory_dashboard.get_quality_trends(days=days)
             return {"trends": trends, "period_days": days}
-
+            
         except Exception as e:
             logger.error(f"Quality trends failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get quality trends")
-
+    
     @app.get("/dashboard/provider-performance")
     async def get_provider_performance():
         """
         Get detailed performance metrics for each vector provider.
-
+        
         Includes health, performance, and feature comparison.
         """
         try:
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             performance = await memory_dashboard.get_provider_performance()
             return {"providers": performance}
-
+            
         except Exception as e:
             logger.error(f"Provider performance failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get provider performance")
-
+    
     @app.get("/dashboard/insights")
     async def get_memory_insights(limit: int = 50):
         """
         Get insights about memory patterns and usage.
-
+        
         Identifies trends, patterns, and optimization opportunities.
         """
         try:
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             insights = await memory_dashboard.get_memory_insights(limit=limit)
             return insights
-
+            
         except Exception as e:
             logger.error(f"Memory insights failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get memory insights")
-
+    
     # =============================================================================
     # ADM SCORING AND INTELLIGENCE ENDPOINTS
     # =============================================================================
-
+    
     @app.get("/adm/performance")
     async def get_adm_performance(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get ADM scoring engine performance metrics.
-
+        
         Shows how well the automated decision making is performing.
         """
         try:
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             adm_perf = await memory_dashboard.get_adm_performance()
             return adm_perf
-
+            
         except Exception as e:
             logger.error(f"ADM performance failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get ADM performance")
-
+    
     @app.post("/adm/analyze")
     async def analyze_content_adm(
         content: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: Optional[Dict[str, Any]] = None,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Analyze content using ADM scoring without storing.
-
+        
         Provides detailed breakdown of data quality, relevance, and intelligence.
         """
         try:
             if not store.adm_enabled or not store.adm_engine:
                 raise HTTPException(status_code=400, detail="ADM scoring not enabled")
-
+            
             analysis = await store.adm_engine.calculate_adm_score(
                 content=content,
                 metadata=metadata or {}
             )
-
+            
             return {
                 "analysis": analysis,
                 "recommendations": {
@@ -1501,11 +1456,11 @@ def create_memory_app() -> FastAPI:
                     }
                 }
             }
-
+            
         except Exception as e:
             logger.error(f"ADM analysis failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to analyze content")
-
+    
     @app.post("/adm/suggest-evolution/{memory_id}")
     async def suggest_memory_evolution(
         memory_id: str,
@@ -1513,20 +1468,21 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Suggest evolution strategy for a specific memory.
-
+        
         Uses Darwin-Gödel principles to recommend memory lifecycle actions.
         """
         try:
             if not store.adm_enabled or not store.adm_engine:
                 raise HTTPException(status_code=400, detail="ADM scoring not enabled")
-
+            
             # TODO: Get memory by ID from providers
             # For now, return mock suggestion
-
+            from .adm import EvolutionStrategy
+            
             strategy, confidence = await store.adm_engine.suggest_evolution_strategy(
                 memory=None  # TODO: Implement memory retrieval by ID
             )
-
+            
             return {
                 "memory_id": memory_id,
                 "suggested_strategy": strategy.value,
@@ -1539,29 +1495,29 @@ def create_memory_app() -> FastAPI:
                     "pruning": "Consider archival or removal due to low value"
                 }.get(strategy.value, "Monitor and maintain current state")
             }
-
+            
         except Exception as e:
             logger.error(f"Evolution suggestion failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to suggest evolution")
-
+    
     # =============================================================================
     # USAGE TRACKING AND ANALYTICS ENDPOINTS
     # =============================================================================
-
+    
     @app.get("/analytics/usage")
     async def get_usage_analytics():
         """
         Get comprehensive usage analytics and patterns.
-
+        
         Provides insights into system performance and user behavior.
         """
         try:
             if not usage_collector:
                 raise HTTPException(status_code=503, detail="Usage tracking not initialized")
-
+            
             performance_metrics = usage_collector.get_performance_metrics()
             usage_patterns = usage_collector.get_usage_patterns()
-
+            
             return {
                 "performance": {
                     "total_requests": performance_metrics.total_requests,
@@ -1575,25 +1531,25 @@ def create_memory_app() -> FastAPI:
                 },
                 "patterns": usage_patterns
             }
-
+            
         except Exception as e:
             logger.error(f"Usage analytics failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to get usage analytics")
-
+    
     @app.get("/analytics/export")
-    async def export_analytics(format: str = "json", limit: int | None = None):
+    async def export_analytics(format: str = "json", limit: Optional[int] = None):
         """
         Export usage events and analytics data.
-
+        
         Supports JSON and CSV formats for external analysis.
         """
         try:
             if not usage_collector:
                 raise HTTPException(status_code=503, detail="Usage tracking not initialized")
-
+            
             if not memory_dashboard:
                 raise HTTPException(status_code=503, detail="Dashboard not initialized")
-
+            
             # Export comprehensive data
             if format.lower() == "comprehensive":
                 export_data = await memory_dashboard.export_metrics(format="json")
@@ -1604,7 +1560,7 @@ def create_memory_app() -> FastAPI:
             else:
                 # Export usage events
                 events_data = usage_collector.export_events(format=format, limit=limit)
-
+                
                 if format.lower() == "json":
                     return JSONResponse(
                         content={"events": events_data},
@@ -1616,22 +1572,22 @@ def create_memory_app() -> FastAPI:
                         media_type="text/csv",
                         headers={"Content-Disposition": "attachment; filename=usage_events.csv"}
                     )
-
+            
         except Exception as e:
             logger.error(f"Analytics export failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to export analytics")
-
+    
     @app.post("/analytics/feedback")
     async def record_feedback(
         memory_id: str,
         useful: bool,
         feedback_type: str = "general",
-        notes: str | None = None,
+        notes: Optional[str] = None,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Record user feedback on memory usefulness.
-
+        
         This feeds the evolution engine for continuous improvement.
         """
         try:
@@ -1639,7 +1595,7 @@ def create_memory_app() -> FastAPI:
             feedback_content = f"FEEDBACK: Memory {memory_id} marked as {'useful' if useful else 'not useful'}"
             if notes:
                 feedback_content += f" - Notes: {notes}"
-
+            
             feedback_memory = MemoryRequest(
                 content=feedback_content,
                 metadata={
@@ -1653,211 +1609,25 @@ def create_memory_app() -> FastAPI:
                     "importance_score": 0.6  # Feedback is valuable for learning
                 }
             )
-
+            
             # Store feedback asynchronously
             asyncio.create_task(store.store_memory(feedback_memory))
-
+            
             return {
                 "message": "Feedback recorded successfully",
                 "memory_id": memory_id,
                 "useful": useful,
                 "learning_impact": "This feedback will improve future memory scoring and evolution decisions"
             }
-
+            
         except Exception as e:
             logger.error(f"Feedback recording failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to record feedback")
-
-    # =====================================================
-    # DEDUPLICATION ENDPOINTS (Enterprise Features)
-    # =====================================================
-
-    @app.get("/dedup/stats")
-    async def get_deduplication_stats(store: UnifiedVectorStore = Depends(get_store)):
-        """
-        Get comprehensive deduplication statistics.
-
-        Shows duplicate detection rates, storage savings, and performance metrics.
-        """
-        try:
-            if not store.deduplication_service:
-                return {
-                    "status": "disabled",
-                    "message": "Deduplication service not enabled",
-                    "enable_instructions": "Set DEDUPLICATION_MODE to 'log_only' or 'active'"
-                }
-            
-            stats = await store.deduplication_service.get_stats()
-            
-            # Add unified store stats
-            stats['store_stats'] = {
-                'duplicates_prevented': store.stats.get('duplicates_prevented', 0),
-                'storage_saved_bytes': store.stats.get('storage_saved_bytes', 0),
-                'storage_saved_mb': round(store.stats.get('storage_saved_bytes', 0) / (1024 * 1024), 2)
-            }
-            
-            return stats
-            
-        except Exception as e:
-            logger.error(f"Failed to get deduplication stats: {e}")
-            raise HTTPException(status_code=500, detail="Failed to get deduplication statistics")
-
-    @app.post("/dedup/check")
-    async def check_duplicate_content(
-        content: str,
-        metadata: dict[str, Any] | None = None,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Check if content would be considered a duplicate.
-
-        Useful for pre-checking before storing memories.
-        """
-        try:
-            if not store.deduplication_service:
-                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
-            
-            result = await store.deduplication_service.check_duplicate(content, metadata)
-            
-            return {
-                "is_duplicate": result.is_duplicate,
-                "confidence_score": result.confidence_score,
-                "decision": result.decision.value,
-                "reason": result.reason,
-                "existing_memory_id": str(result.existing_memory.id) if result.existing_memory else None,
-                "content_hash": result.content_hash,
-                "similarity_score": result.similarity_score
-            }
-            
-        except Exception as e:
-            logger.error(f"Duplicate check failed: {e}")
-            raise HTTPException(status_code=500, detail="Failed to check for duplicates")
-
-    @app.post("/dedup/review/{memory_id}")
-    async def mark_false_positive(
-        memory_id: str,
-        actual_unique_id: str,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Mark a deduplication decision as false positive.
-
-        This helps improve the deduplication system over time.
-        """
-        try:
-            if not store.deduplication_service:
-                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
-            
-            from uuid import UUID
-            await store.deduplication_service.mark_false_positive(
-                UUID(memory_id), 
-                UUID(actual_unique_id)
-            )
-            
-            return {
-                "status": "success",
-                "message": "False positive recorded successfully",
-                "impact": "Future deduplication accuracy will be improved"
-            }
-            
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid UUID format")
-        except Exception as e:
-            logger.error(f"Failed to mark false positive: {e}")
-            raise HTTPException(status_code=500, detail="Failed to record false positive")
-
-    @app.delete("/dedup/cleanup")
-    async def cleanup_orphaned_hashes(
-        days: int = 90,
-        admin_key: str | None = None,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Clean up orphaned content hashes from deleted memories.
-
-        Requires admin key for safety.
-        """
-        # Simple security check
-        if admin_key != os.getenv("ADMIN_KEY", "dedup-cleanup-2025"):
-            raise HTTPException(status_code=403, detail="Invalid admin key")
-        
-        try:
-            if not store.deduplication_service:
-                raise HTTPException(status_code=503, detail="Deduplication service not enabled")
-            
-            deleted_count = await store.deduplication_service.cleanup_old_hashes(days)
-            
-            return {
-                "status": "success",
-                "deleted_hashes": deleted_count,
-                "message": f"Cleaned up {deleted_count} orphaned hashes older than {days} days"
-            }
-            
-        except Exception as e:
-            logger.error(f"Cleanup failed: {e}")
-            raise HTTPException(status_code=500, detail="Failed to cleanup orphaned hashes")
-
-    @app.post("/dedup/backfill")
-    async def backfill_content_hashes(
-        limit: int = 1000,
-        admin_key: str | None = None,
-        store: UnifiedVectorStore = Depends(get_store)
-    ):
-        """
-        Backfill content hashes for existing memories.
-
-        Useful when enabling deduplication on existing data.
-        """
-        # Simple security check
-        if admin_key != os.getenv("ADMIN_KEY", "dedup-backfill-2025"):
-            raise HTTPException(status_code=403, detail="Invalid admin key")
-        
-        try:
-            # Get pgvector provider
-            pgvector = store.providers.get('pgvector')
-            if not pgvector or not pgvector.enabled:
-                raise HTTPException(status_code=503, detail="PgVector provider not available")
-            
-            async with pgvector.connection_pool.acquire() as conn:
-                # Find memories without hashes
-                rows = await conn.fetch("""
-                    SELECT vm.id, vm.content
-                    FROM vector_memories vm
-                    LEFT JOIN memory_content_hashes mch ON vm.id = mch.memory_id
-                    WHERE mch.id IS NULL
-                    ORDER BY vm.created_at DESC
-                    LIMIT $1
-                """, limit)
-                
-                # Hash and insert
-                hashed_count = 0
-                for row in rows:
-                    try:
-                        content_hash = hashlib.sha256(row['content'].encode()).hexdigest()
-                        await conn.execute("""
-                            INSERT INTO memory_content_hashes (content_hash, memory_id, content_length)
-                            VALUES ($1, $2, $3)
-                            ON CONFLICT (content_hash, memory_id) DO NOTHING
-                        """, content_hash, row['id'], len(row['content']))
-                        hashed_count += 1
-                    except Exception as e:
-                        logger.error(f"Failed to hash memory {row['id']}: {e}")
-                
-                return {
-                    "status": "success",
-                    "memories_processed": len(rows),
-                    "hashes_created": hashed_count,
-                    "message": f"Backfilled {hashed_count} content hashes"
-                }
-                
-        except Exception as e:
-            logger.error(f"Backfill failed: {e}")
-            raise HTTPException(status_code=500, detail="Failed to backfill content hashes")
-
+    
     # =====================================================
     # KNOWLEDGE GRAPH ENDPOINTS (Added by Agent 2)
     # =====================================================
-
+    
     @app.post("/graph/sync/{memory_id}")
     async def sync_memory_to_graph(
         memory_id: str,
@@ -1865,7 +1635,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Sync a specific memory to the knowledge graph.
-
+        
         Extracts entities and relationships from an existing memory.
         """
         try:
@@ -1873,19 +1643,63 @@ def create_memory_app() -> FastAPI:
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
-
-            # TODO: Implement memory fetching and entity extraction
-            # This requires fetching the memory content from the primary provider
-            # and running it through the graph provider's entity extraction
-            raise HTTPException(
-                status_code=501,
-                detail="Memory sync not yet implemented. This endpoint will extract entities from existing memories."
-            )
-
+            
+            # Convert string memory_id to UUID
+            try:
+                memory_uuid = UUID(memory_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid memory ID format")
+            
+            # Fetch the memory from the primary provider
+            memory = await store.get_memory_by_id(memory_uuid)
+            if not memory:
+                raise HTTPException(status_code=404, detail=f"Memory {memory_id} not found")
+            
+            # Extract entities from the memory content
+            extracted_entities = store._extract_memory_entities(memory)
+            
+            # Store the memory in the graph provider to extract entities and relationships
+            if extracted_entities:
+                try:
+                    # Use the graph provider to store and process the memory
+                    await graph_provider.store(
+                        content=memory.content,
+                        embedding=[],  # Graph provider doesn't need embeddings
+                        metadata={
+                            **memory.metadata,
+                            "source_memory_id": str(memory_uuid),
+                            "extracted_entities": extracted_entities,
+                            "sync_timestamp": time.time()
+                        },
+                        memory_id=memory_uuid
+                    )
+                    
+                    logger.info(f"Successfully synced memory {memory_id} to graph with {len(extracted_entities)} entities")
+                    
+                    return {
+                        "memory_id": memory_uuid,
+                        "status": "synced",
+                        "entities_extracted": len(extracted_entities),
+                        "entities": extracted_entities,
+                        "message": f"Memory synced to knowledge graph with {len(extracted_entities)} entities"
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"Failed to store memory in graph provider: {e}")
+                    raise HTTPException(status_code=500, detail=f"Failed to sync to graph: {str(e)}")
+            else:
+                return {
+                    "memory_id": memory_uuid,
+                    "status": "no_entities",
+                    "entities_extracted": 0,
+                    "entities": [],
+                    "message": "No entities found in memory content"
+                }
+            
         except Exception as e:
             logger.error(f"Graph sync failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to sync memory: {str(e)}")
-
+    
     @app.get("/graph/explore/{entity_name}")
     async def explore_entity_relationships(
         entity_name: str,
@@ -1895,7 +1709,7 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Explore relationships from a specific entity.
-
+        
         Returns connected entities and their relationships up to max_depth.
         """
         try:
@@ -1903,15 +1717,15 @@ def create_memory_app() -> FastAPI:
             from .validators import validate_entity_name, validate_graph_depth
             entity_name = validate_entity_name(entity_name)
             max_depth = validate_graph_depth(max_depth)
-
+            
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
-
+            
             # Query memories filtered by entity
             filters = {"entity_name": entity_name}
             memories = await graph_provider.query([], limit, filters)
-
+            
             return {
                 "entity": entity_name,
                 "max_depth": max_depth,
@@ -1926,126 +1740,343 @@ def create_memory_app() -> FastAPI:
                     for mem in memories
                 ]
             }
-
+            
         except Exception as e:
             logger.error(f"Entity exploration failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to explore entity: {str(e)}")
-
-    @app.get("/graph/path/{from_entity}/{to_entity}")
+    
+    @app.get("/graph/path/{from_entity}/{to_entity}", response_model=PathFindingResponse)
     async def find_entity_path(
         from_entity: str,
         to_entity: str,
         max_depth: int = 3,
+        include_indirect: bool = True,
+        min_strength: float = 0.3,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Find the shortest path between two entities in the knowledge graph.
-
-        Uses graph traversal to find connections.
+        
+        Uses BFS traversal to find actual multi-hop connections with evidence chains.
         """
         try:
-            graph_provider = store.providers.get('graph')
-            if not graph_provider or not graph_provider.enabled:
-                raise HTTPException(status_code=503, detail="Graph provider not available")
-
-            # TODO: Implement actual path finding
-            return {
-                "from": from_entity,
-                "to": to_entity,
-                "path_found": False,
-                "message": "Path finding not yet implemented"
-            }
-
+            # Check if graph provider and traversal engine are available
+            if not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph traversal engine not available")
+            
+            # Use the advanced BFS path finding
+            start_time = time.time()
+            
+            path_result = await store.graph_traversal_engine.find_shortest_paths(
+                from_entity=from_entity,
+                to_entity=to_entity,
+                max_depth=max_depth,
+                max_paths=5,
+                min_strength=min_strength
+            )
+            
+            # Convert GraphPath objects to EvidenceChain objects for the response
+            evidence_chains = []
+            for path in path_result.paths_found:
+                evidence_chains.append(EvidenceChain(
+                    path=path.entities,
+                    relationship_types=path.relationships,
+                    strength=path.total_strength,
+                    confidence=path.total_confidence,
+                    reasoning=f"Path through {len(path.entities)} entities with {path.hop_count} hops",
+                    hop_count=path.hop_count
+                ))
+            
+            return PathFindingResponse(
+                from_entity=from_entity,
+                to_entity=to_entity,
+                path_found=path_result.success,
+                paths=evidence_chains,
+                total_paths=len(evidence_chains),
+                query_time_ms=path_result.execution_time_ms,
+                max_depth_reached=path_result.search_depth_reached
+            )
+            
         except Exception as e:
             logger.error(f"Path finding failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to find path: {str(e)}")
-
-    @app.get("/graph/insights/{memory_id}")
+    
+    async def _extract_entity_relationships_for_memory(
+        memory: MemoryResponse, 
+        entities: List[str], 
+        store: UnifiedVectorStore
+    ) -> List[Dict[str, Any]]:
+        """Extract relationships between entities in a memory."""
+        relationships = []
+        
+        if len(entities) < 2:
+            return relationships
+        
+        # Get graph provider for relationship queries
+        graph_provider = store.providers.get('graph')
+        if not graph_provider or not graph_provider.enabled:
+            return relationships
+        
+        try:
+            # For each pair of entities, check if there's a known relationship
+            for i, entity1 in enumerate(entities):
+                for j, entity2 in enumerate(entities[i+1:], i+1):
+                    if store.graph_traversal_engine:
+                        # Use the traversal engine to find paths between entities
+                        path_result = await store.graph_traversal_engine.find_shortest_paths(
+                            entity1, entity2, max_depth=2, max_paths=1, min_strength=0.4
+                        )
+                        
+                        if path_result.success and path_result.paths_found:
+                            path = path_result.paths_found[0]
+                            relationships.append({
+                                "from_entity": entity1,
+                                "to_entity": entity2,
+                                "relationship_type": path.relationships[0] if path.relationships else "relates_to",
+                                "strength": path.total_strength,
+                                "confidence": path.total_confidence,
+                                "path_length": path.hop_count
+                            })
+                    else:
+                        # Simple fallback - assume entities in same memory are related
+                        relationships.append({
+                            "from_entity": entity1,
+                            "to_entity": entity2,
+                            "relationship_type": "co_occurs_with",
+                            "strength": 0.7,
+                            "confidence": 0.8,
+                            "path_length": 1
+                        })
+                        
+        except Exception as e:
+            logger.warning(f"Failed to extract entity relationships: {e}")
+        
+        return relationships
+    
+    @app.get("/graph/insights/{memory_id}", response_model=MemoryInsightsResponse)
     async def get_memory_graph_insights(
         memory_id: str,
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
-        Get graph-based insights for a specific memory.
-
-        Shows entities extracted and their relationships.
+        Get comprehensive graph-based insights for a specific memory.
+        
+        Shows entities extracted, their relationships, and evidence chains to key entities.
         """
         try:
-            graph_provider = store.providers.get('graph')
-            if not graph_provider or not graph_provider.enabled:
-                raise HTTPException(status_code=503, detail="Graph provider not available")
-
-            # TODO: Implement actual insights gathering
-            # For now, return mock data
-            return {
-                "memory_id": memory_id,
-                "entity": {
-                    "id": memory_id,
-                    "entity_type": "concept",
-                    "entity_name": "placeholder",
-                    "properties": {},
-                    "importance_score": 0.5
+            if not store.graph_scoring_engine or not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph analysis engines not available")
+            
+            # Convert string memory_id to UUID
+            try:
+                memory_uuid = UUID(memory_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid memory ID format")
+            
+            # Get memory from primary provider to extract entities
+            memory = await store.get_memory_by_id(memory_uuid)
+            if not memory:
+                raise HTTPException(status_code=404, detail=f"Memory {memory_id} not found")
+            
+            # Extract entities from the memory
+            extracted_entities = store._extract_memory_entities(memory)
+            
+            # Get graph scoring data for this memory
+            if store.graph_scoring_engine:
+                graph_data = await store.graph_scoring_engine.calculate_memory_graph_score(
+                    memory_uuid, extracted_entities, [], None
+                )
+            else:
+                graph_data = {"graph_score": 0.5, "entity_scores": []}
+            
+            # Find related memories through graph connections
+            connected_memories = []
+            if extracted_entities:
+                # Query for memories that contain the same entities
+                graph_provider = store.providers.get('graph')
+                if graph_provider and graph_provider.enabled:
+                    try:
+                        for entity in extracted_entities[:3]:  # Limit to top 3 entities
+                            filters = {"entity_name": entity}
+                            related_memories = await graph_provider.query([], 5, filters)
+                            for related_mem in related_memories:
+                                if related_mem.id != memory_uuid and related_mem.id not in connected_memories:
+                                    connected_memories.append(related_mem.id)
+                    except Exception as e:
+                        logger.warning(f"Failed to find connected memories: {e}")
+                        connected_memories = []
+            
+            # Generate evidence chains to important entities
+            evidence_chains = []
+            if extracted_entities and store.graph_traversal_engine:
+                try:
+                    # Find paths to some key entities in the system
+                    key_entities = ["Tyvonne", "Von Base Enterprises", "React", "Core Nexus"]  # Example key entities
+                    
+                    for key_entity in key_entities[:3]:  # Limit to avoid long computation
+                        for memory_entity in extracted_entities[:2]:
+                            path_result = await store.graph_traversal_engine.find_shortest_paths(
+                                memory_entity, key_entity, max_depth=2, max_paths=1, min_strength=0.4
+                            )
+                            
+                            if path_result.success:
+                                path = path_result.paths_found[0]
+                                evidence_chains.append(EvidenceChain(
+                                    path=path.entities,
+                                    relationship_types=path.relationships,
+                                    strength=path.total_strength,
+                                    confidence=path.total_confidence,
+                                    reasoning=f"Connection from memory entity to {key_entity}",
+                                    hop_count=path.hop_count
+                                ))
+                except Exception as e:
+                    logger.warning(f"Evidence chain generation failed for memory insights: {e}")
+            
+            # Create mock EntityExtraction objects for response
+            entity_extractions = []
+            for i, entity in enumerate(extracted_entities):
+                entity_extractions.append({
+                    "entity_name": entity,
+                    "entity_type": "concept",  # Simplified
+                    "position_start": i * 10,
+                    "position_end": i * 10 + len(entity),
+                    "confidence": 0.8,
+                    "context": f"Context for {entity}"
+                })
+            
+            return MemoryInsightsResponse(
+                memory_id=memory_uuid,
+                extracted_entities=entity_extractions,
+                entity_relationships=await _extract_entity_relationships_for_memory(
+                    memory, extracted_entities, store
+                ),
+                connected_memories=connected_memories,
+                graph_summary={
+                    "total_entities": len(extracted_entities),
+                    "graph_score": graph_data.get("graph_score", 0.5),
+                    "analysis_method": "graph_scoring_engine",
+                    "scoring_components": graph_data
                 },
-                "memory_count": 1,
-                "relationship_count": 0,
-                "top_relationships": [],
-                "co_occurring_entities": []
-            }
-
+                evidence_chains_to_key_entities=evidence_chains
+            )
+            
         except Exception as e:
             logger.error(f"Graph insights failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get insights: {str(e)}")
-
+    
+    @app.get("/graph/explore/{entity_name}")
+    async def explore_entity_neighborhood(
+        entity_name: str,
+        depth: int = 2,
+        max_neighbors: int = 20,
+        min_strength: float = 0.3,
+        store: UnifiedVectorStore = Depends(get_store)
+    ):
+        """
+        Explore the neighborhood of an entity in the knowledge graph.
+        
+        Returns all connected entities within the specified depth with relationship information.
+        """
+        try:
+            if not store.graph_traversal_engine:
+                raise HTTPException(status_code=503, detail="Graph traversal engine not available")
+            
+            # Use the neighborhood exploration feature
+            neighborhood = await store.graph_traversal_engine.find_entity_neighborhood(
+                entity_name=entity_name,
+                depth=depth,
+                max_neighbors=max_neighbors,
+                min_strength=min_strength
+            )
+            
+            return {
+                "entity": entity_name,
+                "exploration_depth": depth,
+                "neighbors_found": neighborhood["total_neighbors"],
+                "depth_reached": neighborhood["depth_reached"],
+                "neighbors": neighborhood["neighbors"],
+                "relationships": neighborhood["relationships"],
+                "visualization_data": {
+                    "center_node": {
+                        "name": entity_name,
+                        "type": "center",
+                        "level": 0
+                    },
+                    "connected_nodes": [
+                        {
+                            "name": neighbor["entity_name"],
+                            "type": neighbor["entity_type"],
+                            "level": neighbor["depth"],
+                            "importance": neighbor["importance_score"]
+                        }
+                        for neighbor in neighborhood["neighbors"]
+                    ],
+                    "edges": [
+                        {
+                            "from": rel["from"],
+                            "to": rel["to"],
+                            "type": rel["type"],
+                            "strength": rel["strength"]
+                        }
+                        for rel in neighborhood["relationships"]
+                    ]
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Entity exploration failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to explore entity: {str(e)}")
+    
     @app.post("/graph/bulk-sync")
     async def bulk_sync_memories_to_graph(
-        memory_ids: list[str],
+        memory_ids: List[str],
         store: UnifiedVectorStore = Depends(get_store)
     ):
         """
         Sync multiple memories to the knowledge graph in bulk.
-
+        
         Efficient batch processing for initial graph population.
         """
         try:
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
-
+            
             # TODO: Implement bulk sync
             return {
                 "status": "success",
                 "memories_processed": len(memory_ids),
                 "message": "Bulk sync initiated (placeholder)"
             }
-
+            
         except Exception as e:
             logger.error(f"Bulk sync failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to bulk sync: {str(e)}")
-
+    
     @app.get("/graph/stats")
     async def get_graph_statistics(store: UnifiedVectorStore = Depends(get_store)):
         """
         Get comprehensive knowledge graph statistics.
-
+        
         Shows entity counts, relationship types, and graph health.
         """
         try:
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
-
+            
             stats = await graph_provider.get_stats()
             health = await graph_provider.health_check()
-
+            
             return {
                 "health": health,
                 "statistics": stats
             }
-
+            
         except Exception as e:
             logger.error(f"Graph stats failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get graph stats: {str(e)}")
-
+    
     @app.post("/admin/init-database")
     async def init_database_indexes(
         admin_key: str,
@@ -2053,70 +2084,70 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Emergency endpoint to create missing database indexes.
-
+        
         This fixes the query performance issue by creating the required pgvector indexes.
         """
         # Simple security check
         if admin_key != os.getenv("ADMIN_KEY", "emergency-fix-2024"):
             raise HTTPException(status_code=403, detail="Invalid admin key")
-
+        
         pgvector_provider = None
         for name, provider in store.providers.items():
             if name == 'pgvector' and provider.enabled:
                 pgvector_provider = provider
                 break
-
+        
         if not pgvector_provider:
             raise HTTPException(status_code=503, detail="pgvector provider not available")
-
+        
         try:
             async with pgvector_provider.connection_pool.acquire() as conn:
                 # Create the critical vector index
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding
-                    ON vector_memories
-                    USING ivfflat (embedding vector_cosine_ops)
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_embedding 
+                    ON vector_memories 
+                    USING ivfflat (embedding vector_cosine_ops) 
                     WITH (lists = 100)
                 """)
-
+                
                 # Create supporting indexes
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_metadata 
                     ON vector_memories USING GIN (metadata)
                 """)
-
+                
                 await conn.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_vector_memories_importance
+                    CREATE INDEX IF NOT EXISTS idx_vector_memories_importance 
                     ON vector_memories (importance_score DESC)
                 """)
-
+                
                 # Update statistics
                 await conn.execute("ANALYZE vector_memories")
-
+                
                 # Verify indexes were created
                 indexes = await conn.fetch("""
-                    SELECT indexname
-                    FROM pg_indexes
+                    SELECT indexname 
+                    FROM pg_indexes 
                     WHERE tablename = 'vector_memories'
                 """)
-
+                
                 # Test query performance
                 test_result = await pgvector_provider.query(
                     embedding=[0.1] * 1536,  # Mock embedding
                     limit=5
                 )
-
+                
                 return {
                     "success": True,
                     "indexes_created": [idx['indexname'] for idx in indexes],
                     "test_query_returned": len(test_result),
                     "message": "Database indexes created successfully! Queries should now work."
                 }
-
+                
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to initialize database: {str(e)}")
-
+    
     @app.post("/graph/query")
     async def query_knowledge_graph(
         query: dict,
@@ -2124,14 +2155,14 @@ def create_memory_app() -> FastAPI:
     ):
         """
         Advanced graph query endpoint.
-
+        
         Supports entity filtering, relationship traversal, and pattern matching.
         """
         try:
             graph_provider = store.providers.get('graph')
             if not graph_provider or not graph_provider.enabled:
                 raise HTTPException(status_code=503, detail="Graph provider not available")
-
+            
             # Convert query dict to filters for the provider
             filters = {}
             if query.get('entity_name'):
@@ -2140,29 +2171,113 @@ def create_memory_app() -> FastAPI:
                 filters['entity_type'] = query['entity_type']
             if query.get('relationship_type'):
                 filters['relationship_type'] = query['relationship_type']
-
+            
             # Execute query
             import time
             start_time = time.time()
-
-            limit = query.get('limit', 10)
-            await graph_provider.query([], limit, filters)
-
+            
+            # Get connection pool from graph provider
+            await graph_provider._ensure_pool()
+            pool = graph_provider.connection_pool
+            
+            if not pool:
+                raise HTTPException(status_code=503, detail="Graph database not available")
+            
+            nodes = []
+            relationships = []
+            
+            async with pool.acquire() as conn:
+                # Query nodes based on filters
+                node_query = "SELECT * FROM graph_nodes WHERE 1=1"
+                params = []
+                param_count = 0
+                
+                if filters.get('entity_name'):
+                    param_count += 1
+                    node_query += f" AND entity_name = ${param_count}"
+                    params.append(filters['entity_name'])
+                
+                if filters.get('entity_type'):
+                    param_count += 1
+                    # Case-insensitive comparison for entity types
+                    node_query += f" AND LOWER(entity_type) = LOWER(${param_count})"
+                    params.append(filters['entity_type'])
+                
+                # Limit results
+                limit = query.get('limit', 10)
+                param_count += 1
+                node_query += f" ORDER BY importance_score DESC LIMIT ${param_count}"
+                params.append(limit)
+                
+                # Execute node query
+                node_rows = await conn.fetch(node_query, *params)
+                
+                # Get node IDs for relationship query
+                node_ids = [row['id'] for row in node_rows]
+                
+                # Convert nodes to response format
+                for row in node_rows:
+                    nodes.append({
+                        "id": str(row['id']),
+                        "entity_name": row['entity_name'],
+                        "entity_type": row['entity_type'],
+                        "importance_score": float(row['importance_score']),
+                        "mention_count": row['mention_count'],
+                        "created_at": row['created_at'].isoformat() if row['created_at'] else None
+                    })
+                
+                # Query relationships if we have nodes
+                if node_ids:
+                    rel_query = """
+                        SELECT r.*, 
+                               fn.entity_name as from_name, fn.entity_type as from_type,
+                               tn.entity_name as to_name, tn.entity_type as to_type
+                        FROM graph_relationships r
+                        JOIN graph_nodes fn ON r.from_node_id = fn.id
+                        JOIN graph_nodes tn ON r.to_node_id = tn.id
+                        WHERE r.from_node_id = ANY($1) OR r.to_node_id = ANY($1)
+                    """
+                    
+                    if filters.get('relationship_type'):
+                        rel_query += " AND LOWER(r.relationship_type) = LOWER($2)"
+                        rel_rows = await conn.fetch(rel_query, node_ids, filters['relationship_type'])
+                    else:
+                        rel_rows = await conn.fetch(rel_query, node_ids)
+                    
+                    # Convert relationships to response format
+                    for row in rel_rows:
+                        relationships.append({
+                            "id": str(row['id']),
+                            "from_node": {
+                                "id": str(row['from_node_id']),
+                                "name": row['from_name'],
+                                "type": row['from_type']
+                            },
+                            "to_node": {
+                                "id": str(row['to_node_id']),
+                                "name": row['to_name'],
+                                "type": row['to_type']
+                            },
+                            "type": row['relationship_type'],
+                            "strength": float(row['strength']),
+                            "confidence": float(row['confidence']),
+                            "occurrence_count": row['occurrence_count']
+                        })
+            
             query_time = (time.time() - start_time) * 1000
-
-            # TODO: Convert memories to graph nodes and relationships
+            
             return {
-                "nodes": [],
-                "relationships": [],
+                "nodes": nodes,
+                "relationships": relationships,
                 "query_time_ms": query_time,
-                "total_nodes": 0,
-                "total_relationships": 0
+                "total_nodes": len(nodes),
+                "total_relationships": len(relationships)
             }
-
+            
         except Exception as e:
             logger.error(f"Graph query failed: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to query graph: {str(e)}")
-
+    
     # Knowledge Graph Live Sync Endpoints for Agent 3
     @app.get("/api/knowledge-graph/live-stats")
     async def knowledge_graph_live_stats(store: UnifiedVectorStore = Depends(get_store)):
@@ -2174,21 +2289,21 @@ def create_memory_app() -> FastAPI:
                 if name == 'pgvector' and provider.enabled:
                     pgvector_provider = provider
                     break
-
+            
             if not pgvector_provider:
                 raise HTTPException(status_code=503, detail="pgvector provider not available")
-
+            
             async with pgvector_provider.connection_pool.acquire() as conn:
                 # Get unique entity count
                 entity_count = await conn.fetchval(
                     "SELECT COUNT(*) FROM graph_nodes"
                 )
-
+                
                 # Get relationship count
                 rel_count = await conn.fetchval(
                     "SELECT COUNT(*) FROM graph_relationships"
                 )
-
+                
                 # Get top entities by connections
                 top_entities = await conn.fetch("""
                     SELECT n.entity_name, n.entity_type, n.importance_score,
@@ -2200,7 +2315,7 @@ def create_memory_app() -> FastAPI:
                     ORDER BY connections DESC, n.importance_score DESC
                     LIMIT 10
                 """)
-
+                
                 # Get entity type distribution
                 type_dist = await conn.fetch("""
                     SELECT entity_type, COUNT(*) as count
@@ -2208,7 +2323,7 @@ def create_memory_app() -> FastAPI:
                     GROUP BY entity_type
                     ORDER BY count DESC
                 """)
-
+                
                 return JSONResponse({
                     "entity_count": entity_count,
                     "relationship_count": rel_count,
@@ -2222,7 +2337,7 @@ def create_memory_app() -> FastAPI:
                         for e in top_entities
                     ],
                     "entity_types": {
-                        row["entity_type"]: row["count"]
+                        row["entity_type"]: row["count"] 
                         for row in type_dist
                     },
                     "last_updated": datetime.utcnow().isoformat(),
@@ -2234,7 +2349,7 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Error getting live stats: {e}")
             return JSONResponse({"error": str(e), "status": "error"}, status_code=500)
-
+    
     @app.post("/api/knowledge-graph/refresh-cache")
     async def refresh_dashboard_cache():
         """Signal Agent 3 to refresh its cache"""
@@ -2243,7 +2358,7 @@ def create_memory_app() -> FastAPI:
             "timestamp": datetime.utcnow().isoformat(),
             "message": "Agent 3 should refresh dashboard within 10 seconds"
         })
-
+    
     @app.get("/api/knowledge-graph/sync-status")
     async def get_sync_status(store: UnifiedVectorStore = Depends(get_store)):
         """Check if Agent 2 and Agent 3 are in sync"""
@@ -2251,7 +2366,7 @@ def create_memory_app() -> FastAPI:
             # Get current stats
             stats_response = await knowledge_graph_live_stats(store)
             stats = json.loads(stats_response.body)
-
+            
             return JSONResponse({
                 "agent2_stats": stats,
                 "sync_instructions": {
@@ -2264,7 +2379,161 @@ def create_memory_app() -> FastAPI:
         except Exception as e:
             logger.error(f"Sync status error: {e}")
             return JSONResponse({"error": str(e)}, status_code=500)
-
+    
+    # Jarvis AI Assistant Endpoints
+    try:
+        from jarvis_agent import ChatRequest, ChatResponse, get_jarvis_instance
+        
+        @app.post("/jarvis/chat", response_model=ChatResponse)
+        async def jarvis_chat(request: ChatRequest):
+            """
+            Chat with Jarvis AI assistant powered by Google ADK.
+            
+            Jarvis can:
+            - Search through Core Nexus memories
+            - Create new memories from conversations
+            - Maintain conversation context
+            - Provide intelligent responses based on stored knowledge
+            """
+            try:
+                jarvis = await get_jarvis_instance()
+                
+                # Set user and conversation context
+                if request.user_id:
+                    jarvis.user_id = request.user_id
+                if request.conversation_id:
+                    jarvis.conversation_id = request.conversation_id
+                
+                # Get response
+                response = await jarvis.chat(request.message)
+                
+                return ChatResponse(
+                    response=response,
+                    conversation_id=jarvis.conversation_id,
+                    session_id=jarvis.session_id
+                )
+                
+            except Exception as e:
+                logger.error(f"Jarvis chat error: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @app.get("/jarvis/status")
+        async def jarvis_status():
+            """Check Jarvis agent status and capabilities."""
+            try:
+                jarvis = await get_jarvis_instance()
+                
+                return JSONResponse({
+                    "status": "online",
+                    "session_id": jarvis.session_id,
+                    "capabilities": [
+                        "memory_search",
+                        "memory_creation",
+                        "conversation_history",
+                        "context_awareness"
+                    ],
+                    "model": "gemini-2.0-flash-latest",
+                    "framework": "google-adk",
+                    "conversation_history_size": len(jarvis.conversation_history)
+                })
+                
+            except Exception as e:
+                return JSONResponse({
+                    "status": "offline",
+                    "error": str(e)
+                }, status_code=503)
+        
+        logger.info("✅ Jarvis AI assistant endpoints registered")
+        
+    except ImportError:
+        logger.warning("⚠️ Jarvis agent not available - skipping AI assistant endpoints")
+    
+    # ADK Test Endpoint - Verify installation
+    @app.get("/test/adk")
+    async def test_adk_installation():
+        """
+        Test Google ADK installation and basic functionality.
+        
+        This endpoint verifies that ADK is properly installed and can be imported.
+        Used for production deployment verification.
+        """
+        test_results = {
+            "status": "testing",
+            "checks": {},
+            "adk_available": False,
+            "errors": []
+        }
+        
+        try:
+            # Test basic imports
+            try:
+                from google.adk.agents import Agent, LlmAgent
+                test_results["checks"]["agents_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["agents_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Agent import error: {str(e)}")
+            
+            try:
+                from google.adk.runners import Runner
+                test_results["checks"]["runner_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["runner_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Runner import error: {str(e)}")
+            
+            try:
+                from google.adk.sessions import InMemorySessionService
+                test_results["checks"]["session_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["session_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Session import error: {str(e)}")
+            
+            try:
+                from google.adk.tools import FunctionTool
+                test_results["checks"]["tools_import"] = "✅ Success"
+            except ImportError as e:
+                test_results["checks"]["tools_import"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Tools import error: {str(e)}")
+            
+            # Test agent creation (without running)
+            try:
+                from google.adk.agents import Agent
+                test_agent = Agent(
+                    name="test_agent",
+                    model="gemini-2.0-flash-exp",
+                    instructions="Test agent for verification"
+                )
+                test_results["checks"]["agent_creation"] = "✅ Success"
+                test_results["adk_available"] = True
+            except Exception as e:
+                test_results["checks"]["agent_creation"] = f"❌ Failed: {str(e)}"
+                test_results["errors"].append(f"Agent creation error: {str(e)}")
+            
+            # Check ADK version if possible
+            try:
+                import google.adk
+                if hasattr(google.adk, "__version__"):
+                    test_results["adk_version"] = google.adk.__version__
+                else:
+                    test_results["adk_version"] = "Version not available"
+            except:
+                test_results["adk_version"] = "Unable to determine"
+            
+            # Overall status
+            if test_results["adk_available"] and not test_results["errors"]:
+                test_results["status"] = "✅ ADK fully operational"
+            elif test_results["adk_available"]:
+                test_results["status"] = "⚠️ ADK partially operational"
+            else:
+                test_results["status"] = "❌ ADK not available"
+            
+            return JSONResponse(test_results)
+            
+        except Exception as e:
+            logger.error(f"ADK test failed: {e}")
+            test_results["status"] = "❌ Test failed"
+            test_results["errors"].append(f"Unexpected error: {str(e)}")
+            return JSONResponse(test_results, status_code=500)
+    
     return app
 
 
@@ -2280,5 +2549,3 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
-
-
