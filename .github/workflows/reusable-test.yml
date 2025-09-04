@@ -51,13 +51,13 @@ jobs:
     
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # Fetch full history for accurate blame information
           fetch-depth: 0
       
       - name: Setup Node.js ${{ inputs.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ inputs.node-version }}
           # Don't use built-in yarn cache since we're using Corepack
@@ -78,7 +78,7 @@ jobs:
           cat package.json | grep packageManager || echo "No packageManager field found"
       
       - name: Setup Python ${{ inputs.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ inputs.python-version }}
       
@@ -120,7 +120,7 @@ jobs:
             yarn-v4-${{ runner.os }}-
       
       - name: Setup Go for esbuild compilation
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.22'
       

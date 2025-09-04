@@ -68,7 +68,7 @@ jobs:
       node-versions: ${{ steps.matrix.outputs.node-versions }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -175,10 +175,10 @@ jobs:
     if: needs.changes.outputs.packages == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js (latest LTS)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           # Don't use built-in yarn cache since we're using Corepack
