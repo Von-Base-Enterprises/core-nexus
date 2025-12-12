@@ -46,7 +46,7 @@ jobs:
       is-prerelease: ${{ steps.meta.outputs.is-prerelease }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -114,7 +114,7 @@ jobs:
       image-url: ${{ steps.build.outputs.image-url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -160,10 +160,10 @@ jobs:
       wheel-name: ${{ steps.build.outputs.wheel-name }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -200,7 +200,7 @@ jobs:
           ls -la dist/
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: python-wheel
           path: dist/*.whl
@@ -216,10 +216,10 @@ jobs:
       python-sbom: python-sbom.json
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: python-wheel
           path: dist/
@@ -271,7 +271,7 @@ jobs:
           cyclonedx-py --output-format json --output-file python-sbom.json .
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: sboms
           path: |
@@ -291,7 +291,7 @@ jobs:
           cosign-release: 'v2.2.2'
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: "*"
           merge-multiple: true
@@ -314,7 +314,7 @@ jobs:
           cosign sign-blob --yes --output-signature python-sbom.json.sig python-sbom.json
 
       - name: Upload signatures
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: signatures
           path: |
@@ -348,7 +348,7 @@ jobs:
       url: https://pypi.org/p/core-nexus
     steps:
       - name: Download wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: python-wheel
           path: dist/
@@ -366,12 +366,12 @@ jobs:
     if: always() && (needs.docker.result == 'success' || needs.python-wheel.result == 'success')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           pattern: "*"
           merge-multiple: true
