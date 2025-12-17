@@ -9,7 +9,7 @@ license = "MIT"
 python = "^3.10"
 asyncpg = "^0.30.0"
 requests = "^2.32.4"
-google-generativeai = "^0.8.5"
+google-generativeai = "^0.8.6"
 
 [tool.poetry.group.dev.dependencies]
 # Linting and formatting
