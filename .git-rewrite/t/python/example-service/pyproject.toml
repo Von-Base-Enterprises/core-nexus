@@ -10,7 +10,7 @@ packages = [{include = "example_service", from = "src"}]
 [tool.poetry.dependencies]
 python = "^3.10"
 pydantic = "^2.5.0"
-fastapi = "^0.104.0"
+fastapi = "^0.120.1"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}
 email-validator = "^2.2.0"
 
